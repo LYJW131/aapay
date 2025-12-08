@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Settings, Calendar, Edit2, Trash2, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import * as api from '../services/api';
 
 // 预设的 emoji 头像列表（12个）
@@ -11,6 +12,8 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
     const [editName, setEditName] = useState(''); // Name inside modal
     const [editAvatar, setEditAvatar] = useState(''); // Avatar inside modal
     const [isEditingAvatar, setIsEditingAvatar] = useState(false); // 是否正在编辑头像（自定义输入）
+
+    const [isDeleting, setIsDeleting] = useState(false); // State to track deletion status
 
     // 获取随机 emoji
     const getRandomAvatar = () => {
@@ -30,11 +33,13 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
     };
 
     const handleDelete = async (id) => {
-        if (!confirm('确定要删除该成员吗？')) return;
+        // if (!confirm('确定要删除该成员吗？')) return;
+        setIsDeleting(true);
         try {
             await api.deleteUser(id);
-            setSelectedUser(null);
+            closeModal();
         } catch (err) {
+            setIsDeleting(false);
             alert(err.response?.data?.detail || 'Error deleting user');
         }
     };
@@ -42,6 +47,8 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
     const closeModal = () => {
         setSelectedUser(null);
         setIsEditingAvatar(false);
+        // Note: We don't reset isDeleting here to allow the exit animation to read it.
+        // It will be reset on next openModal.
     };
 
     const handleUpdate = async () => {
@@ -66,6 +73,7 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
     };
 
     const openModal = (user) => {
+        setIsDeleting(false); // Reset deletion state on open
         setSelectedUser(user);
         setEditName(user.name);
         setEditAvatar(user.avatar || '😀');
@@ -117,9 +125,12 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                                 onClick={() => openModal(u)}
                                 className="group relative flex flex-col items-center focus:outline-none"
                             >
-                                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 border-transparent group-hover:border-primary/30 transition-colors ${isEmoji(u.avatar) ? 'bg-gray-100 text-2xl' : 'bg-primary-light text-primary-dark font-bold'}`}>
+                                <motion.div
+                                    layoutId={`avatar-${u.id}`}
+                                    className={`w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 border-transparent group-hover:border-primary/30 transition-colors ${isEmoji(u.avatar) ? 'bg-gray-100 text-2xl' : 'bg-primary-light text-primary-dark font-bold'}`}
+                                >
                                     {getAvatarDisplay(u)}
-                                </div>
+                                </motion.div>
                                 <span className="text-xs mt-1 text-gray-600 truncate max-w-[60px]">{u.name}</span>
                             </button>
                         ))}
@@ -143,92 +154,105 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
             </div>
 
             {/* User Detail Modal */}
-            {selectedUser && (
-                <div
-                    className="fixed top-0 left-0 right-0 bottom-0 bg-black/50 flex items-center justify-center z-50"
-                    style={{ margin: 0 }}
-                    onClick={closeModal}
-                >
-                    <div
-                        className="bg-white rounded-xl p-6 w-80 shadow-xl transform transition-all scale-100 max-h-[90vh] overflow-y-auto"
-                        onClick={(e) => e.stopPropagation()}
+            <AnimatePresence>
+                {selectedUser && (
+                    <motion.div
+                        className="fixed top-0 left-0 right-0 bottom-0 bg-black/50 flex items-center justify-center z-50"
+                        style={{ margin: 0 }}
+                        onClick={closeModal}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
                     >
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-lg font-bold text-gray-800">编辑成员</h3>
-                            <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
-                                <X size={20} />
-                            </button>
-                        </div>
-
-                        {/* 当前头像显示 - 点击可以输入自定义 */}
-                        <div className="flex justify-center mb-4">
-                            {isEditingAvatar ? (
-                                <input
-                                    type="text"
-                                    value={editAvatar}
-                                    onChange={e => setEditAvatar(e.target.value)}
-                                    onBlur={() => setIsEditingAvatar(false)}
-                                    autoFocus
-                                    placeholder="输入 emoji"
-                                    className="w-20 h-20 rounded-full bg-gray-100 text-4xl text-center border-2 border-primary focus:outline-none"
-                                    maxLength={2}
-                                />
-                            ) : (
-                                <button
-                                    onClick={() => setIsEditingAvatar(true)}
-                                    className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all ${isEmoji(editAvatar) ? 'bg-gray-100' : 'bg-primary-light text-primary-dark font-bold'}`}
-                                    title="点击输入自定义 emoji"
-                                >
-                                    {isEmoji(editAvatar) ? editAvatar : editName[0]?.toUpperCase()}
+                        <motion.div
+                            layoutId={isDeleting ? undefined : `avatar-${selectedUser.id}`}
+                            className="bg-white rounded-xl p-6 w-80 shadow-xl overflow-y-auto"
+                            onClick={(e) => e.stopPropagation()}
+                            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                            exit={isDeleting ? {
+                                opacity: 0,
+                                scale: 1.5,
+                                filter: "blur(10px)",
+                                transition: { duration: 0.3, ease: "easeIn" }
+                            } : { opacity: 0, scale: 0.9 }}
+                        >
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-bold text-gray-800">编辑成员</h3>
+                                <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
+                                    <X size={20} />
                                 </button>
-                            )}
-                        </div>
+                            </div>
 
-                        {/* 头像选择区 - 12个预设 */}
-                        <div className="mb-4">
-                            <label className="block text-xs text-gray-500 mb-2">选择头像</label>
-                            <div className="flex flex-wrap gap-2 justify-center">
-                                {PRESET_AVATARS.map(emoji => (
+                            {/* 当前头像显示 - 点击可以输入自定义 */}
+                            <div className="flex justify-center mb-4">
+                                {isEditingAvatar ? (
+                                    <input
+                                        type="text"
+                                        value={editAvatar}
+                                        onChange={e => setEditAvatar(e.target.value)}
+                                        onBlur={() => setIsEditingAvatar(false)}
+                                        autoFocus
+                                        placeholder="输入 emoji"
+                                        className="w-20 h-20 rounded-full bg-gray-100 text-4xl text-center border-2 border-primary focus:outline-none"
+                                        maxLength={2}
+                                    />
+                                ) : (
                                     <button
-                                        key={emoji}
-                                        type="button"
-                                        onClick={() => { setEditAvatar(emoji); setIsEditingAvatar(false); }}
-                                        className={`w-9 h-9 rounded-full flex items-center justify-center text-xl transition-all ${editAvatar === emoji ? 'bg-primary/20 ring-2 ring-primary scale-110' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                        onClick={() => setIsEditingAvatar(true)}
+                                        className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all ${isEmoji(editAvatar) ? 'bg-gray-100' : 'bg-primary-light text-primary-dark font-bold'}`}
+                                        title="点击输入自定义 emoji"
                                     >
-                                        {emoji}
+                                        {isEmoji(editAvatar) ? editAvatar : editName[0]?.toUpperCase()}
                                     </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs text-gray-500 mb-1">姓名</label>
-                                <input
-                                    type="text"
-                                    value={editName}
-                                    onChange={e => setEditName(e.target.value)}
-                                    className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-center font-medium"
-                                />
+                                )}
                             </div>
 
-                            <button
-                                onClick={handleUpdate}
-                                className="w-full bg-primary text-white py-2 rounded-lg font-bold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Edit2 size={16} /> 保存修改
-                            </button>
+                            {/* 头像选择区 - 12个预设 */}
+                            <div className="mb-4">
+                                <label className="block text-xs text-gray-500 mb-2">选择头像</label>
+                                <div className="flex flex-wrap gap-2 justify-center">
+                                    {PRESET_AVATARS.map(emoji => (
+                                        <button
+                                            key={emoji}
+                                            type="button"
+                                            onClick={() => { setEditAvatar(emoji); setIsEditingAvatar(false); }}
+                                            className={`w-9 h-9 rounded-full flex items-center justify-center text-xl transition-all ${editAvatar === emoji ? 'bg-primary/20 ring-2 ring-primary scale-110' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                        >
+                                            {emoji}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
 
-                            <button
-                                onClick={() => handleDelete(selectedUser.id)}
-                                className="w-full bg-red-50 text-red-500 py-2 rounded-lg font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
-                            >
-                                <Trash2 size={16} /> 删除成员
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">姓名</label>
+                                    <input
+                                        type="text"
+                                        value={editName}
+                                        onChange={e => setEditName(e.target.value)}
+                                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-center font-medium"
+                                    />
+                                </div>
+
+                                <button
+                                    onClick={handleUpdate}
+                                    className="w-full bg-primary text-white py-2 rounded-lg font-bold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Edit2 size={16} /> 保存修改
+                                </button>
+
+                                <button
+                                    onClick={() => handleDelete(selectedUser.id)}
+                                    className="w-full bg-red-50 text-red-500 py-2 rounded-lg font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                                >
+                                    <Trash2 size={16} /> 删除成员
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </>
     );
 };
