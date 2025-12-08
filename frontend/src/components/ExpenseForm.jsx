@@ -104,17 +104,52 @@ const ExpenseForm = ({ users, defaultDate }) => {
         }
     }, [formData.participants]);
 
+    // 验证常量
+    const MAX_DESCRIPTION_LENGTH = 15;
+    const MIN_AMOUNT = 0.01;
+    const MAX_AMOUNT = 999999.99;
+
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!formData.description.trim() || !formData.payer_id || !formData.amount || formData.participants.length === 0) {
-            alert('请填写完整信息（用途、金额、付款人、参与者）');
+
+        const description = formData.description.trim();
+        const amount = parseFloat(formData.amount);
+
+        // 验证用途
+        if (!description) {
+            alert('请填写用途');
+            return;
+        }
+        if (description.length > MAX_DESCRIPTION_LENGTH) {
+            alert(`用途不能超过 ${MAX_DESCRIPTION_LENGTH} 个字符`);
+            return;
+        }
+
+        // 验证金额
+        if (!formData.amount || isNaN(amount)) {
+            alert('请填写有效的金额');
+            return;
+        }
+        if (amount < MIN_AMOUNT || amount > MAX_AMOUNT) {
+            alert(`金额必须在 ${MIN_AMOUNT} 到 ${MAX_AMOUNT.toLocaleString()} 之间`);
+            return;
+        }
+
+        // 验证付款人和参与者
+        if (!formData.payer_id) {
+            alert('请选择付款人');
+            return;
+        }
+        if (formData.participants.length === 0) {
+            alert('请选择至少一位参与者');
             return;
         }
 
         try {
             await api.createExpense({
                 ...formData,
-                amount: parseFloat(formData.amount)
+                description,
+                amount
             });
             // 提交后只重置描述和金额，保留参与者选择
             setFormData(prev => ({
@@ -124,7 +159,7 @@ const ExpenseForm = ({ users, defaultDate }) => {
                 // participants 保持不变
             }));
         } catch (err) {
-            alert('Error creating expense');
+            alert('添加失败，请检查输入是否符合要求');
         }
     };
 
@@ -153,12 +188,18 @@ const ExpenseForm = ({ users, defaultDate }) => {
 
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                    <label className="block text-sm text-gray-500 mb-1">用途</label>
+                    <label className="block text-sm text-gray-500 mb-1 flex justify-between">
+                        <span>用途</span>
+                        <span className={`text-xs ${formData.description.length > MAX_DESCRIPTION_LENGTH ? 'text-red-500' : 'text-gray-400'}`}>
+                            {formData.description.length}/{MAX_DESCRIPTION_LENGTH}
+                        </span>
+                    </label>
                     <input
                         type="text"
                         value={formData.description}
                         onChange={e => setFormData({ ...formData, description: e.target.value })}
                         placeholder="例如：午饭"
+                        maxLength={MAX_DESCRIPTION_LENGTH}
                         className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                     />
                 </div>
@@ -171,6 +212,9 @@ const ExpenseForm = ({ users, defaultDate }) => {
                             value={formData.amount}
                             onChange={e => setFormData({ ...formData, amount: e.target.value })}
                             placeholder="0.00"
+                            min={MIN_AMOUNT}
+                            max={MAX_AMOUNT}
+                            step="0.01"
                             className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                         />
                     </div>

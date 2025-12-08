@@ -87,7 +87,6 @@ pnpm-debug.log*
 *.db
 *.sqlite
 *.sqlite3
-data.json
 
 # ========================
 # 其他
