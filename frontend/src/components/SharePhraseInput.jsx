@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Key, ArrowRight, RefreshCw, LogOut } from 'lucide-react';
+import { Key, ArrowRight, RefreshCw, LogOut, Shield } from 'lucide-react';
 import * as api from '../services/api';
 import { useNotification } from './NotificationProvider';
 
@@ -7,6 +7,7 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
     const { addNotification } = useNotification();
     const [phrase, setPhrase] = useState('');
     const [loading, setLoading] = useState(false);
+    const [adminLoading, setAdminLoading] = useState(false);
     const [error, setError] = useState('');
 
     const handleSubmit = async (e) => {
@@ -114,31 +115,53 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                             setError('');
                         }}
                         placeholder="分享短语"
-                        className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-center text-lg font-mono tracking-widest focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                        className="w-full h-10 px-3 border border-gray-200 rounded-lg text-center font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                         maxLength={32}
                         autoFocus
                     />
                 </div>
 
-
                 <button
                     type="submit"
                     disabled={loading || phrase.length < 6}
-                    className="w-full bg-primary text-white py-3 rounded-xl font-bold text-lg hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    className="w-full h-10 bg-primary text-white rounded-lg font-bold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     {loading ? (
                         <>
-                            <RefreshCw size={20} className="animate-spin" />
+                            <RefreshCw size={18} className="animate-spin" />
                             验证中...
                         </>
                     ) : (
                         <>
                             进入账本
-                            <ArrowRight size={20} />
+                            <ArrowRight size={18} />
                         </>
                     )}
                 </button>
             </form>
+
+            <div className="mt-6 pt-4 border-t border-gray-100">
+                <button
+                    onClick={() => {
+                        setAdminLoading(true);
+                        window.location.href = '/oauth2/sign_in?rd=%2F';
+                    }}
+                    disabled={adminLoading}
+                    className="w-full h-10 flex items-center justify-center gap-2 text-gray-600 hover:text-primary border border-gray-200 rounded-lg hover:border-primary/50 transition-colors disabled:opacity-50"
+                >
+                    {adminLoading ? (
+                        <>
+                            <RefreshCw size={16} className="animate-spin" />
+                            跳转中...
+                        </>
+                    ) : (
+                        <>
+                            <Shield size={16} />
+                            管理员登录
+                        </>
+                    )}
+                </button>
+            </div>
         </div>
     );
 };

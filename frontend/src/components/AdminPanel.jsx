@@ -7,6 +7,12 @@ import { useNotification } from './NotificationProvider';
 const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, onCollapseChange, sessions, setSessions, phrases, setPhrases }) => {
     const { addNotification } = useNotification();
 
+    // 跟踪是否已经首次渲染，用于控制动画
+    const hasRendered = React.useRef(false);
+    useEffect(() => {
+        hasRendered.current = true;
+    }, []);
+
     // 保存折叠状态到 localStorage
     useEffect(() => {
         localStorage.setItem('adminPanelCollapsed', isCollapsed);
@@ -177,8 +183,13 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                     </motion.div>
                 </h2>
                 <button
-                    onClick={(e) => { e.stopPropagation(); onLogout(); }}
-                    className="text-sm text-gray-500 hover:text-red-500 flex items-center gap-1"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        // 清除 token 后直接跳转
+                        localStorage.removeItem('aapay_token');
+                        window.location.href = '/oauth2/sign_out?rd=%2F';
+                    }}
+                    className="text-sm text-red-500 hover:text-red-600 flex items-center gap-1 px-3 py-1.5 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
                 >
                     <LogOut size={14} /> 登出
                 </button>
@@ -188,7 +199,8 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
             <AnimatePresence initial={false}>
                 {!isCollapsed && (
                     <motion.div
-                        initial={false}
+                        key="content"
+                        initial={hasRendered.current ? { height: 0, opacity: 0 } : false}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.3, ease: 'easeInOut' }}
