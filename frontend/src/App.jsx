@@ -138,10 +138,42 @@ function AppContent() {
     }
   }, [currentSession, checkAuthStatus]);
 
+  // 处理URL哈希参数中的分享短语
+  const handleHashPhrase = useCallback(async () => {
+    const hash = window.location.hash;
+    if (!hash || !hash.startsWith('#p=')) return false;
+
+    const phrase = decodeURIComponent(hash.substring(3));
+    if (!phrase || phrase.length < 6) return false;
+
+    // 清除 URL 中的哈希参数
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+    try {
+      const res = await api.exchangePhrase(phrase);
+      const newToken = res.data.token;
+      if (newToken) {
+        api.setToken(newToken);
+      }
+      addNotification('登录成功', 'success');
+      return true;
+    } catch (err) {
+      const errorMsg = err.response?.data?.detail || '分享短语无效或已过期';
+      addNotification(errorMsg, 'error');
+      return false;
+    }
+  }, [addNotification]);
+
   // 初始化认证检查
   useEffect(() => {
-    checkAuthStatus();
-  }, [checkAuthStatus]);
+    const init = async () => {
+      // 先尝试处理URL中的分享短语
+      await handleHashPhrase();
+      // 然后进行认证检查
+      checkAuthStatus();
+    };
+    init();
+  }, [checkAuthStatus, handleHashPhrase]);
 
   // 当会话改变时订阅 SSE
   useEffect(() => {

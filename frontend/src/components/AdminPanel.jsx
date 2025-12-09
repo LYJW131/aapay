@@ -108,7 +108,17 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
     // 创建分享短语
     const handleCreatePhrase = async (e) => {
         e.preventDefault();
-        if (!newPhrase.trim() || !phraseValidFrom || !phraseValidUntil) return;
+        const trimmedPhrase = newPhrase.trim();
+        if (!trimmedPhrase || !phraseValidFrom || !phraseValidUntil) return;
+        // 验证是否只包含大小写字母和数字
+        if (!/^[a-zA-Z0-9]+$/.test(trimmedPhrase)) {
+            addNotification('分享短语只能包含大小写字母和数字', 'error');
+            return;
+        }
+        if (trimmedPhrase.length < 6) {
+            addNotification('分享短语至少需要6位', 'error');
+            return;
+        }
         setLoading(true);
         try {
             await api.createPhrase(currentSession.session_id, {
@@ -286,7 +296,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                 type="text"
                                                 value={newPhrase}
                                                 onChange={(e) => {
-                                                    const value = e.target.value.replace(/[^a-zA-Z0-9]/g, '');
+                                                    const value = e.target.value;
                                                     setNewPhrase(value);
                                                     // 输入时自动设置默认时间
                                                     if (value && !phraseValidFrom) {

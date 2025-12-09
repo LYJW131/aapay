@@ -12,8 +12,14 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        if (!phrase.trim() || phrase.length < 6) {
+        const trimmedPhrase = phrase.trim();
+        if (!trimmedPhrase || trimmedPhrase.length < 6) {
             addNotification('请输入有效的分享短语（至少6位）', 'error');
+            return;
+        }
+        // 验证是否只包含大小写字母和数字
+        if (!/^[a-zA-Z0-9]+$/.test(trimmedPhrase)) {
+            addNotification('分享短语只能包含大小写字母和数字', 'error');
             return;
         }
 
@@ -65,7 +71,7 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                         type="text"
                         value={phrase}
                         onChange={(e) => {
-                            setPhrase(e.target.value.replace(/[^a-zA-Z0-9]/g, ''));
+                            setPhrase(e.target.value);
                             setError('');
                         }}
                         placeholder="输入分享短语"
@@ -111,7 +117,7 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                         type="text"
                         value={phrase}
                         onChange={(e) => {
-                            setPhrase(e.target.value.replace(/[^a-zA-Z0-9]/g, ''));
+                            setPhrase(e.target.value);
                             setError('');
                         }}
                         placeholder="分享短语"
