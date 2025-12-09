@@ -111,7 +111,8 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                         type="date"
                         value={globalDate}
                         onChange={e => setGlobalDate(e.target.value)}
-                        className="w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-800 font-medium focus:ring-2 focus:ring-primary/20 outline-none"
+                        className="w-full max-w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-800 font-medium text-center focus:ring-2 focus:ring-primary/20 outline-none appearance-none"
+                        style={{ boxSizing: 'border-box' }}
                     />
                 </div>
 
