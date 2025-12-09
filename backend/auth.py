@@ -129,6 +129,15 @@ def get_session_from_request(request: Request) -> Optional[Dict[str, Any]]:
     if "session_id" not in payload or "role" not in payload:
         return None
     
+    # 如果是用户 JWT，验证 phrase 是否仍然存在（实现即时撤销）
+    if payload["role"] == "user" and payload.get("phrase_id"):
+        from admin_database import get_admin_db
+        with get_admin_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id FROM share_phrases WHERE id = ?", (payload["phrase_id"],))
+            if not cursor.fetchone():
+                return None  # phrase 已被删除，JWT 无效
+    
     return {
         "role": payload["role"],
         "session_id": payload["session_id"],
