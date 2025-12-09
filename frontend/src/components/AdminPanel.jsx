@@ -115,8 +115,8 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
             addNotification('分享短语只能包含大小写字母和数字', 'error');
             return;
         }
-        if (trimmedPhrase.length < 6) {
-            addNotification('分享短语至少需要6位', 'error');
+        if (trimmedPhrase.length < 3) {
+            addNotification('分享短语至少需要3位', 'error');
             return;
         }
         setLoading(true);
@@ -232,7 +232,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                         onChange={(e) => setNewSessionName(e.target.value)}
                                         placeholder="新会话名称"
                                         className="flex-1 h-10 px-3 border border-gray-200 bg-white rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-300"
-                                        maxLength={50}
+                                        maxLength={10}
                                     />
                                     <button
                                         type="submit"
@@ -314,14 +314,14 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                         setPhraseValidUntil(formatForInput(tomorrow));
                                                     }
                                                 }}
-                                                placeholder="新分享短语 (6-32位字母数字)"
+                                                placeholder="新分享短语 (3-16位字母数字)"
                                                 className="flex-1 h-10 px-3 border border-gray-200 bg-white rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-300"
-                                                minLength={6}
-                                                maxLength={32}
+                                                minLength={3}
+                                                maxLength={16}
                                             />
                                             <button
                                                 type="submit"
-                                                disabled={loading || newPhrase.length < 6}
+                                                disabled={loading || newPhrase.length < 3}
                                                 className="h-10 w-10 flex items-center justify-center rounded-lg border border-purple-600 bg-purple-600 text-white hover:bg-purple-700 hover:border-purple-700 disabled:opacity-50 transition-all"
                                             >
                                                 <Plus size={18} />

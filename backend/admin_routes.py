@@ -20,7 +20,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 # ==================== Pydantic Models ====================
 
 class SessionCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=50)
+    name: str = Field(..., min_length=1, max_length=10)
 
 
 class SessionResponse(BaseModel):
@@ -30,7 +30,7 @@ class SessionResponse(BaseModel):
 
 
 class PhraseCreate(BaseModel):
-    phrase: str = Field(..., min_length=6, max_length=32)
+    phrase: str = Field(..., min_length=3, max_length=16)
     valid_from: str  # ISO 格式时间字符串
     valid_until: str  # ISO 格式时间字符串
     

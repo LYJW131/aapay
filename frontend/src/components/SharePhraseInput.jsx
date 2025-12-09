@@ -13,8 +13,8 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         const trimmedPhrase = phrase.trim();
-        if (!trimmedPhrase || trimmedPhrase.length < 6) {
-            addNotification('请输入有效的分享短语（至少6位）', 'error');
+        if (!trimmedPhrase || trimmedPhrase.length < 3) {
+            addNotification('请输入有效的分享短语（至少3位）', 'error');
             return;
         }
         // 验证是否只包含大小写字母和数字
@@ -76,11 +76,11 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                         }}
                         placeholder="输入分享短语"
                         className="flex-1 h-10 px-3 border border-gray-200 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
-                        maxLength={32}
+                        maxLength={16}
                     />
                     <button
                         type="submit"
-                        disabled={loading || phrase.length < 6}
+                        disabled={loading || phrase.length < 3}
                         className="h-10 w-10 flex items-center justify-center bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors"
                     >
                         {loading ? '...' : <ArrowRight size={18} />}
@@ -122,14 +122,14 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                         }}
                         placeholder="分享短语"
                         className="w-full h-10 px-3 border border-gray-200 rounded-lg text-center font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                        maxLength={32}
+                        maxLength={16}
                         autoFocus
                     />
                 </div>
 
                 <button
                     type="submit"
-                    disabled={loading || phrase.length < 6}
+                    disabled={loading || phrase.length < 3}
                     className="w-full h-10 bg-primary text-white rounded-lg font-bold hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     {loading ? (
