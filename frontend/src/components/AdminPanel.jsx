@@ -376,9 +376,11 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
                                                                 }`}
                                                         >
                                                             <span className="font-mono font-bold text-gray-700 text-sm">{phrase.phrase}</span>
-                                                            <span className="text-xs text-gray-500 flex items-center gap-1">
-                                                                <Clock size={10} />
-                                                                {formatDateTime(phrase.valid_from)} ~ {formatDateTime(phrase.valid_until)}
+                                                            <span className="text-xs text-gray-500 flex items-center font-mono">
+                                                                <Clock size={12} className="mr-1 flex-shrink-0" />
+                                                                <span>{formatDateTime(phrase.valid_from)}</span>
+                                                                <span className="mx-1">~</span>
+                                                                <span>{formatDateTime(phrase.valid_until)}</span>
                                                             </span>
                                                         </div>
                                                         <button

@@ -46,10 +46,10 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
     // 紧凑模式（用于已认证用户切换会话）
     if (isCompact) {
         return (
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                 <div className="flex items-center gap-2 mb-3">
-                    <RefreshCw size={16} className="text-gray-500" />
-                    <span className="text-sm font-medium text-gray-600">切换会话</span>
+                    <RefreshCw size={16} className="text-primary" />
+                    <span className="text-sm font-medium text-gray-700">切换会话</span>
                 </div>
                 <form onSubmit={handleSubmit} className="flex gap-2">
                     <input
@@ -60,13 +60,13 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
                             setError('');
                         }}
                         placeholder="输入分享短语"
-                        className="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        className="flex-1 h-10 px-3 border border-gray-200 bg-white rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50"
                         maxLength={32}
                     />
                     <button
                         type="submit"
                         disabled={loading || phrase.length < 6}
-                        className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors"
+                        className="h-10 w-10 flex items-center justify-center bg-primary text-white rounded-lg hover:bg-primary-dark disabled:opacity-50 transition-colors"
                     >
                         {loading ? '...' : <ArrowRight size={18} />}
                     </button>
