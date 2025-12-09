@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Dict
-from datetime import datetime
+from datetime import datetime, timezone
 from collections import defaultdict
 import asyncio
 import json
@@ -122,7 +122,7 @@ class PhraseExchange(BaseModel):
 @app.post("/auth/exchange")
 def exchange_phrase(phrase_data: PhraseExchange):
     """用分享短语换取 JWT"""
-    now = datetime.now().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
     
     with get_admin_db() as conn:
         cursor = conn.cursor()
@@ -171,13 +171,6 @@ def check_auth(request: Request):
             "session_id": session_info["session_id"],
             "session_name": session["name"]
         }
-
-
-@app.post("/auth/logout")
-def logout(response: Response):
-    """登出，清除 Cookie"""
-    response.delete_cookie(JWT_COOKIE_NAME)
-    return {"status": "success"}
 
 
 # ==================== User Routes (需要认证) ====================

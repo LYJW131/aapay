@@ -3,20 +3,16 @@ JWT 认证模块
 提供 JWT 创建、验证和请求认证功能
 """
 
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import jwt
 from fastapi import Request, HTTPException, Cookie
 from functools import wraps
 
-# ==================== JWT 配置 ====================
-# TODO: 部署时通过环境变量 JWT_SECRET 配置
-# import os
-# JWT_SECRET = os.environ.get("JWT_SECRET", "your-fallback-secret")
-JWT_SECRET = "dev-secret-key-change-in-production"
+JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
-JWT_HEADER_NAME = "Authorization"  # 使用 Authorization header
-# =================================================
+JWT_HEADER_NAME = "Authorization"
 
 
 def create_jwt(payload: Dict[str, Any], expires_delta: timedelta) -> str:
@@ -79,7 +75,7 @@ def create_user_jwt(session_id: str, phrase_id: str, valid_until: datetime) -> s
     Args:
         session_id: 会话 ID
         phrase_id: 分享短语 ID
-        valid_until: 过期时间
+        valid_until: 过期时间（如果是 naive datetime，将被视为 UTC 时间）
     
     Returns:
         JWT token 字符串
@@ -89,8 +85,15 @@ def create_user_jwt(session_id: str, phrase_id: str, valid_until: datetime) -> s
         "session_id": session_id,
         "phrase_id": phrase_id
     }
+    # 处理时区：如果 valid_until 是 naive datetime（无时区信息），将其视为 UTC 时间
+    if valid_until.tzinfo is None:
+        # naive datetime，视为 UTC 时间
+        valid_until_aware = valid_until.replace(tzinfo=timezone.utc)
+    else:
+        valid_until_aware = valid_until
+    
     # 计算到 valid_until 的时间差
-    expires_delta = valid_until - datetime.now(timezone.utc)
+    expires_delta = valid_until_aware - datetime.now(timezone.utc)
     if expires_delta.total_seconds() <= 0:
         expires_delta = timedelta(seconds=1)  # 最少 1 秒
     return create_jwt(payload, expires_delta)

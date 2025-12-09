@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Bell, UserPlus, Receipt, Trash2, Edit } from 'lucide-react';
+import { X, Bell, UserPlus, Receipt, Trash2, Edit, Plus, AlertCircle, CheckCircle } from 'lucide-react';
 
 // 根据通知类型获取图标
 const getIcon = (type) => {
@@ -9,14 +9,20 @@ const getIcon = (type) => {
         case 'user_update': return <Edit size={18} />;
         case 'expense_add': return <Receipt size={18} />;
         case 'expense_delete': return <Trash2 size={18} />;
+        case 'add': return <Plus size={18} />;
+        case 'delete': return <Trash2 size={18} />;
+        case 'update': return <Edit size={18} />;
+        case 'success': return <CheckCircle size={18} />;
+        case 'error': return <AlertCircle size={18} />;
         default: return <Bell size={18} />;
     }
 };
 
 // 根据通知类型获取颜色
 const getColor = (type) => {
+    if (type === 'error') return 'bg-red-500';
     if (type.includes('delete')) return 'bg-red-500';
-    if (type.includes('add')) return 'bg-green-500';
+    if (type === 'success' || type.includes('add')) return 'bg-green-500';
     if (type.includes('update')) return 'bg-blue-500';
     return 'bg-primary';
 };

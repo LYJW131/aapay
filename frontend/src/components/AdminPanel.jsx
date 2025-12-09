@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Shield, Plus, Trash2, Key, Clock, RefreshCw, LogOut, X, FolderOpen } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import * as api from '../services/api';
+import { useNotification } from './NotificationProvider';
 
 const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
+    const { addNotification } = useNotification();
     const [sessions, setSessions] = useState([]);
     const [phrases, setPhrases] = useState([]);
     const [newSessionName, setNewSessionName] = useState('');
@@ -12,7 +14,6 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
     const [phraseValidFrom, setPhraseValidFrom] = useState('');
     const [phraseValidUntil, setPhraseValidUntil] = useState('');
     const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
     const [deleteConfirm, setDeleteConfirm] = useState(null); // session id to confirm delete
 
     // 加载会话列表
@@ -51,13 +52,13 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
         e.preventDefault();
         if (!newSessionName.trim()) return;
         setLoading(true);
-        setError('');
         try {
             await api.createSession(newSessionName);
+            addNotification(`会话 "${newSessionName}" 创建成功`, 'add');
             setNewSessionName('');
             loadSessions();
         } catch (err) {
-            setError(err.response?.data?.detail || '创建失败');
+            addNotification(err.response?.data?.detail || '创建失败', 'error');
         } finally {
             setLoading(false);
         }
@@ -68,6 +69,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
         setLoading(true);
         try {
             await api.deleteSession(id);
+            addNotification('会话已删除', 'delete');
             setDeleteConfirm(null);
             loadSessions();
             // 如果删除的是当前会话，清除状态
@@ -75,7 +77,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
                 onSessionChange(null);
             }
         } catch (err) {
-            setError(err.response?.data?.detail || '删除失败');
+            addNotification(err.response?.data?.detail || '删除失败', 'error');
         } finally {
             setLoading(false);
         }
@@ -90,9 +92,10 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
             if (res.data.token) {
                 api.setToken(res.data.token);
             }
+            addNotification(`已切换到 "${session.name}"`, 'update');
             onSessionChange({ session_id: session.id, session_name: session.name });
         } catch (err) {
-            setError(err.response?.data?.detail || '切换失败');
+            addNotification(err.response?.data?.detail || '切换失败', 'error');
         } finally {
             setLoading(false);
         }
@@ -103,20 +106,20 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
         e.preventDefault();
         if (!newPhrase.trim() || !phraseValidFrom || !phraseValidUntil) return;
         setLoading(true);
-        setError('');
         try {
             await api.createPhrase(currentSession.session_id, {
                 phrase: newPhrase,
                 valid_from: new Date(phraseValidFrom).toISOString(),
                 valid_until: new Date(phraseValidUntil).toISOString()
             });
+            addNotification(`分享短语 "${newPhrase}" 创建成功`, 'add');
             setNewPhrase('');
             setPhraseValidFrom('');
             setPhraseValidUntil('');
             setShowPhraseForm(false);
             loadPhrases();
         } catch (err) {
-            setError(err.response?.data?.detail || '创建失败');
+            addNotification(err.response?.data?.detail || '创建失败', 'error');
         } finally {
             setLoading(false);
         }
@@ -126,9 +129,10 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
     const handleDeletePhrase = async (id) => {
         try {
             await api.deletePhrase(id);
+            addNotification('分享短语已删除', 'delete');
             loadPhrases();
         } catch (err) {
-            setError(err.response?.data?.detail || '删除失败');
+            addNotification(err.response?.data?.detail || '删除失败', 'error');
         }
     };
 
@@ -165,13 +169,6 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
                     <LogOut size={14} /> 登出
                 </button>
             </div>
-
-            {error && (
-                <div className="bg-red-50 text-red-600 px-3 py-2 rounded-lg text-sm mb-4">
-                    {error}
-                    <button onClick={() => setError('')} className="ml-2 text-red-400">×</button>
-                </div>
-            )}
 
             {/* 会话选择 */}
             <div className="mb-6">

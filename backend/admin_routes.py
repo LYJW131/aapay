@@ -6,7 +6,7 @@
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 import re
 
@@ -163,44 +163,68 @@ def create_phrase(session_id: str, phrase_data: PhraseCreate):
     """创建分享短语"""
     phrase_id = str(uuid4())
     
-    # 解析时间
+    # 解析时间（处理 ISO 8601 的 Z 后缀，表示 UTC 时间）
     try:
-        valid_from = datetime.fromisoformat(phrase_data.valid_from)
-        valid_until = datetime.fromisoformat(phrase_data.valid_until)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="无效的时间格式，请使用 ISO 格式")
+        valid_from_str = phrase_data.valid_from.replace('Z', '+00:00')
+        valid_until_str = phrase_data.valid_until.replace('Z', '+00:00')
+        valid_from = datetime.fromisoformat(valid_from_str)
+        valid_until = datetime.fromisoformat(valid_until_str)
+        # 如果是 naive datetime，视为 UTC
+        if valid_from.tzinfo is None:
+            valid_from = valid_from.replace(tzinfo=timezone.utc)
+        if valid_until.tzinfo is None:
+            valid_until = valid_until.replace(tzinfo=timezone.utc)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"无效的时间格式，请使用 ISO 格式: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"时间解析错误: {str(e)}")
     
     if valid_until <= valid_from:
         raise HTTPException(status_code=400, detail="结束时间必须晚于开始时间")
     
-    with get_admin_db() as conn:
-        cursor = conn.cursor()
-        
-        # 检查会话存在
-        cursor.execute("SELECT id FROM sessions WHERE id = ?", (session_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="会话不存在")
-        
-        # 检查短语是否已被使用（未过期的）
-        now = datetime.now().isoformat()
-        cursor.execute(
-            "SELECT id FROM share_phrases WHERE phrase = ? AND valid_until > ?",
-            (phrase_data.phrase, now)
-        )
-        if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="该分享短语正在使用中，请等待其过期或使用其他短语")
-        
-        # 生成用户 JWT
-        jwt_token = create_user_jwt(session_id, phrase_id, valid_until)
-        
-        created_at = datetime.now().isoformat()
-        cursor.execute(
-            """INSERT INTO share_phrases 
-               (id, session_id, phrase, jwt_token, valid_from, valid_until, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (phrase_id, session_id, phrase_data.phrase, jwt_token, 
-             phrase_data.valid_from, phrase_data.valid_until, created_at)
-        )
+    try:
+        with get_admin_db() as conn:
+            cursor = conn.cursor()
+            
+            # 检查会话存在
+            cursor.execute("SELECT id FROM sessions WHERE id = ?", (session_id,))
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="会话不存在")
+            
+            now = datetime.now(timezone.utc).isoformat()
+            
+            # 删除同名的已过期短语
+            cursor.execute(
+                "DELETE FROM share_phrases WHERE phrase = ? AND valid_until <= ?",
+                (phrase_data.phrase, now)
+            )
+            
+            # 检查短语是否还在使用中（未过期的）
+            cursor.execute(
+                "SELECT id FROM share_phrases WHERE phrase = ? AND valid_until > ?",
+                (phrase_data.phrase, now)
+            )
+            if cursor.fetchone():
+                raise HTTPException(status_code=400, detail="该分享短语正在使用中，请等待其过期或使用其他短语")
+            
+            # 生成用户 JWT
+            try:
+                jwt_token = create_user_jwt(session_id, phrase_id, valid_until)
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"JWT 创建失败: {str(e)}")
+            
+            created_at = datetime.now().isoformat()
+            cursor.execute(
+                """INSERT INTO share_phrases 
+                   (id, session_id, phrase, jwt_token, valid_from, valid_until, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (phrase_id, session_id, phrase_data.phrase, jwt_token, 
+                 phrase_data.valid_from, phrase_data.valid_until, created_at)
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"数据库操作失败: {str(e)}")
     
     return {
         "id": phrase_id,

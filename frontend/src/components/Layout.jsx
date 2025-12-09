@@ -1,14 +1,37 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { RefreshCw } from 'lucide-react';
 
 const Layout = ({ children, status, sessionName }) => {
+    // 用于平滑过渡的状态
+    const [displayName, setDisplayName] = useState(sessionName);
+    const [isTransitioning, setIsTransitioning] = useState(false);
+
+    useEffect(() => {
+        if (sessionName !== displayName) {
+            // 开始淡出
+            setIsTransitioning(true);
+            // 淡出后更新名称并淡入
+            const timer = setTimeout(() => {
+                setDisplayName(sessionName);
+                setIsTransitioning(false);
+            }, 150);
+            return () => clearTimeout(timer);
+        }
+    }, [sessionName, displayName]);
+
     return (
         <div className="min-h-screen bg-gray-50 flex flex-col items-center py-6 sm:py-12">
             <header className="w-full max-w-7xl px-4 flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-primary-dark flex-shrink-0">AAPay</h1>
-                {sessionName && (
-                    <div className="flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-lg">
-                        <span className="text-sm font-medium text-primary">{sessionName}</span>
+                {displayName && (
+                    <div 
+                        className="flex items-center gap-2 px-3 py-1 bg-primary/10 rounded-lg transition-all duration-150"
+                        style={{
+                            opacity: isTransitioning ? 0 : 1,
+                            transform: isTransitioning ? 'scale(0.95)' : 'scale(1)',
+                        }}
+                    >
+                        <span className="text-sm font-medium text-primary">{displayName}</span>
                     </div>
                 )}
                 <div className="flex items-center gap-2 text-sm text-gray-500 flex-shrink-0">

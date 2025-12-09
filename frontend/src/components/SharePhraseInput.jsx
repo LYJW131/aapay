@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Key, ArrowRight, RefreshCw } from 'lucide-react';
 import * as api from '../services/api';
+import { useNotification } from './NotificationProvider';
 
 const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
+    const { addNotification } = useNotification();
     const [phrase, setPhrase] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -24,6 +26,8 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
                 api.setToken(res.data.token);
             }
             setPhrase('');
+            // 添加切换成功的通知
+            addNotification('会话切换成功', 'success');
             if (onSuccess) {
                 onSuccess(res.data);
             } else {
@@ -31,7 +35,9 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
                 window.location.reload();
             }
         } catch (err) {
-            setError(err.response?.data?.detail || '分享短语无效或已过期');
+            const errorMsg = err.response?.data?.detail || '分享短语无效或已过期';
+            setError(errorMsg);
+            addNotification(errorMsg, 'error');
         } finally {
             setLoading(false);
         }
@@ -65,9 +71,6 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
                         {loading ? '...' : <ArrowRight size={18} />}
                     </button>
                 </form>
-                {error && (
-                    <p className="text-red-500 text-xs mt-2">{error}</p>
-                )}
             </div>
         );
     }
