@@ -1,23 +1,39 @@
 """
 业务逻辑层 - 使用 SQLite 数据库
+支持多会话数据库隔离
 """
 
-from typing import List, Dict
+from typing import List, Dict, Optional
 from datetime import datetime
 from uuid import uuid4
 from collections import defaultdict
 
 from database import get_db, init_db
+from admin_database import get_session_db_path
 
 
 class DataStore:
-    def __init__(self):
+    """
+    数据存储类，支持指定会话 ID 来使用对应的数据库
+    """
+    
+    def __init__(self, session_id: Optional[str] = None):
+        """
+        初始化数据存储
+        
+        Args:
+            session_id: 会话 ID，None 时使用默认数据库（向后兼容）
+        """
+        if session_id:
+            self.db_path = get_session_db_path(session_id)
+        else:
+            self.db_path = None  # 使用默认数据库
         # 确保数据库已初始化
-        init_db()
+        init_db(self.db_path)
 
     def add_user(self, name: str, avatar: str = None) -> Dict:
         """添加新用户"""
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
             # 检查用户数量
@@ -42,7 +58,7 @@ class DataStore:
 
     def delete_user(self, user_id: str):
         """删除用户"""
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
             # 检查用户是否在支出中被引用
@@ -63,7 +79,7 @@ class DataStore:
 
     def update_user(self, user_id: str, new_name: str, new_avatar: str = None) -> Dict:
         """更新用户信息"""
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
             # 检查用户存在
@@ -91,7 +107,7 @@ class DataStore:
 
     def get_users(self) -> List[Dict]:
         """获取所有用户"""
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT id, name, avatar FROM users ORDER BY created_at")
             return [dict(row) for row in cursor.fetchall()]
@@ -112,7 +128,7 @@ class DataStore:
         expense_id = str(uuid4())
         created_at = datetime.now().isoformat()
         
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
             # 插入支出记录
@@ -143,7 +159,7 @@ class DataStore:
 
     def delete_expense(self, expense_id: str):
         """删除支出记录"""
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
             cursor.execute("SELECT id FROM expenses WHERE id = ?", (expense_id,))
@@ -155,7 +171,7 @@ class DataStore:
 
     def get_expenses(self, date_filter: str = None) -> List[Dict]:
         """获取支出记录"""
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
             if date_filter:
@@ -185,7 +201,7 @@ class DataStore:
 
     def get_daily_summary(self) -> Dict[str, Dict[str, float]]:
         """获取每日支出汇总"""
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
             # 按日期和付款人分组统计
@@ -205,7 +221,7 @@ class DataStore:
         """计算债务清算方案"""
         balances = defaultdict(float)
         
-        with get_db() as conn:
+        with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
             # 获取所有支出及其参与者
@@ -278,5 +294,15 @@ class DataStore:
         return transfers
 
 
-# 全局数据存储实例
-store = DataStore()
+def get_store(session_id: Optional[str] = None) -> DataStore:
+    """
+    获取数据存储实例
+    
+    Args:
+        session_id: 会话 ID
+    
+    Returns:
+        DataStore 实例
+    """
+    return DataStore(session_id)
+
