@@ -188,7 +188,7 @@ function AppContent() {
     <Layout status={connectionStatus} sessionName={currentSession?.session_name}>
       {/* 管理员面板 */}
       {isAdmin && (
-        <div className="col-span-full mb-6">
+        <div className="col-span-full">
           <AdminPanel
             currentSession={currentSession}
             onSessionChange={handleSessionChange}
