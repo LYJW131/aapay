@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Key, ArrowRight, RefreshCw } from 'lucide-react';
+import { Key, ArrowRight, RefreshCw, LogOut } from 'lucide-react';
 import * as api from '../services/api';
 import { useNotification } from './NotificationProvider';
 
-const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
+const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
     const { addNotification } = useNotification();
     const [phrase, setPhrase] = useState('');
     const [loading, setLoading] = useState(false);
@@ -12,7 +12,7 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!phrase.trim() || phrase.length < 6) {
-            setError('请输入有效的分享短语（至少6位）');
+            addNotification('请输入有效的分享短语（至少6位）', 'error');
             return;
         }
 
@@ -21,13 +21,22 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
 
         try {
             const res = await api.exchangePhrase(phrase);
-            // 保存返回的 token
-            if (res.data.token) {
-                api.setToken(res.data.token);
+            const newToken = res.data.token;
+            const currentToken = api.getToken();
+
+            // 检查是否与当前会话相同
+            if (newToken && newToken === currentToken) {
+                addNotification('您已在当前会话中', 'info');
+                setPhrase('');
+                return;
+            }
+
+            // 保存新 token
+            if (newToken) {
+                api.setToken(newToken);
             }
             setPhrase('');
-            // 添加切换成功的通知
-            addNotification('会话切换成功', 'success');
+            addNotification('登录成功', 'success');
             if (onSuccess) {
                 onSuccess(res.data);
             } else {
@@ -36,7 +45,6 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
             }
         } catch (err) {
             const errorMsg = err.response?.data?.detail || '分享短语无效或已过期';
-            setError(errorMsg);
             addNotification(errorMsg, 'error');
         } finally {
             setLoading(false);
@@ -47,11 +55,11 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
     if (isCompact) {
         return (
             <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <div className="flex items-center gap-2 mb-3">
-                    <RefreshCw size={16} className="text-primary" />
-                    <span className="text-sm font-medium text-gray-700">切换会话</span>
-                </div>
-                <form onSubmit={handleSubmit} className="flex gap-2">
+                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2 mb-4">
+                    <RefreshCw size={20} className="text-primary" />
+                    切换会话
+                </h2>
+                <form onSubmit={handleSubmit} className="flex gap-2 mb-4">
                     <input
                         type="text"
                         value={phrase}
@@ -60,7 +68,7 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
                             setError('');
                         }}
                         placeholder="输入分享短语"
-                        className="flex-1 h-10 px-3 border border-gray-200 bg-white rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        className="flex-1 h-10 px-3 border border-gray-200 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                         maxLength={32}
                     />
                     <button
@@ -71,23 +79,29 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
                         {loading ? '...' : <ArrowRight size={18} />}
                     </button>
                 </form>
+                {onLogout && (
+                    <button
+                        onClick={onLogout}
+                        className="w-full flex items-center justify-center gap-2 text-red-500 bg-red-50 hover:bg-red-100 py-2 rounded-lg transition-colors text-sm"
+                    >
+                        <LogOut size={16} />
+                        退出登录
+                    </button>
+                )}
             </div>
         );
     }
 
     // 完整模式（用于未认证用户）
     return (
-        <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 max-w-md mx-auto">
+        <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 w-full max-w-lg mx-auto">
             <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Key size={32} className="text-primary" />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                <h2 className="text-2xl font-bold text-gray-800">
                     欢迎使用 AAPay
                 </h2>
-                <p className="text-gray-500">
-                    请输入分享短语以访问账本
-                </p>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -106,11 +120,6 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
                     />
                 </div>
 
-                {error && (
-                    <div className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm text-center">
-                        {error}
-                    </div>
-                )}
 
                 <button
                     type="submit"
@@ -130,10 +139,6 @@ const SharePhraseInput = ({ onSuccess, isCompact = false }) => {
                     )}
                 </button>
             </form>
-
-            <p className="text-center text-gray-400 text-sm mt-6">
-                没有分享短语？请联系管理员获取
-            </p>
         </div>
     );
 };

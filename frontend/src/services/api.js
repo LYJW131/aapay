@@ -73,14 +73,19 @@ export const logout = () => {
 
 // ==================== SSE ====================
 
-export const subscribeToEvents = (onMessage, onError) => {
+export const subscribeToEvents = (onMessage, onError, onConnect) => {
     const token = getToken();
 
     // 原生 EventSource 不支持自定义 header
     // 使用 fetch + ReadableStream 实现带 header 的 SSE
     const controller = new AbortController();
+    let isAborted = false;
+    let reconnectDelay = 1000; // 初始重连延迟 1 秒
+    const maxReconnectDelay = 30000; // 最大重连延迟 30 秒
 
     const connect = async () => {
+        if (isAborted) return;
+
         try {
             const response = await fetch(`${BASE_URL}/api/events`, {
                 headers: token ? { 'Authorization': `Bearer ${token}` } : {},
@@ -91,13 +96,24 @@ export const subscribeToEvents = (onMessage, onError) => {
                 throw new Error(`SSE Error: ${response.status}`);
             }
 
+            // 连接成功，重置重连延迟并通知
+            reconnectDelay = 1000;
+            if (onConnect) onConnect();
+
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
 
             while (true) {
                 const { done, value } = await reader.read();
-                if (done) break;
+                if (done) {
+                    // 连接正常结束，尝试重连
+                    if (!isAborted) {
+                        console.log('SSE connection closed, reconnecting...');
+                        setTimeout(connect, reconnectDelay);
+                    }
+                    break;
+                }
 
                 buffer += decoder.decode(value, { stream: true });
                 const lines = buffer.split('\n');
@@ -117,9 +133,14 @@ export const subscribeToEvents = (onMessage, onError) => {
                 }
             }
         } catch (error) {
-            if (error.name !== 'AbortError') {
+            if (error.name !== 'AbortError' && !isAborted) {
                 console.error('SSE Error:', error);
                 if (onError) onError(error);
+
+                // 错误后自动重连，使用指数退避
+                console.log(`SSE reconnecting in ${reconnectDelay / 1000}s...`);
+                setTimeout(connect, reconnectDelay);
+                reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
             }
         }
     };
@@ -127,6 +148,7 @@ export const subscribeToEvents = (onMessage, onError) => {
     connect();
 
     return () => {
+        isAborted = true;
         controller.abort();
     };
 };

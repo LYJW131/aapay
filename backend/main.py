@@ -95,6 +95,9 @@ async def sse_endpoint(request: Request):
         q = asyncio.Queue()
         session_clients[session_id].append(q)
         try:
+            # 立即发送初始心跳，让前端知道连接已建立
+            yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+            
             while True:
                 if await request.is_disconnected():
                     break

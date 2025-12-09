@@ -4,19 +4,14 @@ import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import * as api from '../services/api';
 import { useNotification } from './NotificationProvider';
 
-const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
+const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, onCollapseChange, sessions, setSessions, phrases, setPhrases }) => {
     const { addNotification } = useNotification();
-    const [isCollapsed, setIsCollapsed] = useState(() => {
-        const saved = localStorage.getItem('adminPanelCollapsed');
-        return saved === 'true';
-    });
 
     // 保存折叠状态到 localStorage
     useEffect(() => {
         localStorage.setItem('adminPanelCollapsed', isCollapsed);
     }, [isCollapsed]);
-    const [sessions, setSessions] = useState([]);
-    const [phrases, setPhrases] = useState([]);
+
     const [newSessionName, setNewSessionName] = useState('');
     const [showPhraseForm, setShowPhraseForm] = useState(false);
     const [newPhrase, setNewPhrase] = useState('');
@@ -24,7 +19,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
     const [phraseValidUntil, setPhraseValidUntil] = useState('');
     const [loading, setLoading] = useState(false);
 
-    // 加载会话列表
+    // 刷新会话列表（供创建/删除后使用）
     const loadSessions = async () => {
         try {
             const res = await api.getSessions();
@@ -34,7 +29,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
         }
     };
 
-    // 加载当前会话的分享短语
+    // 刷新当前会话的分享短语（供创建/删除后使用）
     const loadPhrases = async () => {
         if (!currentSession) return;
         try {
@@ -44,16 +39,6 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
             console.error('Failed to load phrases', err);
         }
     };
-
-    useEffect(() => {
-        loadSessions();
-    }, []);
-
-    useEffect(() => {
-        if (currentSession) {
-            loadPhrases();
-        }
-    }, [currentSession]);
 
     // 创建会话
     const handleCreateSession = async (e) => {
@@ -173,7 +158,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
             {/* 可点击的标题栏 */}
             <div
                 className="flex items-center justify-between p-6 cursor-pointer hover:bg-purple-100/50 transition-colors"
-                onClick={() => setIsCollapsed(!isCollapsed)}
+                onClick={() => onCollapseChange(!isCollapsed)}
             >
                 <h2 className="text-xl font-bold text-purple-800 flex items-center gap-2">
                     <Shield size={20} className="text-purple-600" />
@@ -203,7 +188,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
             <AnimatePresence initial={false}>
                 {!isCollapsed && (
                     <motion.div
-                        initial={{ height: 0, opacity: 0 }}
+                        initial={false}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
                         transition={{ duration: 0.3, ease: 'easeInOut' }}
@@ -331,14 +316,14 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
                                                     transition={{ duration: 0.2 }}
                                                     style={{ overflow: 'hidden' }}
                                                 >
-                                                    <div className="flex gap-2 mt-2">
+                                                    <div className="flex flex-col sm:flex-row gap-2 mt-2">
                                                         <div className="flex-1">
                                                             <label className="text-xs text-gray-500">开始时间</label>
                                                             <input
                                                                 type="datetime-local"
                                                                 value={phraseValidFrom}
                                                                 onChange={(e) => setPhraseValidFrom(e.target.value)}
-                                                                className="w-full h-10 px-2 border border-gray-200 rounded-lg text-sm"
+                                                                className="w-full h-10 px-2 border border-gray-200 rounded-lg text-sm bg-gray-100 appearance-none"
                                                             />
                                                         </div>
                                                         <div className="flex-1">
@@ -347,7 +332,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
                                                                 type="datetime-local"
                                                                 value={phraseValidUntil}
                                                                 onChange={(e) => setPhraseValidUntil(e.target.value)}
-                                                                className="w-full h-10 px-2 border border-gray-200 rounded-lg text-sm"
+                                                                className="w-full h-10 px-2 border border-gray-200 rounded-lg text-sm bg-gray-100 appearance-none"
                                                             />
                                                         </div>
                                                     </div>
@@ -370,13 +355,13 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
                                                 >
                                                     <div className="flex gap-2 pb-2">
                                                         <div
-                                                            className={`flex-1 h-10 px-3 rounded-lg border flex items-center justify-between ${isPhraseActive(phrase)
+                                                            className={`flex-1 min-h-[40px] px-3 py-2 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-1 ${isPhraseActive(phrase)
                                                                 ? 'bg-green-50 border-green-200'
                                                                 : 'bg-gray-50 border-gray-200 opacity-60'
                                                                 }`}
                                                         >
                                                             <span className="font-mono font-bold text-gray-700 text-sm">{phrase.phrase}</span>
-                                                            <span className="text-xs text-gray-500 flex items-center font-mono">
+                                                            <span className="text-xs text-gray-500 flex items-center font-mono flex-shrink-0">
                                                                 <Clock size={12} className="mr-1 flex-shrink-0" />
                                                                 <span>{formatDateTime(phrase.valid_from)}</span>
                                                                 <span className="mx-1">~</span>
@@ -385,7 +370,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout }) => {
                                                         </div>
                                                         <button
                                                             onClick={() => handleDeletePhrase(phrase.id)}
-                                                            className="h-10 w-10 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
+                                                            className="self-stretch w-10 flex items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
                                                         >
                                                             <Trash2 size={18} />
                                                         </button>
