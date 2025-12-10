@@ -41,13 +41,19 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                 const session = currentSessionRef.current;
                 switch (event.type) {
                     case 'SESSION_CREATED':
-                        // 刷新会话列表
-                        api.getSessions().then(res => setSessionsRef.current(res.data)).catch(console.error);
+                        // 直接从事件数据更新，而非重新请求
+                        if (event.data?.session) {
+                            setSessionsRef.current(prev => [event.data.session, ...prev]);
+                        }
                         addNotificationRef.current(`会话 "${event.data?.session?.name}" 已创建`, 'add');
                         break;
                     case 'SESSION_DELETED':
-                        // 刷新会话列表
-                        api.getSessions().then(res => setSessionsRef.current(res.data)).catch(console.error);
+                        // 直接过滤删除的会话
+                        if (event.data?.session_id) {
+                            setSessionsRef.current(prev =>
+                                prev.filter(s => s.id !== event.data.session_id)
+                            );
+                        }
                         addNotificationRef.current('会话已被删除', 'delete');
                         // 如果删除的是当前会话，清除状态
                         if (session?.session_id === event.data?.session_id) {
@@ -55,16 +61,18 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                         }
                         break;
                     case 'PHRASE_CREATED':
-                        // 如果是当前会话的短语，刷新短语列表
-                        if (session?.session_id === event.data?.session_id) {
-                            api.getPhrases(session.session_id).then(res => setPhrasesRef.current(res.data)).catch(console.error);
+                        // 直接从事件数据更新短语列表
+                        if (session?.session_id === event.data?.session_id && event.data?.phrase) {
+                            setPhrasesRef.current(prev => [event.data.phrase, ...prev]);
                         }
                         addNotificationRef.current(`分享短语 "${event.data?.phrase?.phrase}" 已创建`, 'add');
                         break;
                     case 'PHRASE_DELETED':
-                        // 如果是当前会话的短语，刷新短语列表
-                        if (session?.session_id === event.data?.session_id) {
-                            api.getPhrases(session.session_id).then(res => setPhrasesRef.current(res.data)).catch(console.error);
+                        // 直接过滤删除的短语
+                        if (session?.session_id === event.data?.session_id && event.data?.phrase_id) {
+                            setPhrasesRef.current(prev =>
+                                prev.filter(p => p.id !== event.data.phrase_id)
+                            );
                         }
                         addNotificationRef.current('分享短语已删除', 'delete');
                         break;

@@ -36,16 +36,22 @@ function AppContent() {
 
   // Global Date State (Defaults to Today)
   const [globalDate, setGlobalDate] = useState(new Date().toISOString().split('T')[0]);
+  const globalDateRef = React.useRef(globalDate);
+
+  // 保持 globalDate ref 最新
+  useEffect(() => {
+    globalDateRef.current = globalDate;
+  }, [globalDate]);
 
   // 获取业务数据（内部使用，返回 Promise）
-  const loadData = async (sessionId, loadAdmin = false) => {
+  const loadData = async (sessionId, loadAdmin = false, date = null) => {
     try {
-      // 基础数据
+      // 基础数据（debts 使用日期过滤）
       const [uRes, eRes, sRes, dRes] = await Promise.all([
         api.getUsers(),
         api.getExpenses(),
         api.getSummary(),
-        api.getDebts()
+        api.getDebts(date)
       ]);
       setUsers(uRes.data);
       setExpenses(eRes.data);
@@ -89,8 +95,9 @@ function AppContent() {
         };
         setCurrentSession(session);
 
-        // 获取数据后再设置认证状态
-        await loadData(session.session_id, true);
+        // 获取数据后再设置认证状态（初始使用今日日期）
+        const today = new Date().toISOString().split('T')[0];
+        await loadData(session.session_id, true, today);
         setAuthState('admin');
       } catch {
         // 管理员但还没选择会话，只加载 sessions 列表
@@ -114,8 +121,9 @@ function AppContent() {
         setCurrentSession(session);
         setIsAdmin(false);
 
-        // 获取数据后再设置认证状态
-        await loadData(null, false);
+        // 获取数据后再设置认证状态（初始使用今日日期）
+        const today = new Date().toISOString().split('T')[0];
+        await loadData(null, false, today);
         setAuthState('user');
       } catch {
         // 未认证
@@ -207,8 +215,39 @@ function AppContent() {
             return;
           }
 
-          // 刷新数据
-          loadData(currentSession?.session_id, isAdmin).catch(console.error);
+          // 根据事件类型增量更新状态
+          if (data.type === 'USER_UPDATE' && data.data) {
+            switch (data.action) {
+              case 'user_add':
+                setUsers(prev => [...prev, data.data.user]);
+                break;
+              case 'user_delete':
+                setUsers(prev => prev.filter(u => u.id !== data.data.user_id));
+                break;
+              case 'user_update':
+                setUsers(prev => prev.map(u =>
+                  u.id === data.data.user.id ? data.data.user : u
+                ));
+                break;
+            }
+            // 用户操作只更新 summary（debts 需要用户刷新日期后重新获取）
+            if (data.data.summary) setSummary(data.data.summary);
+          } else if (data.type === 'EXPENSE_UPDATE' && data.data) {
+            switch (data.action) {
+              case 'expense_add':
+                setExpenses(prev => [...prev, data.data.expense]);
+                break;
+              case 'expense_delete':
+                setExpenses(prev => prev.filter(e => e.id !== data.data.expense_id));
+                break;
+            }
+            // 直接从事件中获取 summary
+            if (data.data.summary) setSummary(data.data.summary);
+            // 只有当事件日期与当前选中日期匹配时才更新 debts
+            if (data.data.debts && data.data.date === globalDateRef.current) {
+              setDebts(data.data.debts);
+            }
+          }
 
           // 显示通知
           if (data.message) {
@@ -238,6 +277,22 @@ function AppContent() {
     // 有会话但数据未加载时保持 connecting 状态
   }, [authState, currentSession, dataLoaded, isAdmin]);
 
+  // 当日期改变时，重新获取 debts 数据
+  useEffect(() => {
+    if (!currentSession || !dataLoaded) return;
+
+    const refreshDebts = async () => {
+      try {
+        const dRes = await api.getDebts(globalDate);
+        setDebts(dRes.data);
+      } catch (error) {
+        console.error('Failed to refresh debts', error);
+      }
+    };
+
+    refreshDebts();
+  }, [globalDate, currentSession, dataLoaded]);
+
   // 处理会话切换
   const handleSessionChange = async (session) => {
     setDataLoaded(false); // 重置加载状态
@@ -245,7 +300,7 @@ function AppContent() {
     if (session) {
       // 重新获取数据（包括管理员数据）
       try {
-        await loadData(session.session_id, isAdmin);
+        await loadData(session.session_id, isAdmin, globalDate);
       } catch (error) {
         console.error('Failed to load data after session change', error);
       }

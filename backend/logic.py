@@ -217,18 +217,24 @@ class DataStore:
             
             return dict(summary)
 
-    def calculate_debts(self) -> List[Dict]:
-        """计算债务清算方案"""
+    def calculate_debts(self, date_filter: str) -> List[Dict]:
+        """计算指定日期的债务清算方案
+        
+        Args:
+            date_filter: 日期过滤，格式为 YYYY-MM-DD，必须提供
+        """
         balances = defaultdict(float)
         
         with get_db(self.db_path) as conn:
             cursor = conn.cursor()
             
-            # 获取所有支出及其参与者
+            # 获取指定日期的支出及其参与者
             cursor.execute(
                 """SELECT e.id, e.payer_id, e.amount, ep.user_id as participant_id
                    FROM expenses e
-                   JOIN expense_participants ep ON e.id = ep.expense_id"""
+                   JOIN expense_participants ep ON e.id = ep.expense_id
+                   WHERE e.date = ?""",
+                (date_filter,)
             )
             
             # 按支出 ID 分组计算

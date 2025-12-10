@@ -34,6 +34,20 @@ app.include_router(admin_router)
 session_clients: Dict[str, List[asyncio.Queue]] = defaultdict(list)
 
 
+def get_enriched_debts(store, date: str):
+    """计算指定日期的债务并附带用户名"""
+    transfers = store.calculate_debts(date)
+    users = {u["id"]: u["name"] for u in store.get_users()}
+    result = []
+    for t in transfers:
+        result.append({
+            "from_user": users.get(t["from"], "Unknown"),
+            "to_user": users.get(t["to"], "Unknown"),
+            "amount": t["amount"]
+        })
+    return result
+
+
 async def broadcast_event(
     session_id: str, 
     event_type: str, 
@@ -196,7 +210,11 @@ async def create_user(user: models.UserCreate, request: Request):
             session_info["session_id"],
             "USER_UPDATE", 
             action="user_add",
-            message=f"新成员 {user.name} 加入了"
+            message=f"新成员 {user.name} 加入了",
+            data={
+                "user": new_user,
+                "summary": store.get_daily_summary()
+            }
         )
         return new_user
     except ValueError as e:
@@ -218,7 +236,11 @@ async def delete_user(user_id: str, request: Request):
             session_info["session_id"],
             "USER_UPDATE",
             action="user_delete", 
-            message=f"成员 {user_name} 已被移除"
+            message=f"成员 {user_name} 已被移除",
+            data={
+                "user_id": user_id,
+                "summary": store.get_daily_summary()
+            }
         )
         return {"status": "success"}
     except ValueError as e:
@@ -236,7 +258,11 @@ async def update_user(user_id: str, user_update: models.UserCreate, request: Req
             session_info["session_id"],
             "USER_UPDATE",
             action="user_update",
-            message=f"成员 {user_update.name} 信息已更新"
+            message=f"成员 {user_update.name} 信息已更新",
+            data={
+                "user": updated_user,
+                "summary": store.get_daily_summary()
+            }
         )
         return updated_user
     except ValueError as e:
@@ -274,7 +300,13 @@ async def create_expense(expense: models.ExpenseCreate, request: Request):
             session_info["session_id"],
             "EXPENSE_UPDATE",
             action="expense_add",
-            message=f"{payer_name} 支付了 ¥{expense.amount:.2f} ({expense.description})"
+            message=f"{payer_name} 支付了 ¥{expense.amount:.2f} ({expense.description})",
+            data={
+                "expense": new_expense,
+                "summary": store.get_daily_summary(),
+                "debts": get_enriched_debts(store, expense.date),
+                "date": expense.date
+            }
         )
         return new_expense
     except ValueError as e:
@@ -287,16 +319,23 @@ async def delete_expense(expense_id: str, request: Request):
     store = get_store(session_info["session_id"])
     
     try:
-        # 获取支出信息用于通知
+        # 获取支出信息用于通知（包括日期）
         expense = next((e for e in store.get_expenses() if e["id"] == expense_id), None)
         desc = expense["description"] if expense else "一笔支出"
+        expense_date = expense["date"] if expense else None
         
         store.delete_expense(expense_id)
         await broadcast_event(
             session_info["session_id"],
             "EXPENSE_UPDATE",
             action="expense_delete",
-            message=f"已删除: {desc}"
+            message=f"已删除: {desc}",
+            data={
+                "expense_id": expense_id,
+                "summary": store.get_daily_summary(),
+                "debts": get_enriched_debts(store, expense_date) if expense_date else [],
+                "date": expense_date
+            }
         )
         return {"status": "success"}
     except ValueError as e:
@@ -306,11 +345,12 @@ async def delete_expense(expense_id: str, request: Request):
 # ==================== Debt Routes (需要认证) ====================
 
 @app.get("/api/debts")
-def get_debts(request: Request):
+def get_debts(request: Request, date: str):
+    """获取指定日期的转账结算，date参数必须"""
     session_info = require_session(request)
     store = get_store(session_info["session_id"])
     
-    transfers = store.calculate_debts()
+    transfers = store.calculate_debts(date)
     # Enrich with names
     users = {u["id"]: u["name"] for u in store.get_users()}
     result = []

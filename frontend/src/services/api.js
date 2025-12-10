@@ -48,7 +48,7 @@ export const getExpenses = (date) => api.get('/expenses', { params: { date } });
 export const createExpense = (expense) => api.post('/expenses', expense);
 export const deleteExpense = (id) => api.delete(`/expenses/${id}`);
 
-export const getDebts = () => api.get('/debts');
+export const getDebts = (date) => api.get('/debts', { params: { date } });
 export const getSummary = () => api.get('/summary');
 
 // ==================== 管理员 API ====================
