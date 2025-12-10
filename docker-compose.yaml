@@ -4,9 +4,11 @@ services:
     container_name: aapay-backend
     restart: unless-stopped
     volumes:
-      - ./backend:/app
-    env_file:
-      - .env
+      - ./backend:/app:ro
+      - ./data:/data
+    environment:
+      - TZ=${TZ}
+      - JWT_SECRET=${JWT_SECRET}
 
   frontend:
     image: nginx
