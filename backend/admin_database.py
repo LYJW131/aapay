@@ -8,7 +8,18 @@ import os
 from contextlib import contextmanager
 from datetime import datetime
 
-ADMIN_DATABASE_FILE = "admin.db"
+# 数据目录（与 backend 同级的 data 文件夹）
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+ADMIN_DATABASE_FILE = os.path.join(DATA_DIR, "admin.db")
+SESSIONS_DIR = os.path.join(DATA_DIR, "sessions")
+
+
+def ensure_data_dir():
+    """确保数据目录存在"""
+    if not os.path.exists(DATA_DIR):
+        os.makedirs(DATA_DIR)
+    if not os.path.exists(SESSIONS_DIR):
+        os.makedirs(SESSIONS_DIR)
 
 
 def get_admin_connection() -> sqlite3.Connection:
@@ -66,19 +77,9 @@ def init_admin_db():
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_phrases_phrase ON share_phrases(phrase)")
 
 
-# 会话数据库目录
-SESSIONS_DIR = "sessions"
-
-
 def get_session_db_path(session_id: str) -> str:
     """获取会话数据库文件路径"""
     return os.path.join(SESSIONS_DIR, f"{session_id}.db")
-
-
-def ensure_sessions_dir():
-    """确保会话目录存在"""
-    if not os.path.exists(SESSIONS_DIR):
-        os.makedirs(SESSIONS_DIR)
 
 
 def delete_session_db(session_id: str):
@@ -89,5 +90,5 @@ def delete_session_db(session_id: str):
 
 
 # 模块加载时初始化
-ensure_sessions_dir()
+ensure_data_dir()
 init_admin_db()

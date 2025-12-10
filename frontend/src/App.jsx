@@ -154,6 +154,8 @@ function AppContent() {
     window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
     try {
+      // 先删除本地的旧 JWT，再交换新的
+      api.removeToken();
       const res = await api.exchangePhrase(phrase);
       const newToken = res.data.token;
       if (newToken) {
