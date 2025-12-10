@@ -18,6 +18,71 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
         localStorage.setItem('adminPanelCollapsed', isCollapsed);
     }, [isCollapsed]);
 
+    // 使用 ref 保持最新的引用，避免 SSE 重连
+    const currentSessionRef = React.useRef(currentSession);
+    const setSessionsRef = React.useRef(setSessions);
+    const setPhrasesRef = React.useRef(setPhrases);
+    const onSessionChangeRef = React.useRef(onSessionChange);
+    const addNotificationRef = React.useRef(addNotification);
+
+    useEffect(() => {
+        currentSessionRef.current = currentSession;
+        setSessionsRef.current = setSessions;
+        setPhrasesRef.current = setPhrases;
+        onSessionChangeRef.current = onSessionChange;
+        addNotificationRef.current = addNotification;
+    });
+
+    // 订阅管理员事件流以实现跨设备同步
+    useEffect(() => {
+        const unsubscribe = api.subscribeToAdminEvents(
+            (event) => {
+                console.log('Admin event received:', event);
+                const session = currentSessionRef.current;
+                switch (event.type) {
+                    case 'SESSION_CREATED':
+                        // 刷新会话列表
+                        api.getSessions().then(res => setSessionsRef.current(res.data)).catch(console.error);
+                        addNotificationRef.current(`会话 "${event.data?.session?.name}" 已创建`, 'add');
+                        break;
+                    case 'SESSION_DELETED':
+                        // 刷新会话列表
+                        api.getSessions().then(res => setSessionsRef.current(res.data)).catch(console.error);
+                        addNotificationRef.current('会话已被删除', 'delete');
+                        // 如果删除的是当前会话，清除状态
+                        if (session?.session_id === event.data?.session_id) {
+                            onSessionChangeRef.current(null);
+                        }
+                        break;
+                    case 'PHRASE_CREATED':
+                        // 如果是当前会话的短语，刷新短语列表
+                        if (session?.session_id === event.data?.session_id) {
+                            api.getPhrases(session.session_id).then(res => setPhrasesRef.current(res.data)).catch(console.error);
+                        }
+                        addNotificationRef.current(`分享短语 "${event.data?.phrase?.phrase}" 已创建`, 'add');
+                        break;
+                    case 'PHRASE_DELETED':
+                        // 如果是当前会话的短语，刷新短语列表
+                        if (session?.session_id === event.data?.session_id) {
+                            api.getPhrases(session.session_id).then(res => setPhrasesRef.current(res.data)).catch(console.error);
+                        }
+                        addNotificationRef.current('分享短语已删除', 'delete');
+                        break;
+                    default:
+                        break;
+                }
+            },
+            (error) => {
+                console.error('Admin SSE error:', error);
+            },
+            () => {
+                console.log('Admin SSE connected');
+            }
+        );
+
+        return () => unsubscribe();
+    }, []); // 空依赖数组，只在组件挂载时订阅一次
+
     const [newSessionName, setNewSessionName] = useState('');
     const [showPhraseForm, setShowPhraseForm] = useState(false);
     const [newPhrase, setNewPhrase] = useState('');
@@ -56,9 +121,8 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
         setLoading(true);
         try {
             await api.createSession(newSessionName);
-            addNotification(`会话 "${newSessionName}" 创建成功`, 'add');
+            // 通知由 SSE 事件统一处理
             setNewSessionName('');
-            loadSessions();
         } catch (err) {
             addNotification(err.response?.data?.detail || '创建失败', 'error');
         } finally {
@@ -74,12 +138,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
         setLoading(true);
         try {
             await api.deleteSession(id);
-            addNotification('会话已删除', 'delete');
-            loadSessions();
-            // 如果删除的是当前会话，清除状态
-            if (currentSession?.session_id === id) {
-                onSessionChange(null);
-            }
+            // 通知和状态更新由 SSE 事件统一处理
         } catch (err) {
             addNotification(err.response?.data?.detail || '删除失败', 'error');
         } finally {
@@ -126,12 +185,11 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                 valid_from: new Date(phraseValidFrom).toISOString(),
                 valid_until: new Date(phraseValidUntil).toISOString()
             });
-            addNotification(`分享短语 "${newPhrase}" 创建成功`, 'add');
+            // 通知由 SSE 事件统一处理
             setNewPhrase('');
             setPhraseValidFrom('');
             setPhraseValidUntil('');
             setShowPhraseForm(false);
-            loadPhrases();
         } catch (err) {
             addNotification(err.response?.data?.detail || '创建失败', 'error');
         } finally {
@@ -143,8 +201,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
     const handleDeletePhrase = async (id) => {
         try {
             await api.deletePhrase(id);
-            addNotification('分享短语已删除', 'delete');
-            loadPhrases();
+            // 通知由 SSE 事件统一处理
         } catch (err) {
             addNotification(err.response?.data?.detail || '删除失败', 'error');
         }
@@ -153,12 +210,11 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
     // 格式化时间显示
     const formatDateTime = (isoString) => {
         const date = new Date(isoString);
-        return date.toLocaleString('zh-CN', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        const month = date.getMonth() + 1;
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${month}月${day}日  ${hours}:${minutes}`;
     };
 
     // 检查短语是否有效

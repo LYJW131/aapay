@@ -153,4 +153,79 @@ export const subscribeToEvents = (onMessage, onError, onConnect) => {
     };
 };
 
+// ==================== Admin SSE ====================
 
+export const subscribeToAdminEvents = (onMessage, onError, onConnect) => {
+    const token = getToken();
+
+    const controller = new AbortController();
+    let isAborted = false;
+    let reconnectDelay = 1000;
+    const maxReconnectDelay = 30000;
+
+    const connect = async () => {
+        if (isAborted) return;
+
+        try {
+            const response = await fetch(`${BASE_URL}/admin/events`, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+                signal: controller.signal
+            });
+
+            if (!response.ok) {
+                throw new Error(`Admin SSE Error: ${response.status}`);
+            }
+
+            reconnectDelay = 1000;
+            if (onConnect) onConnect();
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    if (!isAborted) {
+                        console.log('Admin SSE connection closed, reconnecting...');
+                        setTimeout(connect, reconnectDelay);
+                    }
+                    break;
+                }
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (data.type !== 'heartbeat') {
+                                onMessage(data);
+                            }
+                        } catch (e) {
+                            console.error('Admin SSE Parse Error', e);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            if (error.name !== 'AbortError' && !isAborted) {
+                console.error('Admin SSE Error:', error);
+                if (onError) onError(error);
+
+                console.log(`Admin SSE reconnecting in ${reconnectDelay / 1000}s...`);
+                setTimeout(connect, reconnectDelay);
+                reconnectDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
+            }
+        }
+    };
+
+    connect();
+
+    return () => {
+        isAborted = true;
+        controller.abort();
+    };
+};

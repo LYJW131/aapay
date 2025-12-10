@@ -3,11 +3,14 @@
 提供会话管理和分享短语管理的 API 端点
 """
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 from datetime import datetime, timezone
 from uuid import uuid4
+import asyncio
+import json
 import re
 
 from admin_database import get_admin_db, get_session_db_path, delete_session_db
@@ -15,6 +18,41 @@ from auth import create_admin_jwt, create_user_jwt
 from database import init_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+# ==================== Admin SSE Setup ====================
+
+# 管理员客户端队列（所有管理员共享）
+admin_clients: List[asyncio.Queue] = []
+
+
+async def broadcast_admin_event(
+    event_type: str,
+    data: dict = None
+):
+    """广播事件到所有管理员客户端
+    
+    Args:
+        event_type: 事件类型 (SESSION_CREATED, SESSION_DELETED, PHRASE_CREATED, PHRASE_DELETED)
+        data: 附加数据
+    """
+    payload = {
+        "type": event_type,
+        "data": data
+    }
+    message_str = json.dumps(payload, ensure_ascii=False)
+    
+    disconnected_clients = []
+    
+    for client in admin_clients:
+        try:
+            await client.put(message_str)
+        except:
+            disconnected_clients.append(client)
+    
+    for client in disconnected_clients:
+        if client in admin_clients:
+            admin_clients.remove(client)
 
 
 # ==================== Pydantic Models ====================
@@ -62,6 +100,40 @@ def admin_auth():
     return {"status": "authenticated"}
 
 
+# ==================== Admin SSE Endpoint ====================
+
+@router.get("/events")
+async def admin_sse_endpoint(request: Request):
+    """管理员 SSE 端点，用于跨设备同步管理员操作
+    
+    注意：此端点不需要 JWT 验证，因为 /admin 路径由 OAuth2 代理保护
+    管理员身份已通过 OAuth2 验证
+    """
+    
+    async def event_generator():
+        q = asyncio.Queue()
+        admin_clients.append(q)
+        try:
+            # 立即发送初始心跳
+            yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+            
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    data = await asyncio.wait_for(q.get(), timeout=15.0)
+                    yield f"data: {data}\n\n"
+                except asyncio.TimeoutError:
+                    yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+        except Exception as e:
+            print(f"Admin SSE Error: {e}")
+        finally:
+            if q in admin_clients:
+                admin_clients.remove(q)
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 # ==================== Session Management ====================
 
 @router.get("/sessions", response_model=List[SessionResponse])
@@ -74,7 +146,7 @@ def get_sessions():
 
 
 @router.post("/sessions", response_model=SessionResponse)
-def create_session(session: SessionCreate):
+async def create_session(session: SessionCreate):
     """创建新会话"""
     session_id = str(uuid4())
     
@@ -96,11 +168,16 @@ def create_session(session: SessionCreate):
     db_path = get_session_db_path(session_id)
     init_db(db_path)
     
-    return {"id": session_id, "name": session.name, "created_at": created_at}
+    result = {"id": session_id, "name": session.name, "created_at": created_at}
+    
+    # 广播事件
+    await broadcast_admin_event("SESSION_CREATED", {"session": result})
+    
+    return result
 
 
 @router.delete("/sessions/{session_id}")
-def delete_session(session_id: str):
+async def delete_session(session_id: str):
     """删除会话"""
     with get_admin_db() as conn:
         cursor = conn.cursor()
@@ -115,6 +192,9 @@ def delete_session(session_id: str):
     
     # 删除会话数据库文件
     delete_session_db(session_id)
+    
+    # 广播事件
+    await broadcast_admin_event("SESSION_DELETED", {"session_id": session_id})
     
     return {"status": "success"}
 
@@ -159,7 +239,7 @@ def get_phrases(session_id: str):
 
 
 @router.post("/sessions/{session_id}/phrases", response_model=PhraseResponse)
-def create_phrase(session_id: str, phrase_data: PhraseCreate):
+async def create_phrase(session_id: str, phrase_data: PhraseCreate):
     """创建分享短语"""
     phrase_id = str(uuid4())
     
@@ -226,7 +306,7 @@ def create_phrase(session_id: str, phrase_data: PhraseCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"数据库操作失败: {str(e)}")
     
-    return {
+    result = {
         "id": phrase_id,
         "session_id": session_id,
         "phrase": phrase_data.phrase,
@@ -234,18 +314,29 @@ def create_phrase(session_id: str, phrase_data: PhraseCreate):
         "valid_until": phrase_data.valid_until,
         "created_at": created_at
     }
+    
+    # 广播事件
+    await broadcast_admin_event("PHRASE_CREATED", {"phrase": result, "session_id": session_id})
+    
+    return result
 
 
 @router.delete("/phrases/{phrase_id}")
-def delete_phrase(phrase_id: str):
+async def delete_phrase(phrase_id: str):
     """删除分享短语"""
+    session_id = None
     with get_admin_db() as conn:
         cursor = conn.cursor()
         
-        cursor.execute("SELECT id FROM share_phrases WHERE id = ?", (phrase_id,))
-        if not cursor.fetchone():
+        cursor.execute("SELECT id, session_id FROM share_phrases WHERE id = ?", (phrase_id,))
+        row = cursor.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="分享短语不存在")
+        session_id = row["session_id"]
         
         cursor.execute("DELETE FROM share_phrases WHERE id = ?", (phrase_id,))
+    
+    # 广播事件
+    await broadcast_admin_event("PHRASE_DELETED", {"phrase_id": phrase_id, "session_id": session_id})
     
     return {"status": "success"}
