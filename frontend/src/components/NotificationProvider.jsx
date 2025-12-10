@@ -29,10 +29,25 @@ export const NotificationProvider = ({ children }) => {
 
     const addNotification = useCallback((message, type = 'info') => {
         const id = ++notificationId;
-        setNotifications(prev => [...prev, { id, message, type, isExiting: false }]);
+        const isMobile = window.innerWidth < 640;
+        const maxNotifications = isMobile ? 3 : 5;
+
+        setNotifications(prev => {
+            const newNotifications = [...prev, { id, message, type, isExiting: false }];
+            // 获取当前非退出中的通知数量
+            const activeNotifications = newNotifications.filter(n => !n.isExiting);
+
+            // 如果超出限制，触发最旧通知的退出
+            if (activeNotifications.length > maxNotifications) {
+                const oldestActive = activeNotifications[0];
+                startExitNotification(oldestActive.id);
+            }
+
+            return newNotifications;
+        });
 
         // 自动移除（PC 4秒，移动端 3秒）
-        const duration = window.innerWidth >= 640 ? 4000 : 3000;
+        const duration = isMobile ? 3000 : 4000;
         setTimeout(() => {
             startExitNotification(id);
         }, duration);
