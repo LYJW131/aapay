@@ -201,20 +201,53 @@ async def delete_session(session_id: str):
 
 @router.post("/sessions/{session_id}/switch")
 def switch_session(session_id: str):
-    """切换到指定会话，返回管理员 JWT"""
+    """切换到指定会话，返回管理员 JWT 和完整数据"""
+    from logic import get_store
+    
     with get_admin_db() as conn:
         cursor = conn.cursor()
         
-        # 检查会话存在
-        cursor.execute("SELECT id FROM sessions WHERE id = ?", (session_id,))
-        if not cursor.fetchone():
+        # 检查会话存在并获取会话名称
+        cursor.execute("SELECT id, name FROM sessions WHERE id = ?", (session_id,))
+        session = cursor.fetchone()
+        if not session:
             raise HTTPException(status_code=404, detail="会话不存在")
+        
+        session_name = session["name"]
+        
+        # 获取所有会话列表
+        cursor.execute("SELECT id, name, created_at FROM sessions ORDER BY created_at DESC")
+        sessions = [dict(row) for row in cursor.fetchall()]
+        
+        # 获取当前会话的分享短语
+        cursor.execute(
+            """SELECT id, session_id, phrase, valid_from, valid_until, created_at 
+               FROM share_phrases WHERE session_id = ? ORDER BY created_at DESC""",
+            (session_id,)
+        )
+        phrases = [dict(row) for row in cursor.fetchall()]
+    
+    # 获取业务数据
+    store = get_store(session_id)
+    users = store.get_users()
+    expenses = store.get_expenses()
+    summary = store.get_daily_summary()
     
     # 生成管理员 JWT
     token = create_admin_jwt(session_id)
     
-    # 返回 token 而不是设置 Cookie
-    return {"status": "success", "session_id": session_id, "token": token}
+    # 返回 token 和完整数据
+    return {
+        "status": "success", 
+        "session_id": session_id, 
+        "session_name": session_name,
+        "token": token,
+        "users": users,
+        "expenses": expenses,
+        "summary": summary,
+        "sessions": sessions,
+        "phrases": phrases
+    }
 
 
 # ==================== Phrase Management ====================

@@ -284,14 +284,31 @@ function AppContent() {
   // 处理会话切换
   const handleSessionChange = async (session) => {
     setDataLoaded(false); // 重置加载状态
-    setCurrentSession(session);
+
     if (session) {
-      // 重新获取数据（包括管理员数据）
-      try {
-        await loadData(session.session_id, isAdmin);
-      } catch (error) {
-        console.error('Failed to load data after session change', error);
+      // 切换响应中包含完整数据，直接使用
+      if (session.users && session.expenses && session.summary) {
+        setCurrentSession({
+          session_id: session.session_id,
+          session_name: session.session_name
+        });
+        setUsers(session.users);
+        setExpenses(session.expenses);
+        setSummary(session.summary);
+        if (session.sessions) setSessions(session.sessions);
+        if (session.phrases) setPhrases(session.phrases);
+        setDataLoaded(true);
+      } else {
+        // 兼容旧逻辑：没有数据时重新获取
+        setCurrentSession(session);
+        try {
+          await loadData(session.session_id, isAdmin);
+        } catch (error) {
+          console.error('Failed to load data after session change', error);
+        }
       }
+    } else {
+      setCurrentSession(null);
     }
   };
 

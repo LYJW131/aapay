@@ -164,7 +164,16 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                 api.setToken(res.data.token);
             }
             addNotification(`已切换到 "${session.name}"`, 'update');
-            onSessionChange({ session_id: session.id, session_name: session.name });
+            // 传递完整数据给父组件，避免额外请求
+            onSessionChange({
+                session_id: session.id,
+                session_name: res.data.session_name || session.name,
+                users: res.data.users,
+                expenses: res.data.expenses,
+                summary: res.data.summary,
+                sessions: res.data.sessions,
+                phrases: res.data.phrases
+            });
         } catch (err) {
             addNotification(err.response?.data?.detail || '切换失败', 'error');
         } finally {
