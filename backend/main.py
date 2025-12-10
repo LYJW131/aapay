@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from collections import defaultdict
 import asyncio
 import json
+import os
 
 import models
 from logic import get_store
-from auth import require_session, get_session_from_request
+from auth import require_session, get_session_from_request, SESSION_ISOLATION, SHARED_SESSION_ID
 from admin_database import get_admin_db
 from admin_routes import router as admin_router
 
@@ -24,8 +25,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册管理员路由
-app.include_router(admin_router)
+# 仅在会话隔离模式下注册管理员路由
+if SESSION_ISOLATION:
+    app.include_router(admin_router)
 
 
 # ==================== SSE Setup (按会话隔离) ====================
@@ -125,6 +127,10 @@ class PhraseExchange(BaseModel):
 @app.post("/auth/exchange")
 def exchange_phrase(phrase_data: PhraseExchange):
     """用分享短语换取 JWT"""
+    # 非隔离模式：直接返回成功（无需短语验证）
+    if not SESSION_ISOLATION:
+        return {"status": "success", "session_id": SHARED_SESSION_ID, "token": ""}
+    
     now = datetime.now(timezone.utc).isoformat()
     
     with get_admin_db() as conn:
@@ -156,6 +162,15 @@ def exchange_phrase(phrase_data: PhraseExchange):
 @app.get("/auth/check")
 def check_auth(request: Request):
     """检查当前认证状态"""
+    # 非隔离模式：直接返回共享模式
+    if not SESSION_ISOLATION:
+        return {
+            "authenticated": True,
+            "role": "shared",
+            "session_id": SHARED_SESSION_ID,
+            "session_name": "共享模式"
+        }
+    
     session_info = get_session_from_request(request)
     if not session_info:
         raise HTTPException(status_code=401, detail="未认证或会话已过期")

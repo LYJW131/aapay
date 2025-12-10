@@ -10,6 +10,10 @@ import jwt
 from fastapi import Request, HTTPException, Cookie
 from functools import wraps
 
+# 会话隔离配置
+SESSION_ISOLATION = os.environ.get("SESSION_ISOLATION", "true").lower() == "true"
+SHARED_SESSION_ID = "shared"
+
 JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 JWT_HEADER_NAME = "Authorization"
@@ -156,9 +160,14 @@ def require_session(request: Request) -> Dict[str, Any]:
         会话信息字典
     
     Raises:
-        HTTPException: 401 如果没有有效的 JWT
+        HTTPException: 401 如果没有有效的 JWT（仅在隔离模式下）
     """
+    # 非隔离模式：返回共享会话
+    if not SESSION_ISOLATION:
+        return {"role": "shared", "session_id": SHARED_SESSION_ID}
+    
     session_info = get_session_from_request(request)
     if not session_info:
         raise HTTPException(status_code=401, detail="未认证或会话已过期")
     return session_info
+

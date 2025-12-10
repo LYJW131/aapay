@@ -3,6 +3,7 @@
 支持多会话数据库隔离
 """
 
+import os
 from typing import List, Dict, Optional
 from datetime import datetime
 from uuid import uuid4
@@ -11,20 +12,27 @@ from collections import defaultdict
 from database import get_db, init_db
 from admin_database import get_session_db_path
 
+# 会话隔离配置
+SESSION_ISOLATION = os.environ.get("SESSION_ISOLATION", "true").lower() == "true"
+SHARED_DB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "shared.db")
+
 
 class DataStore:
     """
     数据存储类，支持指定会话 ID 来使用对应的数据库
     """
     
-    def __init__(self, session_id: Optional[str] = None):
+    def __init__(self, session_id: Optional[str] = None, db_path: Optional[str] = None):
         """
         初始化数据存储
         
         Args:
             session_id: 会话 ID，None 时使用默认数据库（向后兼容）
+            db_path: 直接指定数据库路径（优先级高于 session_id）
         """
-        if session_id:
+        if db_path:
+            self.db_path = db_path
+        elif session_id:
             self.db_path = get_session_db_path(session_id)
         else:
             self.db_path = None  # 使用默认数据库
@@ -228,5 +236,8 @@ def get_store(session_id: Optional[str] = None) -> DataStore:
     Returns:
         DataStore 实例
     """
+    # 非隔离模式或共享会话：使用共享数据库
+    if not SESSION_ISOLATION or session_id == "shared":
+        return DataStore(db_path=SHARED_DB_PATH)
     return DataStore(session_id)
 

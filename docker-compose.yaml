@@ -9,6 +9,7 @@ services:
     environment:
       - TZ=${TZ}
       - JWT_SECRET=${JWT_SECRET}
+      - SESSION_ISOLATION=${SESSION_ISOLATION:-true}
 
   frontend:
     image: nginx

@@ -15,6 +15,7 @@ function AppContent() {
   const [authState, setAuthState] = useState('loading');
   const [currentSession, setCurrentSession] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isSharedMode, setIsSharedMode] = useState(false);
 
   // 管理员面板折叠状态（提前从 localStorage 读取）
   const [adminPanelCollapsed, setAdminPanelCollapsed] = useState(() => {
@@ -83,6 +84,7 @@ function AppContent() {
       // 先检查是否是管理员
       await api.checkAdminAuth();
       setIsAdmin(true);
+      setIsSharedMode(false);
 
       // 检查是否有有效的会话
       try {
@@ -118,12 +120,20 @@ function AppContent() {
         setCurrentSession(session);
         setIsAdmin(false);
 
+        // 检查是否是共享模式
+        if (authRes.data.role === 'shared') {
+          setIsSharedMode(true);
+        } else {
+          setIsSharedMode(false);
+        }
+
         // 获取数据后再设置认证状态
         await loadData(null, false);
         setAuthState('user');
       } catch {
         // 未认证
         setIsAdmin(false);
+        setIsSharedMode(false);
         setCurrentSession(null);
         setAuthState('guest');
       }
@@ -370,8 +380,8 @@ function AppContent() {
           defaultDate={globalDate}
         />
 
-        {/* 普通用户可以切换会话 - PC 端在左栏底部 */}
-        {!isAdmin && hasValidSession && (
+        {/* 普通用户可以切换会话 - PC 端在左栏底部（共享模式下隐藏） */}
+        {!isAdmin && hasValidSession && !isSharedMode && (
           <div className="hidden md:block">
             <SharePhraseInput isCompact onSuccess={handlePhraseSuccess} onLogout={handleLogout} />
           </div>
@@ -387,8 +397,8 @@ function AppContent() {
         />
       </div>
 
-      {/* 普通用户可以切换会话 - 移动端在最底部 */}
-      {!isAdmin && hasValidSession && (
+      {/* 普通用户可以切换会话 - 移动端在最底部（共享模式下隐藏） */}
+      {!isAdmin && hasValidSession && !isSharedMode && (
         <div className="col-span-full md:hidden">
           <SharePhraseInput isCompact onSuccess={handlePhraseSuccess} onLogout={handleLogout} />
         </div>
