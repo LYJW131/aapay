@@ -114,6 +114,10 @@ def get_session_from_request(request: Request) -> Optional[Dict[str, Any]]:
     Returns:
         包含 role 和 session_id 的字典，无效返回 None
     """
+    # 非隔离模式：直接返回共享会话
+    if not SESSION_ISOLATION:
+        return {"role": "shared", "session_id": SHARED_SESSION_ID}
+    
     # 从 Authorization header 读取: "Bearer <token>"
     auth_header = request.headers.get(JWT_HEADER_NAME)
     if not auth_header:
