@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import Layout from './components/Layout';
 import PageSettings from './components/PageSettings';
 import ExpenseForm from './components/ExpenseForm';
@@ -7,6 +7,7 @@ import DebtSettlement from './components/DebtSettlement';
 import AdminPanel from './components/AdminPanel';
 import SharePhraseInput from './components/SharePhraseInput';
 import { NotificationProvider, useNotification } from './components/NotificationProvider';
+import { calculateDebts } from './utils/debtCalculator';
 import * as api from './services/api';
 
 // 认证状态: 'loading' | 'admin' | 'user' | 'guest'
@@ -24,7 +25,6 @@ function AppContent() {
   const [users, setUsers] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [summary, setSummary] = useState({});
-  const [debts, setDebts] = useState([]);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [dataLoaded, setDataLoaded] = useState(false);
 
@@ -36,27 +36,25 @@ function AppContent() {
 
   // Global Date State (Defaults to Today)
   const [globalDate, setGlobalDate] = useState(new Date().toISOString().split('T')[0]);
-  const globalDateRef = React.useRef(globalDate);
 
-  // 保持 globalDate ref 最新
-  useEffect(() => {
-    globalDateRef.current = globalDate;
-  }, [globalDate]);
+  // 前端计算当前日期的转账结算
+  const debts = useMemo(() => {
+    const filteredExpenses = expenses.filter(e => e.date === globalDate);
+    return calculateDebts(filteredExpenses, users);
+  }, [expenses, users, globalDate]);
 
   // 获取业务数据（内部使用，返回 Promise）
-  const loadData = async (sessionId, loadAdmin = false, date = null) => {
+  const loadData = async (sessionId, loadAdmin = false) => {
     try {
-      // 基础数据（debts 使用日期过滤）
-      const [uRes, eRes, sRes, dRes] = await Promise.all([
+      // 基础数据（debts 由前端 useMemo 计算）
+      const [uRes, eRes, sRes] = await Promise.all([
         api.getUsers(),
         api.getExpenses(),
-        api.getSummary(),
-        api.getDebts(date)
+        api.getSummary()
       ]);
       setUsers(uRes.data);
       setExpenses(eRes.data);
       setSummary(sRes.data);
-      setDebts(dRes.data);
 
       // 管理员数据
       if (loadAdmin) {
@@ -95,9 +93,8 @@ function AppContent() {
         };
         setCurrentSession(session);
 
-        // 获取数据后再设置认证状态（初始使用今日日期）
-        const today = new Date().toISOString().split('T')[0];
-        await loadData(session.session_id, true, today);
+        // 获取数据后再设置认证状态
+        await loadData(session.session_id, true);
         setAuthState('admin');
       } catch {
         // 管理员但还没选择会话，只加载 sessions 列表
@@ -121,9 +118,8 @@ function AppContent() {
         setCurrentSession(session);
         setIsAdmin(false);
 
-        // 获取数据后再设置认证状态（初始使用今日日期）
-        const today = new Date().toISOString().split('T')[0];
-        await loadData(null, false, today);
+        // 获取数据后再设置认证状态
+        await loadData(null, false);
         setAuthState('user');
       } catch {
         // 未认证
@@ -241,12 +237,8 @@ function AppContent() {
                 setExpenses(prev => prev.filter(e => e.id !== data.data.expense_id));
                 break;
             }
-            // 直接从事件中获取 summary
+            // 直接从事件中获取 summary（debts 由前端自动计算）
             if (data.data.summary) setSummary(data.data.summary);
-            // 只有当事件日期与当前选中日期匹配时才更新 debts
-            if (data.data.debts && data.data.date === globalDateRef.current) {
-              setDebts(data.data.debts);
-            }
           }
 
           // 显示通知
@@ -277,22 +269,6 @@ function AppContent() {
     // 有会话但数据未加载时保持 connecting 状态
   }, [authState, currentSession, dataLoaded, isAdmin]);
 
-  // 当日期改变时，重新获取 debts 数据
-  useEffect(() => {
-    if (!currentSession || !dataLoaded) return;
-
-    const refreshDebts = async () => {
-      try {
-        const dRes = await api.getDebts(globalDate);
-        setDebts(dRes.data);
-      } catch (error) {
-        console.error('Failed to refresh debts', error);
-      }
-    };
-
-    refreshDebts();
-  }, [globalDate, currentSession, dataLoaded]);
-
   // 处理会话切换
   const handleSessionChange = async (session) => {
     setDataLoaded(false); // 重置加载状态
@@ -300,7 +276,7 @@ function AppContent() {
     if (session) {
       // 重新获取数据（包括管理员数据）
       try {
-        await loadData(session.session_id, isAdmin, globalDate);
+        await loadData(session.session_id, isAdmin);
       } catch (error) {
         console.error('Failed to load data after session change', error);
       }

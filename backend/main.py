@@ -34,20 +34,6 @@ app.include_router(admin_router)
 session_clients: Dict[str, List[asyncio.Queue]] = defaultdict(list)
 
 
-def get_enriched_debts(store, date: str):
-    """计算指定日期的债务并附带用户名"""
-    transfers = store.calculate_debts(date)
-    users = {u["id"]: u["name"] for u in store.get_users()}
-    result = []
-    for t in transfers:
-        result.append({
-            "from_user": users.get(t["from"], "Unknown"),
-            "to_user": users.get(t["to"], "Unknown"),
-            "amount": t["amount"]
-        })
-    return result
-
-
 async def broadcast_event(
     session_id: str, 
     event_type: str, 
@@ -303,9 +289,7 @@ async def create_expense(expense: models.ExpenseCreate, request: Request):
             message=f"{payer_name} 支付了 ¥{expense.amount:.2f} ({expense.description})",
             data={
                 "expense": new_expense,
-                "summary": store.get_daily_summary(),
-                "debts": get_enriched_debts(store, expense.date),
-                "date": expense.date
+                "summary": store.get_daily_summary()
             }
         )
         return new_expense
@@ -319,10 +303,9 @@ async def delete_expense(expense_id: str, request: Request):
     store = get_store(session_info["session_id"])
     
     try:
-        # 获取支出信息用于通知（包括日期）
+        # 获取支出信息用于通知
         expense = next((e for e in store.get_expenses() if e["id"] == expense_id), None)
         desc = expense["description"] if expense else "一笔支出"
-        expense_date = expense["date"] if expense else None
         
         store.delete_expense(expense_id)
         await broadcast_event(
@@ -332,35 +315,12 @@ async def delete_expense(expense_id: str, request: Request):
             message=f"已删除: {desc}",
             data={
                 "expense_id": expense_id,
-                "summary": store.get_daily_summary(),
-                "debts": get_enriched_debts(store, expense_date) if expense_date else [],
-                "date": expense_date
+                "summary": store.get_daily_summary()
             }
         )
         return {"status": "success"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-
-
-# ==================== Debt Routes (需要认证) ====================
-
-@app.get("/api/debts")
-def get_debts(request: Request, date: str):
-    """获取指定日期的转账结算，date参数必须"""
-    session_info = require_session(request)
-    store = get_store(session_info["session_id"])
-    
-    transfers = store.calculate_debts(date)
-    # Enrich with names
-    users = {u["id"]: u["name"] for u in store.get_users()}
-    result = []
-    for t in transfers:
-        result.append({
-            "from_user": users.get(t["from"], "Unknown"),
-            "to_user": users.get(t["to"], "Unknown"),
-            "amount": t["amount"]
-        })
-    return result
 
 
 @app.get("/api/summary")
