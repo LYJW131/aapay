@@ -181,14 +181,14 @@ const ExpenseForm = ({ users, defaultDate }) => {
     };
 
     return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <h2 className="text-xl font-bold mb-4 text-gray-800 flex items-center gap-2">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100 flex items-center gap-2">
                 <DollarSign size={20} className="text-primary" /> 支出记账
             </h2>
 
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                    <label className="block text-sm text-gray-500 mb-1 flex justify-between">
+                    <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1 flex justify-between">
                         <span>用途</span>
                         <span className={`text-xs ${formData.description.length > MAX_DESCRIPTION_LENGTH ? 'text-red-500' : 'text-gray-400'}`}>
                             {formData.description.length}/{MAX_DESCRIPTION_LENGTH}
@@ -200,13 +200,13 @@ const ExpenseForm = ({ users, defaultDate }) => {
                         onChange={e => setFormData({ ...formData, description: e.target.value })}
                         placeholder="例如：午饭"
                         maxLength={MAX_DESCRIPTION_LENGTH}
-                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
                     />
                 </div>
 
                 <div className="flex gap-4">
                     <div className="flex-1">
-                        <label className="block text-sm text-gray-500 mb-1">金额</label>
+                        <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">金额</label>
                         <input
                             type="number"
                             value={formData.amount}
@@ -215,17 +215,17 @@ const ExpenseForm = ({ users, defaultDate }) => {
                             min={MIN_AMOUNT}
                             max={MAX_AMOUNT}
                             step="0.01"
-                            className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
                         />
                     </div>
                 </div>
 
                 <div>
-                    <label className="block text-sm text-gray-500 mb-1">付款人</label>
+                    <label className="block text-sm text-gray-500 dark:text-gray-400 mb-1">付款人</label>
                     <select
                         value={formData.payer_id}
                         onChange={e => setFormData({ ...formData, payer_id: e.target.value })}
-                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
                     >
                         <option value="">选择付款人</option>
                         {users.map(u => (
@@ -256,7 +256,7 @@ const ExpenseForm = ({ users, defaultDate }) => {
                                 onClick={() => toggleParticipant(u.id)}
                                 className={`px-3 py-1 text-sm rounded-full border transition-colors ${formData.participants.includes(u.id)
                                     ? 'bg-primary text-white border-primary'
-                                    : 'bg-white text-gray-600 border-gray-200 hover:border-primary'
+                                    : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-primary'
                                     }`}
                             >
                                 {u.name}

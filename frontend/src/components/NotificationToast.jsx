@@ -83,7 +83,7 @@ const NotificationItem = ({ notification, onRemove }) => {
                 ref={contentRef}
                 className={`
                     flex items-center gap-3 p-4 rounded-xl shadow-lg
-                    bg-white border border-gray-200
+                    bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700
                     ${!notification.isExiting ? (isMobile ? 'animate-slide-down' : 'animate-slide-left') : ''}
                 `}
                 style={{
@@ -106,14 +106,14 @@ const NotificationItem = ({ notification, onRemove }) => {
                 </div>
 
                 {/* 消息内容 */}
-                <p className="flex-1 text-sm text-gray-800 font-medium">
+                <p className="flex-1 text-sm text-gray-800 dark:text-gray-100 font-medium">
                     {notification.message}
                 </p>
 
                 {/* 关闭按钮 */}
                 <button
                     onClick={handleClose}
-                    className="text-gray-400 hover:text-gray-600 transition-colors p-1"
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors p-1"
                 >
                     <X size={16} />
                 </button>

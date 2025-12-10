@@ -112,13 +112,13 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
 
     return (
         <>
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                 {/* 可点击的标题栏 */}
                 <div
-                    className="flex items-center justify-between p-6 cursor-pointer hover:bg-gray-50 transition-colors"
+                    className="flex items-center justify-between p-6 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                     onClick={() => setIsCollapsed(!isCollapsed)}
                 >
-                    <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
                         <Settings size={20} className="text-primary" />
                         页面配置
                         <motion.div
@@ -145,21 +145,21 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                             <div className="px-6 pb-6 flex flex-col gap-6">
                                 {/* Global Date Selection */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-500 mb-2">
+                                    <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-2">
                                         日期选择
                                     </label>
                                     <input
                                         type="date"
                                         value={globalDate}
                                         onChange={e => setGlobalDate(e.target.value)}
-                                        className="w-full max-w-full bg-white border border-gray-200 rounded-lg px-3 py-2 text-gray-800 font-medium text-center focus:ring-2 focus:ring-primary/20 outline-none appearance-none"
+                                        className="w-full max-w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-gray-800 dark:text-gray-100 font-medium text-center focus:ring-2 focus:ring-primary/20 outline-none appearance-none"
                                         style={{ boxSizing: 'border-box' }}
                                     />
                                 </div>
 
                                 {/* User Management Section */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-500 mb-3">人员配置</label>
+                                    <label className="block text-sm font-medium text-gray-500 dark:text-gray-400 mb-3">人员配置</label>
                                     <div className="flex flex-wrap gap-3 mb-4">
                                         {users.map(u => (
                                             <button
@@ -169,11 +169,11 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                                             >
                                                 <motion.div
                                                     layoutId={`avatar-${u.id}`}
-                                                    className={`w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 border-transparent group-hover:border-primary/30 transition-colors ${isEmoji(u.avatar) ? 'bg-gray-100 text-2xl' : 'bg-primary-light text-primary-dark font-bold'}`}
+                                                    className={`w-12 h-12 rounded-full flex items-center justify-center text-lg border-2 border-transparent group-hover:border-primary/30 transition-colors ${isEmoji(u.avatar) ? 'bg-gray-100 dark:bg-gray-600 text-2xl' : 'bg-primary-light dark:bg-primary/20 text-primary-dark dark:text-primary font-bold'}`}
                                                 >
                                                     {getAvatarDisplay(u)}
                                                 </motion.div>
-                                                <span className="text-xs mt-1 text-gray-600 truncate max-w-[60px]">{u.name}</span>
+                                                <span className="text-xs mt-1 text-gray-600 dark:text-gray-300 truncate max-w-[60px]">{u.name}</span>
                                             </button>
                                         ))}
                                     </div>
@@ -185,7 +185,7 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                                             value={newName}
                                             onChange={e => setNewName(e.target.value)}
                                             placeholder="新成员姓名"
-                                            className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
+                                            className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
                                             maxLength={10}
                                         />
                                         <button type="submit" className="bg-primary text-white p-2 rounded-lg hover:bg-primary-dark transition-colors shadow-sm">
@@ -212,7 +212,7 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                     >
                         <motion.div
                             layoutId={isDeleting ? undefined : `avatar-${selectedUser.id}`}
-                            className="bg-white rounded-xl p-6 w-80 shadow-xl overflow-y-auto"
+                            className="bg-white dark:bg-gray-800 rounded-xl p-6 w-80 shadow-xl overflow-y-auto"
                             onClick={(e) => e.stopPropagation()}
                             transition={{ type: "spring", stiffness: 300, damping: 30 }}
                             exit={isDeleting ? {
@@ -223,8 +223,8 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                             } : { opacity: 0, scale: 0.9 }}
                         >
                             <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-lg font-bold text-gray-800">编辑成员</h3>
-                                <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
+                                <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100">编辑成员</h3>
+                                <button onClick={closeModal} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                                     <X size={20} />
                                 </button>
                             </div>
@@ -239,13 +239,13 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                                         onBlur={() => setIsEditingAvatar(false)}
                                         autoFocus
                                         placeholder="输入 emoji"
-                                        className="w-20 h-20 rounded-full bg-gray-100 text-4xl text-center border-2 border-primary focus:outline-none"
+                                        className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-700 text-4xl text-center border-2 border-primary focus:outline-none"
                                         maxLength={2}
                                     />
                                 ) : (
                                     <button
                                         onClick={() => setIsEditingAvatar(true)}
-                                        className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all ${isEmoji(editAvatar) ? 'bg-gray-100' : 'bg-primary-light text-primary-dark font-bold'}`}
+                                        className={`w-20 h-20 rounded-full flex items-center justify-center text-4xl cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all ${isEmoji(editAvatar) ? 'bg-gray-100 dark:bg-gray-600' : 'bg-primary-light dark:bg-primary/20 text-primary-dark dark:text-primary font-bold'}`}
                                         title="点击输入自定义 emoji"
                                     >
                                         {isEmoji(editAvatar) ? editAvatar : editName[0]?.toUpperCase()}
@@ -255,14 +255,14 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
 
                             {/* 头像选择区 - 12个预设 */}
                             <div className="mb-4">
-                                <label className="block text-xs text-gray-500 mb-2">选择头像</label>
+                                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-2">选择头像</label>
                                 <div className="flex flex-wrap gap-2 justify-center">
                                     {PRESET_AVATARS.map(emoji => (
                                         <button
                                             key={emoji}
                                             type="button"
                                             onClick={() => { setEditAvatar(emoji); setIsEditingAvatar(false); }}
-                                            className={`w-9 h-9 rounded-full flex items-center justify-center text-xl transition-all ${editAvatar === emoji ? 'bg-primary/20 ring-2 ring-primary scale-110' : 'bg-gray-100 hover:bg-gray-200'}`}
+                                            className={`w-9 h-9 rounded-full flex items-center justify-center text-xl transition-all ${editAvatar === emoji ? 'bg-primary/20 ring-2 ring-primary scale-110' : 'bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500'}`}
                                         >
                                             {emoji}
                                         </button>
@@ -272,12 +272,12 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
 
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-xs text-gray-500 mb-1">姓名</label>
+                                    <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">姓名</label>
                                     <input
                                         type="text"
                                         value={editName}
                                         onChange={e => setEditName(e.target.value)}
-                                        className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-center font-medium"
+                                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-center font-medium bg-white dark:bg-gray-700 dark:text-gray-100"
                                     />
                                 </div>
 

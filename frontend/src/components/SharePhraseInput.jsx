@@ -61,8 +61,8 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
     // 紧凑模式（用于已认证用户切换会话）
     if (isCompact) {
         return (
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2 mb-4">
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+                <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2 mb-4">
                     <RefreshCw size={20} className="text-primary" />
                     切换会话
                 </h2>
@@ -75,7 +75,7 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                             setError('');
                         }}
                         placeholder="输入分享短语"
-                        className="flex-1 h-10 px-3 border border-gray-200 bg-white rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        className="flex-1 h-10 px-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
                         maxLength={16}
                     />
                     <button
@@ -101,12 +101,12 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
 
     // 完整模式（用于未认证用户）
     return (
-        <div className="bg-white p-8 rounded-2xl shadow-lg border border-gray-100 w-full max-w-lg mx-auto">
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 w-full max-w-lg mx-auto">
             <div className="text-center mb-6">
                 <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
                     <Key size={32} className="text-primary" />
                 </div>
-                <h2 className="text-2xl font-bold text-gray-800">
+                <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">
                     欢迎使用 AAPay
                 </h2>
             </div>
@@ -121,7 +121,7 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                             setError('');
                         }}
                         placeholder="分享短语"
-                        className="w-full h-10 px-3 border border-gray-200 rounded-lg text-center font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
+                        className="w-full h-10 px-3 border border-gray-200 dark:border-gray-600 rounded-lg text-center font-mono tracking-widest focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all bg-white dark:bg-gray-700 dark:text-gray-100"
                         maxLength={16}
                         autoFocus
                     />
@@ -146,14 +146,14 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                 </button>
             </form>
 
-            <div className="mt-6 pt-4 border-t border-gray-100">
+            <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
                 <button
                     onClick={() => {
                         setAdminLoading(true);
                         window.location.href = '/oauth2/sign_in?rd=%2F';
                     }}
                     disabled={adminLoading}
-                    className="w-full h-10 flex items-center justify-center gap-2 text-gray-600 hover:text-primary border border-gray-200 rounded-lg hover:border-primary/50 transition-colors disabled:opacity-50"
+                    className="w-full h-10 flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300 hover:text-primary border border-gray-200 dark:border-gray-600 rounded-lg hover:border-primary/50 transition-colors disabled:opacity-50"
                 >
                     {adminLoading ? (
                         <>
