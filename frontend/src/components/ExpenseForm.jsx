@@ -181,7 +181,7 @@ const ExpenseForm = ({ users, defaultDate }) => {
     };
 
     return (
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-apple-lg shadow-sm border border-gray-100 dark:border-gray-700">
             <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100 flex items-center gap-2">
                 <DollarSign size={20} className="text-primary" /> 支出记账
             </h2>
@@ -200,7 +200,7 @@ const ExpenseForm = ({ users, defaultDate }) => {
                         onChange={e => setFormData({ ...formData, description: e.target.value })}
                         placeholder="例如：午饭"
                         maxLength={MAX_DESCRIPTION_LENGTH}
-                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-apple-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
                     />
                 </div>
 
@@ -215,7 +215,7 @@ const ExpenseForm = ({ users, defaultDate }) => {
                             min={MIN_AMOUNT}
                             max={MAX_AMOUNT}
                             step="0.01"
-                            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
+                            className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-apple-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
                         />
                     </div>
                 </div>
@@ -225,7 +225,7 @@ const ExpenseForm = ({ users, defaultDate }) => {
                     <select
                         value={formData.payer_id}
                         onChange={e => setFormData({ ...formData, payer_id: e.target.value })}
-                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
+                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-apple-sm focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white dark:bg-gray-700 dark:text-gray-100"
                     >
                         <option value="">选择付款人</option>
                         {users.map(u => (
@@ -267,7 +267,7 @@ const ExpenseForm = ({ users, defaultDate }) => {
 
                 <button
                     type="submit"
-                    className="w-full bg-gradient-to-r from-primary to-primary-dark text-white py-3 rounded-xl font-bold hover:shadow-lg transition-transform active:scale-95"
+                    className="w-full bg-gradient-to-r from-primary to-primary-dark text-white py-3 rounded-apple font-bold hover:shadow-lg transition-transform active:scale-95"
                 >
                     添加支出记录
                 </button>

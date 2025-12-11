@@ -7,6 +7,12 @@ export default {
     ],
     theme: {
         extend: {
+            borderRadius: {
+                'apple-sm': '8px',    // 小按钮、输入框
+                'apple': '16px',       // 小卡片、按钮
+                'apple-lg': '22px',    // 主卡片
+                'apple-xl': '28px',    // 大模态框
+            },
             colors: {
                 primary: '#1E90FF', // Dodger Blue (Darker than Sky Blue)
                 'primary-dark': '#0000CD', // Medium Blue (Deep Blue)

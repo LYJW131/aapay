@@ -243,7 +243,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
     };
 
     return (
-        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/30 dark:to-indigo-900/30 rounded-xl shadow-sm border border-purple-100 dark:border-purple-800 overflow-hidden">
+        <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-900/30 dark:to-indigo-900/30 rounded-apple-lg shadow-sm border border-purple-100 dark:border-purple-800 overflow-hidden">
             {/* 可点击的标题栏 */}
             <div
                 className="flex items-center justify-between p-6 cursor-pointer hover:bg-purple-100/50 dark:hover:bg-purple-800/30 transition-colors"
@@ -272,7 +272,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                         localStorage.removeItem('aapay_token');
                         window.location.href = '/oauth2/sign_out?rd=%2F';
                     }}
-                    className="text-sm text-red-500 hover:text-red-600 flex items-center gap-1 px-3 py-1.5 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                    className="text-sm text-red-500 hover:text-red-600 flex items-center gap-1 px-3 py-1.5 border border-red-200 dark:border-red-800 rounded-apple-sm hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                 >
                     <LogOut size={14} /> 登出
                 </button>
@@ -304,13 +304,13 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                         value={newSessionName}
                                         onChange={(e) => setNewSessionName(e.target.value)}
                                         placeholder="新会话名称"
-                                        className="flex-1 h-10 px-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-300"
+                                        className="flex-1 h-10 px-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 rounded-apple-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-300"
                                         maxLength={10}
                                     />
                                     <button
                                         type="submit"
                                         disabled={loading}
-                                        className="h-10 w-10 flex items-center justify-center rounded-lg border border-purple-600 bg-purple-600 text-white hover:bg-purple-700 hover:border-purple-700 disabled:opacity-50 transition-all"
+                                        className="h-10 w-10 flex items-center justify-center rounded-apple-sm border border-purple-600 bg-purple-600 text-white hover:bg-purple-700 hover:border-purple-700 disabled:opacity-50 transition-all"
                                     >
                                         <Plus size={18} />
                                     </button>
@@ -331,7 +331,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                 <div className="flex gap-2 pb-2">
                                                     <button
                                                         onClick={() => handleSwitchSession(session)}
-                                                        className={`flex-1 h-10 px-3 rounded-lg border text-left font-medium transition-all ${currentSession?.session_id === session.id
+                                                        className={`flex-1 h-10 px-3 rounded-apple-sm border text-left font-medium transition-all ${currentSession?.session_id === session.id
                                                             ? 'bg-purple-100 dark:bg-purple-900/50 border-purple-300 dark:border-purple-700 text-purple-700 dark:text-purple-300'
                                                             : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-purple-200'
                                                             }`}
@@ -343,7 +343,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                     </button>
                                                     <button
                                                         onClick={() => handleDeleteSession(session.id, session.name)}
-                                                        className="h-10 w-10 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
+                                                        className="h-10 w-10 flex items-center justify-center rounded-apple-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
                                                     >
                                                         <Trash2 size={18} />
                                                     </button>
@@ -388,14 +388,14 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                     }
                                                 }}
                                                 placeholder="新分享短语 (3-16位字母数字)"
-                                                className="flex-1 h-10 px-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-300"
+                                                className="flex-1 h-10 px-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 dark:text-gray-100 rounded-apple-sm text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-300"
                                                 minLength={3}
                                                 maxLength={16}
                                             />
                                             <button
                                                 type="submit"
                                                 disabled={loading || newPhrase.length < 3}
-                                                className="h-10 w-10 flex items-center justify-center rounded-lg border border-purple-600 bg-purple-600 text-white hover:bg-purple-700 hover:border-purple-700 disabled:opacity-50 transition-all"
+                                                className="h-10 w-10 flex items-center justify-center rounded-apple-sm border border-purple-600 bg-purple-600 text-white hover:bg-purple-700 hover:border-purple-700 disabled:opacity-50 transition-all"
                                             >
                                                 <Plus size={18} />
                                             </button>
@@ -418,7 +418,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                                 type="datetime-local"
                                                                 value={phraseValidFrom}
                                                                 onChange={(e) => setPhraseValidFrom(e.target.value)}
-                                                                className="w-full h-10 px-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 dark:text-gray-100 appearance-none"
+                                                                className="w-full h-10 px-2 border border-gray-200 dark:border-gray-600 rounded-apple-sm text-sm bg-gray-100 dark:bg-gray-700 dark:text-gray-100 appearance-none"
                                                             />
                                                         </div>
                                                         <div className="flex-1">
@@ -427,7 +427,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                                 type="datetime-local"
                                                                 value={phraseValidUntil}
                                                                 onChange={(e) => setPhraseValidUntil(e.target.value)}
-                                                                className="w-full h-10 px-2 border border-gray-200 dark:border-gray-600 rounded-lg text-sm bg-gray-100 dark:bg-gray-700 dark:text-gray-100 appearance-none"
+                                                                className="w-full h-10 px-2 border border-gray-200 dark:border-gray-600 rounded-apple-sm text-sm bg-gray-100 dark:bg-gray-700 dark:text-gray-100 appearance-none"
                                                             />
                                                         </div>
                                                     </div>
@@ -450,7 +450,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                 >
                                                     <div className="flex gap-2 pb-2">
                                                         <div
-                                                            className={`flex-1 min-h-[40px] px-3 py-2 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-1 ${isPhraseActive(phrase)
+                                                            className={`flex-1 min-h-[40px] px-3 py-2 rounded-apple-sm border flex flex-col sm:flex-row sm:items-center justify-between gap-1 ${isPhraseActive(phrase)
                                                                 ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800'
                                                                 : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600 opacity-60'
                                                                 }`}
@@ -465,7 +465,7 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                         </div>
                                                         <button
                                                             onClick={() => handleDeletePhrase(phrase.id)}
-                                                            className="self-stretch w-10 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
+                                                            className="self-stretch w-10 flex items-center justify-center rounded-apple-sm border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
                                                         >
                                                             <Trash2 size={18} />
                                                         </button>

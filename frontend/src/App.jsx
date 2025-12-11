@@ -378,7 +378,7 @@ function AppContent() {
       {/* 未选择会话时的提示 */}
       {isDisabled && (
         <div className="col-span-full">
-          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-6 py-4 rounded-xl text-center">
+          <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-6 py-4 rounded-apple text-center">
             <p className="text-lg font-medium">请先选择一个会话</p>
             <p className="text-sm text-yellow-600 mt-1">在上方管理员面板中选择或创建一个会话以继续</p>
           </div>

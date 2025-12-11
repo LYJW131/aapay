@@ -112,7 +112,7 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
 
     return (
         <>
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-apple-lg shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                 {/* 可点击的标题栏 */}
                 <div
                     className="flex items-center justify-between p-6 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -152,7 +152,7 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                                         type="date"
                                         value={globalDate}
                                         onChange={e => setGlobalDate(e.target.value)}
-                                        className="w-full max-w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2 text-gray-800 dark:text-gray-100 font-medium text-center focus:ring-2 focus:ring-primary/20 outline-none appearance-none"
+                                        className="w-full max-w-full bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-apple-sm px-3 py-2 text-gray-800 dark:text-gray-100 font-medium text-center focus:ring-2 focus:ring-primary/20 outline-none appearance-none"
                                         style={{ boxSizing: 'border-box' }}
                                     />
                                 </div>
@@ -185,10 +185,10 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                                             value={newName}
                                             onChange={e => setNewName(e.target.value)}
                                             placeholder="新成员姓名"
-                                            className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
+                                            className="flex-1 px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-apple-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm bg-white dark:bg-gray-700 dark:text-gray-100"
                                             maxLength={10}
                                         />
-                                        <button type="submit" className="bg-primary text-white p-2 rounded-lg hover:bg-primary-dark transition-colors shadow-sm">
+                                        <button type="submit" className="bg-primary text-white p-2 rounded-apple-sm hover:bg-primary-dark transition-colors shadow-sm">
                                             <Plus size={20} />
                                         </button>
                                     </form>
@@ -212,7 +212,7 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                     >
                         <motion.div
                             layoutId={isDeleting ? undefined : `avatar-${selectedUser.id}`}
-                            className="bg-white dark:bg-gray-800 rounded-xl p-6 w-80 shadow-xl overflow-y-auto"
+                            className="bg-white dark:bg-gray-800 rounded-apple-xl p-6 w-80 shadow-xl overflow-y-auto"
                             onClick={(e) => e.stopPropagation()}
                             transition={{ type: "spring", stiffness: 300, damping: 30 }}
                             exit={isDeleting ? {
@@ -277,20 +277,20 @@ const PageSettings = ({ users, globalDate, setGlobalDate }) => {
                                         type="text"
                                         value={editName}
                                         onChange={e => setEditName(e.target.value)}
-                                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-center font-medium bg-white dark:bg-gray-700 dark:text-gray-100"
+                                        className="w-full px-3 py-2 border border-gray-200 dark:border-gray-600 rounded-apple-sm focus:outline-none focus:ring-2 focus:ring-primary/50 text-center font-medium bg-white dark:bg-gray-700 dark:text-gray-100"
                                     />
                                 </div>
 
                                 <button
                                     onClick={handleUpdate}
-                                    className="w-full bg-primary text-white py-2 rounded-lg font-bold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
+                                    className="w-full bg-primary text-white py-2 rounded-apple-sm font-bold hover:bg-primary-dark transition-colors flex items-center justify-center gap-2"
                                 >
                                     <Edit2 size={16} /> 保存修改
                                 </button>
 
                                 <button
                                     onClick={() => handleDelete(selectedUser.id)}
-                                    className="w-full bg-red-50 text-red-500 py-2 rounded-lg font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                                    className="w-full bg-red-50 text-red-500 py-2 rounded-apple-sm font-bold hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
                                 >
                                     <Trash2 size={16} /> 删除成员
                                 </button>

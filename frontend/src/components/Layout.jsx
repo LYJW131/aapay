@@ -20,7 +20,10 @@ const Layout = ({ children, status, sessionName }) => {
     }, [sessionName, displayName]);
 
     return (
-        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center py-6 sm:py-12">
+        <div 
+            className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center py-6 sm:py-12"
+            style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 1.5rem)' }}
+        >
             <header className="w-full max-w-7xl px-4 flex justify-between items-center mb-6">
                 <h1 className="text-3xl font-bold text-primary-dark dark:text-primary flex-shrink-0">AAPay</h1>
                 <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 flex-shrink-0">
