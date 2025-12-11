@@ -20,7 +20,7 @@ const Layout = ({ children, status, sessionName }) => {
     }, [sessionName, displayName]);
 
     return (
-        <div 
+        <div
             className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center py-6 sm:py-12"
             style={{ paddingTop: 'max(env(safe-area-inset-top, 0px), 1.5rem)' }}
         >
