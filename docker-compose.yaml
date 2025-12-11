@@ -15,7 +15,7 @@ services:
     image: nginx
     container_name: aapay-frontend
     ports:
-      - "30980:80"
+      - "${FRONTEND_PORT}:80"
     volumes:
       - ./frontend/dist:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
