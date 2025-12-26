@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Shield, Plus, Trash2, Key, Clock, RefreshCw, LogOut, X, FolderOpen, ChevronDown } from 'lucide-react';
+import { Shield, Plus, Trash2, Key, Clock, RefreshCw, LogOut, X, FolderOpen, ChevronDown, QrCode, Copy, Check } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence, LayoutGroup } from 'framer-motion';
 import * as api from '../services/api';
 import { useNotification } from './NotificationProvider';
@@ -97,6 +98,8 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
     const [phraseValidFrom, setPhraseValidFrom] = useState('');
     const [phraseValidUntil, setPhraseValidUntil] = useState('');
     const [loading, setLoading] = useState(false);
+    const [qrModalPhrase, setQrModalPhrase] = useState(null); // 当前显示二维码的短语
+    const [linkCopied, setLinkCopied] = useState(false); // 链接复制成功状态
 
     // 刷新会话列表（供创建/删除后使用）
     const loadSessions = async () => {
@@ -240,6 +243,26 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
         const from = new Date(phrase.valid_from);
         const until = new Date(phrase.valid_until);
         return now >= from && now < until;
+    };
+
+    // 生成分享链接
+    const getShareUrl = (phrase) => {
+        const baseUrl = window.location.origin + window.location.pathname;
+        return `${baseUrl}#p=${encodeURIComponent(phrase)}`;
+    };
+
+    // 复制链接到剪贴板
+    const handleCopyLink = async (phrase) => {
+        const url = getShareUrl(phrase);
+        try {
+            await navigator.clipboard.writeText(url);
+            setLinkCopied(true);
+            addNotification('链接已复制到剪贴板', 'success');
+            setTimeout(() => setLinkCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy link', err);
+            addNotification('复制失败', 'error');
+        }
     };
 
     return (
@@ -464,6 +487,13 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                                             </span>
                                                         </div>
                                                         <button
+                                                            onClick={() => setQrModalPhrase(phrase)}
+                                                            className="self-stretch w-10 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-400 hover:text-purple-500 hover:border-purple-200 transition-all"
+                                                            title="显示二维码"
+                                                        >
+                                                            <QrCode size={18} />
+                                                        </button>
+                                                        <button
                                                             onClick={() => handleDeletePhrase(phrase.id)}
                                                             className="self-stretch w-10 flex items-center justify-center rounded-lg border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
                                                         >
@@ -477,6 +507,92 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                                 </div>
                             )}
                         </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* 二维码模态框 */}
+            <AnimatePresence>
+                {qrModalPhrase && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+                        onClick={() => setQrModalPhrase(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            transition={{ type: 'spring', duration: 0.3 }}
+                            className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-6 max-w-sm w-full"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            {/* 模态框头部 */}
+                            <div className="flex items-center justify-between mb-4">
+                                <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                                    <QrCode size={20} className="text-purple-500" />
+                                    分享二维码
+                                </h3>
+                                <button
+                                    onClick={() => setQrModalPhrase(null)}
+                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                                >
+                                    <X size={20} />
+                                </button>
+                            </div>
+
+                            {/* 短语信息 */}
+                            <div className={`mb-4 px-3 py-2 rounded-lg border ${isPhraseActive(qrModalPhrase)
+                                ? 'bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800'
+                                : 'bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600'
+                                }`}>
+                                <p className="font-mono font-bold text-center text-gray-700 dark:text-gray-200">
+                                    {qrModalPhrase.phrase}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 text-center mt-1 flex items-center justify-center gap-1">
+                                    <Clock size={12} />
+                                    {formatDateTime(qrModalPhrase.valid_from)} ~ {formatDateTime(qrModalPhrase.valid_until)}
+                                </p>
+                            </div>
+
+                            {/* 二维码 */}
+                            <div className="flex justify-center mb-4 p-4 bg-white rounded-xl">
+                                <QRCodeSVG
+                                    value={getShareUrl(qrModalPhrase.phrase)}
+                                    size={200}
+                                    level="M"
+                                    includeMargin={true}
+                                    bgColor="#ffffff"
+                                    fgColor="#1f2937"
+                                />
+                            </div>
+
+                            {/* 链接显示和复制 */}
+                            <div className="flex gap-2">
+                                <div className="flex-1 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden">
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate font-mono">
+                                        {getShareUrl(qrModalPhrase.phrase)}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => handleCopyLink(qrModalPhrase.phrase)}
+                                    className={`px-3 py-2 rounded-lg border transition-all flex items-center gap-1 ${linkCopied
+                                            ? 'bg-green-100 dark:bg-green-900/50 border-green-300 dark:border-green-700 text-green-600 dark:text-green-400'
+                                            : 'bg-purple-100 dark:bg-purple-900/50 border-purple-300 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-200 dark:hover:bg-purple-800/50'
+                                        }`}
+                                >
+                                    {linkCopied ? <Check size={16} /> : <Copy size={16} />}
+                                    <span className="text-sm font-medium">{linkCopied ? '已复制' : '复制'}</span>
+                                </button>
+                            </div>
+
+                            {/* 提示 */}
+                            <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-4">
+                                扫描二维码或分享链接，其他人可直接加入此会话
+                            </p>
+                        </motion.div>
                     </motion.div>
                 )}
             </AnimatePresence>

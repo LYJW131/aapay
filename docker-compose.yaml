@@ -32,3 +32,7 @@ services:
       - /volume3/docker/oauth2-proxy/data:/data
     env_file:
       - .env
+
+# ssh dsm "rm -rf /volume3/docker/aapay/frontend/dist/*" && \
+# npm run build && \
+# scp -O -r ./dist/* dsm:/volume3/docker/aapay/frontend/dist/

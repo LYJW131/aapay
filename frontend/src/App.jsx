@@ -6,6 +6,7 @@ import DailySummary from './components/DailySummary';
 import DebtSettlement from './components/DebtSettlement';
 import AdminPanel from './components/AdminPanel';
 import SharePhraseInput from './components/SharePhraseInput';
+import ShareSessionCard from './components/ShareSessionCard';
 import { NotificationProvider, useNotification } from './components/NotificationProvider';
 import { calculateDebts } from './utils/debtCalculator';
 import * as api from './services/api';
@@ -152,32 +153,62 @@ function AppContent() {
     }
   }, [currentSession, checkAuthStatus]);
 
-  // 处理URL哈希参数中的分享短语
+  // 处理URL哈希参数中的分享短语或JWT
   const handleHashPhrase = useCallback(async () => {
     const hash = window.location.hash;
-    if (!hash || !hash.startsWith('#p=')) return false;
+    if (!hash) return false;
 
-    const phrase = decodeURIComponent(hash.substring(3));
-    if (!phrase || phrase.length < 6) return false;
+    // 处理 JWT 参数 (#jwt=xxx)
+    if (hash.startsWith('#jwt=')) {
+      const jwt = decodeURIComponent(hash.substring(5));
+      if (!jwt) return false;
 
-    // 清除 URL 中的哈希参数
-    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      // 清除 URL 中的哈希参数
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
 
-    try {
-      // 先删除本地的旧 JWT，再交换新的
-      api.removeToken();
-      const res = await api.exchangePhrase(phrase);
-      const newToken = res.data.token;
-      if (newToken) {
-        api.setToken(newToken);
+      const oldToken = api.getToken();
+      try {
+        // 先移除旧 token 并设置新 token 进行验证
+        api.removeToken();
+        api.setToken(jwt);
+        await api.checkAuth();
+        addNotification('登录成功', 'success');
+        return true;
+      } catch (err) {
+        // 验证失败，恢复旧 token
+        api.removeToken();
+        if (oldToken) api.setToken(oldToken);
+        addNotification('分享链接已过期或无效', 'error');
+        return false;
       }
-      addNotification('登录成功', 'success');
-      return true;
-    } catch (err) {
-      const errorMsg = err.response?.data?.detail || '分享短语无效或已过期';
-      addNotification(errorMsg, 'error');
-      return false;
     }
+
+    // 处理分享短语参数 (#p=xxx)
+    if (hash.startsWith('#p=')) {
+      const phrase = decodeURIComponent(hash.substring(3));
+      if (!phrase || phrase.length < 3) return false;
+
+      // 清除 URL 中的哈希参数
+      window.history.replaceState(null, '', window.location.pathname + window.location.search);
+
+      try {
+        // 先删除本地的旧 JWT，再交换新的
+        api.removeToken();
+        const res = await api.exchangePhrase(phrase);
+        const newToken = res.data.token;
+        if (newToken) {
+          api.setToken(newToken);
+        }
+        addNotification('登录成功', 'success');
+        return true;
+      } catch (err) {
+        const errorMsg = err.response?.data?.detail || '分享短语无效或已过期';
+        addNotification(errorMsg, 'error');
+        return false;
+      }
+    }
+
+    return false;
   }, [addNotification]);
 
   // 初始化认证检查
@@ -397,10 +428,14 @@ function AppContent() {
           defaultDate={globalDate}
         />
 
-        {/* 普通用户可以切换会话 - PC 端在左栏底部（共享模式下隐藏） */}
+        {/* 普通用户分享会话 - PC 端（共享模式下隐藏） */}
         {!isAdmin && hasValidSession && !isSharedMode && (
           <div className="hidden md:block">
-            <SharePhraseInput isCompact onSuccess={handlePhraseSuccess} onLogout={handleLogout} />
+            <ShareSessionCard
+              sessionName={currentSession?.session_name}
+              onSuccess={handlePhraseSuccess}
+              onLogout={handleLogout}
+            />
           </div>
         )}
       </div>
@@ -414,10 +449,14 @@ function AppContent() {
         />
       </div>
 
-      {/* 普通用户可以切换会话 - 移动端在最底部（共享模式下隐藏） */}
+      {/* 普通用户分享和切换会话 - 移动端（共享模式下隐藏） */}
       {!isAdmin && hasValidSession && !isSharedMode && (
         <div className="col-span-full md:hidden">
-          <SharePhraseInput isCompact onSuccess={handlePhraseSuccess} onLogout={handleLogout} />
+          <ShareSessionCard
+            sessionName={currentSession?.session_name}
+            onSuccess={handlePhraseSuccess}
+            onLogout={handleLogout}
+          />
         </div>
       )}
     </Layout>
