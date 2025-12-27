@@ -32,6 +32,10 @@ services:
       - /volume3/docker/oauth2-proxy/data:/data
     env_file:
       - .env
+      - /volume3/docker/unify-auth/env/redis.env
+      - /volume3/docker/unify-auth/env/common.env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 # ssh dsm "rm -rf /volume3/docker/aapay/frontend/dist/*" && \
 # npm run build && \
