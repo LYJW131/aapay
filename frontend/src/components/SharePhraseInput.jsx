@@ -150,7 +150,9 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                 <button
                     onClick={() => {
                         setAdminLoading(true);
-                        window.location.href = '/outpost.goauthentik.io/start?rd=%2F';
+                        const authentikUrl = import.meta.env.VITE_AUTHENTIK_URL || '';
+                        const rd = encodeURIComponent(window.location.origin + '/');
+                        window.location.href = `${authentikUrl}/outpost.goauthentik.io/start?rd=${rd}`;
                     }}
                     disabled={adminLoading}
                     className="w-full h-10 flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300 hover:text-primary border border-gray-200 dark:border-gray-600 rounded-lg hover:border-primary/50 transition-colors disabled:opacity-50"

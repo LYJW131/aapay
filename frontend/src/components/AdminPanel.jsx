@@ -291,9 +291,9 @@ const AdminPanel = ({ currentSession, onSessionChange, onLogout, isCollapsed, on
                 <button
                     onClick={(e) => {
                         e.stopPropagation();
-                        // 清除 token 后直接跳转
                         localStorage.removeItem('aapay_token');
-                        window.location.href = '/outpost.goauthentik.io/sign_out';
+                        const authentikUrl = import.meta.env.VITE_AUTHENTIK_URL || '';
+                        window.location.href = `${authentikUrl}/outpost.goauthentik.io/sign_out`;
                     }}
                     className="text-sm text-red-500 hover:text-red-600 flex items-center gap-1 px-3 py-1.5 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
                 >
