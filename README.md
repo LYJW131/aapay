@@ -15,7 +15,7 @@ AAPay 是一款现代化的多用户分账应用，专为聚餐、旅行、合�
 - **🔐 会话隔离** - 多账本独立管理，互不干扰
 - **🔗 分享短语** - 通过短语快速加入会话，安全便捷
 - **📡 实时同步** - 基于 SSE 的实时数据推送，多端同步更新
-- **🛡️ OAuth2 认证** - 管理员界面支持 OAuth2 安全认证
+- **🛡️ Authentik 认证** - 管理员界面通过 Traefik ForwardAuth 安全认证
 
 ## 🏗️ 技术栈
 
@@ -36,7 +36,7 @@ AAPay 是一款现代化的多用户分账应用，专为聚餐、旅行、合�
 ### 部署
 - **Docker & Docker Compose** - 容器化部署
 - **Nginx** - 反向代理 & 静态资源服务
-- **OAuth2-Proxy** - 管理员认证代理
+- **Traefik + Authentik** - 管理员认证网关
 
 ## 📁 项目结构
 
@@ -92,8 +92,8 @@ TZ=Asia/Shanghai
 JWT_SECRET=your-super-secret-key-here
 SESSION_ISOLATION=true
 
-# OAuth2-Proxy 配置 (用于管理员认证)
-OAUTH2_PROXY_...
+# Traefik + Authentik 配置
+AAPAY_DOMAIN=your-app.example.com
 ```
 
 ### 3. 构建前端
@@ -111,7 +111,7 @@ cd ..
 docker-compose up -d
 ```
 
-服务将在 `http://localhost:30980` 启动。
+服务由 Traefik 暴露，请通过 `https://$AAPAY_DOMAIN` 访问。
 
 ## 💡 使用说明
 
@@ -125,7 +125,7 @@ docker-compose up -d
 
 ### 管理员
 
-1. **OAuth2 登录** - 访问 `/oauth2/start` 进行认证
+1. **管理员登录** - 访问 `/admin`，由 Traefik + Authentik 自动引导认证
 2. **创建会话** - 在管理面板创建新的分账会话
 3. **生成短语** - 创建带有效期的分享短语
 4. **分发短语** - 将短语分享给参与者
@@ -189,7 +189,7 @@ npm run dev
 
 - 用户端使用 JWT 令牌认证
 - 令牌通过 Authorization Header 传递
-- 管理员端使用 OAuth2-Proxy 保护
+- 管理员端使用 Traefik + Authentik ForwardAuth 保护
 
 ## 📋 环境变量
 
@@ -212,7 +212,7 @@ npm run dev
 | **多会话支持** | 管理员可创建多个独立会话（账本） |
 | **数据隔离** | 每个会话拥有独立的数据库文件 |
 | **分享短语** | 用户通过分享短语加入指定会话 |
-| **OAuth2 认证** | 管理员需通过 OAuth2 登录管理后台 |
+| **Authentik 认证** | 管理员需通过 Authentik 登录管理后台 |
 | **SSE 隔离** | 实时事件仅推送给同会话用户 |
 
 **工作流程：**
@@ -228,7 +228,7 @@ npm run dev
 |------|------|
 | **单一账本** | 所有用户共享同一个数据库 |
 | **无需认证** | 用户直接访问，无需输入短语 |
-| **简化部署** | 无需配置 OAuth2-Proxy |
+| **简化部署** | 无需配置 Authentik ForwardAuth |
 | **即开即用** | 适合小团队快速使用 |
 
 **配置方式：**

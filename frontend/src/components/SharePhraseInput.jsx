@@ -150,7 +150,7 @@ const SharePhraseInput = ({ onSuccess, isCompact = false, onLogout }) => {
                 <button
                     onClick={() => {
                         setAdminLoading(true);
-                        window.location.href = '/oauth2/sign_in?rd=%2F';
+                        window.location.href = '/admin';
                     }}
                     disabled={adminLoading}
                     className="w-full h-10 flex items-center justify-center gap-2 text-gray-600 dark:text-gray-300 hover:text-primary border border-gray-200 dark:border-gray-600 rounded-lg hover:border-primary/50 transition-colors disabled:opacity-50"
