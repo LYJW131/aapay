@@ -10,12 +10,12 @@ services:
       - TZ=${TZ}
       - JWT_SECRET=${JWT_SECRET}
       - SESSION_ISOLATION=${SESSION_ISOLATION:-true}
+    networks:
+      - internal 
 
   frontend:
     image: nginx
     container_name: aapay-frontend
-    ports:
-      - "${FRONTEND_PORT}:80"
     volumes:
       - ./frontend/dist:/usr/share/nginx/html:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
@@ -23,6 +23,15 @@ services:
       - backend
       - oauth2-proxy
     restart: unless-stopped
+    networks:
+      - proxy
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.aapay.rule=Host(`aapay.lyjw131.com`)"
+      - "traefik.http.routers.aapay.entrypoints=websecure"
+      - "traefik.http.routers.aapay.tls.certresolver=letsencrypt"
+      - "traefik.http.services.aapay.loadbalancer.server.port=80"
 
   oauth2-proxy:
     container_name: aapay-oauth2
@@ -32,11 +41,17 @@ services:
       - /volume3/docker/oauth2-proxy/data:/data
     env_file:
       - .env
-      - /volume3/docker/unify-auth/env/redis.env
-      - /volume3/docker/unify-auth/env/common.env
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks:
+      - internal 
 
+networks:
+  proxy:
+    external: true
+  internal:
+    driver: bridge
+    
 # ssh dsm "rm -rf /volume3/docker/aapay/frontend/dist/*" && \
 # npm run build && \
 # scp -O -r ./dist/* dsm:/volume3/docker/aapay/frontend/dist/
