@@ -1,5 +1,6 @@
 import type { ButtonHTMLAttributes, ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
+import { useDelayed } from '../lib/hooks.ts';
 import { Spinner } from './Spinner.tsx';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'soft';
@@ -29,7 +30,8 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
   icon?: ReactNode;
 }
 
-export function Button({ variant = 'secondary', size = 'md', loading, icon, className, children, disabled, ...rest }: Props) {
+export function Button({ variant = 'secondary', size = 'md', loading = false, icon, className, children, disabled, ...rest }: Props) {
+  const spinning = useDelayed(loading);
   return (
     <button
       type="button"
@@ -42,7 +44,7 @@ export function Button({ variant = 'secondary', size = 'md', loading, icon, clas
         className,
       )}
     >
-      {loading ? <Spinner className="size-4" /> : icon}
+      {spinning ? <Spinner className="size-4" /> : icon}
       {children}
     </button>
   );

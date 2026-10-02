@@ -1,7 +1,7 @@
 import { Check, Copy, LogIn, LogOut, Share2, ShieldCheck, Sparkles, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
-import type { PublicConfig } from '../../../shared/types.ts';
+import type { PublicConfig, SessionInfo } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { LogoMark } from '../../components/Logo.tsx';
@@ -23,7 +23,19 @@ export function joinLink(code: string) {
   return `${window.location.origin}/join#${encodeURIComponent(code)}`;
 }
 
-export function Header({ live, config, admin, onLeave }: { live: LiveStatus; config: PublicConfig; admin: boolean; onLeave: () => void }) {
+export function Header({
+  live,
+  config,
+  admin,
+  onSwitch,
+  onLeave,
+}: {
+  live: LiveStatus;
+  config: PublicConfig;
+  admin: boolean;
+  onSwitch: (session: SessionInfo) => Promise<void>;
+  onLeave: () => void;
+}) {
   const { snapshot, session } = useLedger();
   const [shareOpen, setShareOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -59,14 +71,22 @@ export function Header({ live, config, admin, onLeave }: { live: LiveStatus; con
       )}
       {session.role !== 'shared' && (
         <Sheet open={shareOpen} onClose={() => setShareOpen(false)} title="邀请与切换" description={snapshot.ledger.name}>
-          <ShareContent config={config} onLeave={onLeave} />
+          <ShareContent config={config} onSwitch={onSwitch} onLeave={onLeave} />
         </Sheet>
       )}
     </header>
   );
 }
 
-function ShareContent({ config, onLeave }: { config: PublicConfig; onLeave: () => void }) {
+function ShareContent({
+  config,
+  onSwitch,
+  onLeave,
+}: {
+  config: PublicConfig;
+  onSwitch: (session: SessionInfo) => Promise<void>;
+  onLeave: () => void;
+}) {
   const { session } = useLedger();
   const [copied, setCopied] = useState(false);
   const [code, setCode] = useState('');
@@ -90,8 +110,8 @@ function ShareContent({ config, onLeave }: { config: PublicConfig; onLeave: () =
     setJoining(true);
     try {
       const next = await call(api.join.$post({ json: { code: code.trim() } }));
+      await onSwitch(next);
       toast.success(`已进入「${next.ledger.name}」`);
-      window.location.replace('/');
     } catch (err) {
       toast.error(errorMessage(err));
       setJoining(false);
@@ -149,9 +169,7 @@ function ShareContent({ config, onLeave }: { config: PublicConfig; onLeave: () =
             spellCheck={false}
             className="field font-mono tracking-wider"
           />
-          <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={joining} aria-label="进入">
-            {!joining && <LogIn className="size-4" />}
-          </Button>
+          <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={joining} aria-label="进入" icon={<LogIn className="size-4" />} />
         </div>
       </form>
 

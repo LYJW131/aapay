@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { LIMITS } from '../../../shared/limits.ts';
 import type { Member } from '../../../shared/types.ts';
+import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Card, Label } from '../../components/Card.tsx';
@@ -35,21 +36,23 @@ export function MembersCard() {
 
   return (
     <Card title="成员" icon={<Users />} action={<span className="tabular text-xs text-zinc-400">{snapshot.members.length} 人</span>}>
-      {snapshot.members.length > 0 && (
-        <div className="-mx-1 mb-4 flex flex-wrap gap-1">
-          {snapshot.members.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => setEditing(m)}
-              className="group flex w-[60px] flex-col items-center gap-1 rounded-2xl py-1.5 transition hover:bg-zinc-900/4 dark:hover:bg-white/5"
-              title={`编辑 ${m.name}`}
-            >
-              <Avatar member={m} className="transition group-active:scale-90" />
-              <span className="w-full truncate px-0.5 text-center text-xs text-zinc-600 dark:text-zinc-300">{m.name}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <AutoHeight className="-mx-1 px-1">
+        {snapshot.members.length > 0 && (
+          <div className="-mx-1 mb-4 flex flex-wrap gap-1">
+            {snapshot.members.map((m) => (
+              <button
+                key={m.id}
+                onClick={() => setEditing(m)}
+                className="group flex w-[60px] flex-col items-center gap-1 rounded-2xl py-1.5 transition hover:bg-zinc-900/4 dark:hover:bg-white/5"
+                title={`编辑 ${m.name}`}
+              >
+                <Avatar member={m} className="transition group-active:scale-90" />
+                <span className="w-full truncate px-0.5 text-center text-xs text-zinc-600 dark:text-zinc-300">{m.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </AutoHeight>
       <form onSubmit={add} className="flex gap-2">
         <input
           value={name}
@@ -59,9 +62,7 @@ export function MembersCard() {
           className="field"
           aria-label="新成员名字"
         />
-        <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={adding} aria-label="添加成员">
-          {!adding && <Plus className="size-5" />}
-        </Button>
+        <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={adding} aria-label="添加成员" icon={<Plus className="size-5" />} />
       </form>
       <MemberSheet member={editing} onClose={() => setEditing(null)} />
     </Card>

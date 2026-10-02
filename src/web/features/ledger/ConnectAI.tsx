@@ -6,6 +6,7 @@ import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { ConnectionList } from '../../components/ConnectionList.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
+import { useLedger } from './context.tsx';
 
 export const mcpUrl = () => `${window.location.origin}/mcp`;
 
@@ -16,17 +17,21 @@ const STEPS = [
 ];
 
 // 授权通常在另一个标签页完成，回到这里时刷新
-function useConnections(list: () => Promise<Connection[]>, remove: (id: string) => Promise<unknown>) {
-  const [connections, setConnections] = useState<Connection[] | null>(null);
+const cache = new Map<string, Connection[]>();
+
+function useConnections(cacheKey: string, list: () => Promise<Connection[]>, remove: (id: string) => Promise<unknown>) {
+  const [connections, setConnections] = useState<Connection[] | null>(() => cache.get(cacheKey) ?? null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setConnections(await list());
+      const result = await list();
+      cache.set(cacheKey, result);
+      setConnections(result);
     } catch (err) {
       toast.error(errorMessage(err));
     }
-  }, [list]);
+  }, [cacheKey, list]);
 
   useEffect(() => {
     void load();
@@ -39,7 +44,11 @@ function useConnections(list: () => Promise<Connection[]>, remove: (id: string) 
     setBusy(c.id);
     try {
       await remove(c.id);
-      setConnections((all) => all?.filter((x) => x.id !== c.id) ?? null);
+      setConnections((all) => {
+        const next = all?.filter((x) => x.id !== c.id) ?? null;
+        if (next) cache.set(cacheKey, next);
+        return next;
+      });
       toast.success(`已断开 ${c.clientName ?? c.clientHost ?? 'AI 应用'}`);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -58,7 +67,8 @@ const removeAdminConnection = (id: string) => call(api.admin.connections[':id'].
 
 export function ConnectAI({ admin }: { admin: boolean }) {
   const [copied, setCopied] = useState(false);
-  const ledger = useConnections(ledgerConnections, removeLedgerConnection);
+  const { session } = useLedger();
+  const ledger = useConnections(`ledger:${session.ledger.id}`, ledgerConnections, removeLedgerConnection);
 
   async function copy() {
     try {
@@ -115,7 +125,7 @@ export function ConnectAI({ admin }: { admin: boolean }) {
 }
 
 function AdminConnections() {
-  const { connections, busy, disconnect } = useConnections(adminConnections, removeAdminConnection);
+  const { connections, busy, disconnect } = useConnections('admin', adminConnections, removeAdminConnection);
   return (
     <div>
       <Label aside={connections && connections.length > 0 && <span className="tabular">{connections.length}</span>}>管理员连接（全部账本）</Label>

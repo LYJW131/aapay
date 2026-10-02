@@ -27,7 +27,12 @@ export class LedgerStore {
   private connectedBefore = false;
   private stopped = true;
 
-  constructor(private readonly hooks: Hooks) {}
+  constructor(
+    private readonly hooks: Hooks,
+    initial: Snapshot | null = null,
+  ) {
+    this.state = { ...this.state, snapshot: initial };
+  }
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);

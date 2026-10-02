@@ -13,7 +13,7 @@ function codeFromUrl() {
   return window.location.pathname === '/join' && hash ? hash : null;
 }
 
-export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; notice?: string; onJoined: (s: SessionInfo) => void }) {
+export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; notice?: string; onJoined: (s: SessionInfo) => Promise<void> }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState(notice ?? '');
   const [loading, setLoading] = useState(false);
@@ -24,8 +24,8 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
     setError('');
     try {
       const session = await call(api.join.$post({ json: { code: value } }));
+      await onJoined(session);
       navigate('/', { replace: true });
-      onJoined(session);
     } catch (err) {
       setError(errorMessage(err));
       setLoading(false);
@@ -93,7 +93,7 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
           {error && <p className="text-center text-sm text-rose-500">{error}</p>}
           <Button type="submit" variant="primary" size="lg" className="w-full" loading={loading} disabled={code.trim().length < LIMITS.codeMin}>
             进入账本
-            {!loading && <ArrowRight className="size-4" />}
+            <ArrowRight className="size-4" />
           </Button>
         </form>
 

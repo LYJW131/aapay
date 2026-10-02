@@ -14,8 +14,9 @@ import { Spinner } from '../../components/Spinner.tsx';
 import { api, call, errorMessage, liveUrl } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { formatDateTime } from '../../lib/dates.ts';
-import { usePersistentState } from '../../lib/hooks.ts';
+import { useDelayed, usePersistentState } from '../../lib/hooks.ts';
 import { joinLink } from '../ledger/Header.tsx';
+import { adminCache } from './preload.ts';
 
 function useAdminLive(onEvent: (event: RegistryEvent) => void) {
   useEffect(() => {
@@ -41,22 +42,24 @@ function useAdminLive(onEvent: (event: RegistryEvent) => void) {
 interface Props {
   admin: AdminIdentity;
   current: SessionInfo | null;
-  onEnter: (session: SessionInfo) => void;
+  onEnter: (session: SessionInfo) => Promise<void>;
   standalone?: boolean;
 }
 
 export function AdminCard({ admin, current, onEnter, standalone = false }: Props) {
   const [collapsed, setCollapsed] = usePersistentState('aapay:admin:collapsed', false);
-  const [ledgers, setLedgers] = useState<LedgerOverview[] | null>(null);
-  const [passphrases, setPassphrases] = useState<Passphrase[] | null>(null);
+  const currentId = current?.ledger.id ?? null;
+  const [ledgers, setLedgers] = useState<LedgerOverview[] | null>(() => adminCache.ledgers);
+  const [passphrases, setPassphrases] = useState<Passphrase[] | null>(() => (currentId && adminCache.passphrases.get(currentId)) || null);
   const [qr, setQr] = useState<Passphrase | null>(null);
   const [deleting, setDeleting] = useState<LedgerOverview | null>(null);
   const open = standalone || !collapsed;
-  const currentId = current?.ledger.id ?? null;
 
   const loadLedgers = useCallback(async () => {
     try {
-      setLedgers(await call(api.admin.ledgers.$get()));
+      const list = await call(api.admin.ledgers.$get());
+      adminCache.ledgers = list;
+      setLedgers(list);
     } catch (err) {
       toast.error(errorMessage(err));
     }
@@ -65,17 +68,16 @@ export function AdminCard({ admin, current, onEnter, standalone = false }: Props
   const loadPassphrases = useCallback(async () => {
     if (!currentId) return;
     try {
-      setPassphrases(await call(api.admin.ledgers[':id'].passphrases.$get({ param: { id: currentId } })));
+      const list = await call(api.admin.ledgers[':id'].passphrases.$get({ param: { id: currentId } }));
+      adminCache.passphrases.set(currentId, list);
+      setPassphrases(list);
     } catch {
       setPassphrases([]);
     }
   }, [currentId]);
 
   useEffect(() => void loadLedgers(), [loadLedgers]);
-  useEffect(() => {
-    setPassphrases(null);
-    void loadPassphrases();
-  }, [loadPassphrases]);
+  useEffect(() => void loadPassphrases(), [loadPassphrases]);
 
   useAdminLive(
     useCallback(
@@ -171,7 +173,7 @@ function Ledgers({
 }: {
   ledgers: LedgerOverview[] | null;
   currentId: string | null;
-  onEnter: (session: SessionInfo) => void;
+  onEnter: (session: SessionInfo) => Promise<void>;
   onChanged: () => void;
   onDelete: (ledger: LedgerOverview) => void;
 }) {
@@ -182,7 +184,7 @@ function Ledgers({
   async function enter(id: string) {
     setBusy(id);
     try {
-      onEnter(await call(api.admin.ledgers[':id'].enter.$post({ param: { id } })));
+      await onEnter(await call(api.admin.ledgers[':id'].enter.$post({ param: { id } })));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -216,9 +218,7 @@ function Ledgers({
       </Label>
       <form onSubmit={create} className="mb-2 flex gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} placeholder="新账本名称" className="field" />
-        <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={busy === 'create'} aria-label="创建账本">
-          {busy !== 'create' && <Plus className="size-5" />}
-        </Button>
+        <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={busy === 'create'} aria-label="创建账本" icon={<Plus className="size-5" />} />
       </form>
       {!ledgers ? (
         <div className="flex justify-center py-6 text-zinc-400">
@@ -274,6 +274,7 @@ function LedgerRow({
   onRename: () => void;
   onDelete: () => void;
 }) {
+  const spinning = useDelayed(busy);
   return (
     <div className="flex items-center gap-1">
       <button
@@ -285,7 +286,7 @@ function LedgerRow({
         )}
       >
         <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500/15 to-accent-500/15 text-sm font-semibold text-brand-600 dark:text-brand-300">
-          {busy ? <Spinner className="size-4" /> : [...l.name][0]}
+          {spinning ? <Spinner className="size-4" /> : [...l.name][0]}
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
@@ -341,9 +342,7 @@ function RenameForm({ ledger, onDone }: { ledger: LedgerOverview; onDone: () => 
   return (
     <form onSubmit={save} className="flex gap-2 py-1">
       <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} autoFocus className="field" />
-      <Button type="submit" variant="primary" size="icon" className="size-11 rounded-2xl" loading={saving} aria-label="保存">
-        {!saving && <Check className="size-4" />}
-      </Button>
+      <Button type="submit" variant="primary" size="icon" className="size-11 rounded-2xl" loading={saving} aria-label="保存" icon={<Check className="size-4" />} />
       <Button variant="ghost" size="icon" className="size-11 rounded-2xl" onClick={onDone} aria-label="取消">
         <X className="size-4" />
       </Button>
@@ -578,9 +577,7 @@ function PassphraseRow({ passphrase: p, busy, onQr, onRevoke }: { passphrase: Pa
       <Button size="icon" variant="ghost" className="size-9" onClick={onQr} aria-label="二维码与链接">
         <QrIcon className="size-4" />
       </Button>
-      <Button size="icon" variant="ghost" className="size-9 text-rose-500 hover:bg-rose-500/10" onClick={onRevoke} loading={busy} aria-label="撤销口令">
-        {!busy && <Trash2 className="size-4" />}
-      </Button>
+      <Button size="icon" variant="ghost" className="size-9 text-rose-500 hover:bg-rose-500/10" onClick={onRevoke} loading={busy} aria-label="撤销口令" icon={<Trash2 className="size-4" />} />
     </div>
   );
 }

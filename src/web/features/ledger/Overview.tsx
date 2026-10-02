@@ -1,5 +1,6 @@
-import { CalendarRange, ChartColumnBig } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { CalendarRange, ChartColumnBig, Check } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatMoney } from '../../../shared/money.ts';
 import type { Expense, IsoDate } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
@@ -65,7 +66,15 @@ function buckets(expenses: Expense[], from: IsoDate, to: IsoDate): Bucket[] {
 
 export function OverviewCard({ range, onRange, memberId, onMember, expenses }: Props) {
   const { snapshot } = useLedger();
-  const [customOpen, setCustomOpen] = useState(range.key === 'custom');
+  const [customOpen, setCustomOpen] = useState(false);
+  const rangeBar = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!customOpen) return;
+    const close = (e: PointerEvent) => !rangeBar.current?.contains(e.target as Node) && setCustomOpen(false);
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [customOpen]);
   const resolved = resolveRange(range);
 
   const stats = useMemo(() => {
@@ -84,52 +93,71 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
 
   return (
     <Card title="账本概览" icon={<ChartColumnBig />}>
-      <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
-        {RANGE_OPTIONS.map((o) => (
+      <div ref={rangeBar} className="relative">
+        <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+          {RANGE_OPTIONS.map((o) => (
+            <Chip
+              key={o.key}
+              active={range.key === o.key}
+              onClick={() => {
+                setCustomOpen(false);
+                onRange({ key: o.key });
+              }}
+            >
+              {o.label}
+            </Chip>
+          ))}
           <Chip
-            key={o.key}
-            active={range.key === o.key}
+            active={range.key === 'custom'}
             onClick={() => {
-              setCustomOpen(false);
-              onRange({ key: o.key });
+              setCustomOpen(!customOpen || range.key !== 'custom');
+              if (range.key !== 'custom') onRange({ key: 'custom', from: stats.from, to: stats.to });
             }}
           >
-            {o.label}
+            <CalendarRange className="size-3.5" />
+            <span className="tabular">
+              {range.key === 'custom' && range.from && range.to ? `${shortDate(range.from)} – ${shortDate(range.to)}` : '自定义'}
+            </span>
           </Chip>
-        ))}
-        <Chip
-          active={range.key === 'custom'}
-          onClick={() => {
-            setCustomOpen(true);
-            if (range.key !== 'custom') onRange({ key: 'custom', from: stats.from, to: stats.to });
-          }}
-        >
-          <CalendarRange className="size-3.5" />
-          自定义
-        </Chip>
-      </div>
-
-      {customOpen && range.key === 'custom' && (
-        <div className="mt-2 flex items-center gap-2">
-          <input
-            type="date"
-            value={range.from ?? ''}
-            max={range.to}
-            onChange={(e) => onRange({ ...range, from: e.target.value || undefined })}
-            className="field tabular h-10 min-w-0 flex-1 px-3 text-center text-sm"
-            aria-label="开始日期"
-          />
-          <span className="text-zinc-400">~</span>
-          <input
-            type="date"
-            value={range.to ?? ''}
-            min={range.from}
-            onChange={(e) => onRange({ ...range, to: e.target.value || undefined })}
-            className="field tabular h-10 min-w-0 flex-1 px-3 text-center text-sm"
-            aria-label="结束日期"
-          />
         </div>
-      )}
+
+        <AnimatePresence>
+          {customOpen && range.key === 'custom' && (
+            <motion.div
+              initial={{ opacity: 0, y: -4, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -4, scale: 0.98 }}
+              transition={{ duration: 0.15 }}
+              className="absolute inset-x-0 top-full z-20 mt-1 flex items-center gap-1.5 rounded-2xl bg-surface p-2 shadow-lg ring-1 ring-zinc-900/8 dark:ring-white/10"
+            >
+              <input
+                type="date"
+                value={range.from ?? ''}
+                max={range.to}
+                onChange={(e) => onRange({ ...range, from: e.target.value || undefined })}
+                className="field tabular h-10 min-w-0 flex-1 px-2 text-center text-[13px]"
+                aria-label="开始日期"
+              />
+              <input
+                type="date"
+                value={range.to ?? ''}
+                min={range.from}
+                onChange={(e) => onRange({ ...range, to: e.target.value || undefined })}
+                className="field tabular h-10 min-w-0 flex-1 px-2 text-center text-[13px]"
+                aria-label="结束日期"
+              />
+              <button
+                type="button"
+                onClick={() => setCustomOpen(false)}
+                className="flex size-9 shrink-0 items-center justify-center rounded-xl text-brand-600 transition hover:bg-brand-500/10 dark:text-brand-300"
+                aria-label="完成"
+              >
+                <Check className="size-4" />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {snapshot.members.length > 1 && (
         <div className="mt-2 -mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
@@ -145,7 +173,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[13px] text-zinc-500 dark:text-zinc-400">
             {memberId ? '相关支出' : '总支出'} · {expenses.length} 笔
@@ -167,9 +195,11 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
         </dl>
       </div>
 
-      {stats.series.length > 0 && stats.total > 0 && (
-        <SpendChart series={stats.series} onPick={(b) => (setCustomOpen(true), onRange(b.range))} />
-      )}
+      <SpendChart
+        series={stats.series}
+        empty={stats.total === 0 ? '这段时间没有支出' : '选择 3 天以上的范围查看走势'}
+        onPick={(b) => (setCustomOpen(false), onRange(b.range))}
+      />
     </Card>
   );
 }
@@ -201,11 +231,21 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-function SpendChart({ series, onPick }: { series: Bucket[]; onPick: (b: Bucket) => void }) {
+function SpendChart({ series, empty, onPick }: { series: Bucket[]; empty: string; onPick: (b: Bucket) => void }) {
   const [hover, setHover] = useState<number | null>(null);
-  const max = Math.max(...series.map((b) => b.total));
-  const active = hover === null ? null : series[hover]!;
-  const ticks = [0, Math.floor((series.length - 1) / 2), series.length - 1].filter((v, i, a) => a.indexOf(v) === i);
+  const max = Math.max(0, ...series.map((b) => b.total));
+  const active = hover === null ? null : series[hover];
+  const ticks = [0, Math.floor((series.length - 1) / 2), series.length - 1].filter((v, i, a) => v >= 0 && a.indexOf(v) === i);
+
+  if (max === 0) {
+    return (
+      <figure className="mt-5">
+        <figcaption className="mb-2 flex h-5 items-center text-xs text-zinc-500 dark:text-zinc-400">支出走势</figcaption>
+        <div className="flex h-28 items-center justify-center rounded-2xl bg-zinc-50 text-[13px] text-zinc-400 dark:bg-white/3">{empty}</div>
+        <div className="mt-1.5 h-4" />
+      </figure>
+    );
+  }
 
   return (
     <figure className="mt-5">
@@ -221,7 +261,11 @@ function SpendChart({ series, onPick }: { series: Bucket[]; onPick: (b: Bucket) 
           )}
         </span>
       </figcaption>
-      <div className="relative flex h-28 items-end border-b border-zinc-200 dark:border-white/10" onMouseLeave={() => setHover(null)}>
+      <div
+        key={`${series[0]!.key}-${series.length}`}
+        className="animate-fade-in relative flex h-28 items-end border-b border-zinc-200 dark:border-white/10"
+        onMouseLeave={() => setHover(null)}
+      >
         {series.map((b, i) => (
           <button
             key={b.key}

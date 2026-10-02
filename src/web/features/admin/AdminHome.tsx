@@ -4,7 +4,7 @@ import type { AdminIdentity, SessionInfo } from '../../../shared/types.ts';
 import { Wordmark } from '../../components/Logo.tsx';
 import { AdminCard } from './AdminCard.tsx';
 
-export function AdminHome({ admin, notice, onEnter }: { admin: AdminIdentity; notice?: string; onEnter: (session: SessionInfo) => void }) {
+export function AdminHome({ admin, notice, onEnter }: { admin: AdminIdentity; notice?: string; onEnter: (session: SessionInfo) => Promise<void> }) {
   useEffect(() => {
     document.title = 'AAPay';
     if (notice) toast(notice);

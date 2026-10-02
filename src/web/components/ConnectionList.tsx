@@ -1,6 +1,8 @@
 import { PlugZap, Sparkles, Unplug } from 'lucide-react';
 import type { Connection } from '../../shared/types.ts';
 import { relativeTime } from '../lib/dates.ts';
+import { useDelayed } from '../lib/hooks.ts';
+import { AutoHeight } from './AutoHeight.tsx';
 import { Button } from './Button.tsx';
 import { Spinner } from './Spinner.tsx';
 
@@ -15,13 +17,29 @@ export function ConnectionList({
   onDisconnect: (c: Connection) => void;
   empty?: string;
 }) {
-  if (connections === null) {
-    return (
-      <div className="flex justify-center py-6 text-zinc-400">
-        <Spinner className="size-5" />
-      </div>
-    );
-  }
+  return <AutoHeight>{connections === null ? <Loading /> : <List connections={connections} busy={busy} onDisconnect={onDisconnect} empty={empty} />}</AutoHeight>;
+}
+
+function Loading() {
+  const visible = useDelayed(true, 300);
+  return (
+    <div className="flex h-[104px] items-center justify-center rounded-2xl bg-zinc-50 text-zinc-400 dark:bg-white/3">
+      {visible && <Spinner className="size-5" />}
+    </div>
+  );
+}
+
+function List({
+  connections,
+  busy,
+  onDisconnect,
+  empty,
+}: {
+  connections: Connection[];
+  busy: string | null;
+  onDisconnect: (c: Connection) => void;
+  empty: string;
+}) {
   if (connections.length === 0) {
     return (
       <div className="flex flex-col items-center rounded-2xl bg-zinc-50 px-4 py-6 text-center dark:bg-white/3">

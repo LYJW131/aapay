@@ -5,6 +5,7 @@ import { centsToInput, formatMoney, parseAmount, splitEvenly } from '../../../sh
 import { LIMITS } from '../../../shared/limits.ts';
 import type { Expense } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
+import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { api, errorMessage } from '../../lib/api.ts';
@@ -194,11 +195,13 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
 
       <div>
         <Label>谁付的钱</Label>
-        <div className="flex flex-wrap gap-2">
-          {members.map((m) => (
-            <MemberChip key={m.id} active={payerId === m.id} onClick={() => setPayerId(m.id)} member={m} />
-          ))}
-        </div>
+        <AutoHeight className="-m-1 p-1">
+          <div className="flex flex-wrap gap-2">
+            {members.map((m) => (
+              <MemberChip key={m.id} active={payerId === m.id} onClick={() => setPayerId(m.id)} member={m} />
+            ))}
+          </div>
+        </AutoHeight>
       </div>
 
       <div>
@@ -215,11 +218,13 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         >
           谁一起分摊 · {participantIds.length}/{members.length}
         </Label>
-        <div className="flex flex-wrap gap-2">
-          {members.map((m) => (
-            <MemberChip key={m.id} active={selected.has(m.id)} onClick={() => toggle(m.id)} member={m} multi />
-          ))}
-        </div>
+        <AutoHeight className="-m-1 p-1">
+          <div className="flex flex-wrap gap-2">
+            {members.map((m) => (
+              <MemberChip key={m.id} active={selected.has(m.id)} onClick={() => toggle(m.id)} member={m} multi />
+            ))}
+          </div>
+        </AutoHeight>
       </div>
 
       <div className="flex items-center justify-between rounded-2xl bg-brand-500/6 px-4 py-3 text-sm dark:bg-brand-400/8">

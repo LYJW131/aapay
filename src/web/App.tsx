@@ -1,32 +1,50 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
-import type { AdminIdentity, PublicConfig, SessionInfo } from '../shared/types.ts';
+import type { AdminIdentity, PublicConfig, SessionInfo, Snapshot } from '../shared/types.ts';
 import { Spinner } from './components/Spinner.tsx';
 import { detectAdmin } from './features/admin/identity.ts';
+import { adminModules, preloadAdmin, prefetchAdminData } from './features/admin/preload.ts';
 import { JoinPage } from './features/join/JoinPage.tsx';
 import { LedgerPage } from './features/ledger/LedgerPage.tsx';
-import { api, call } from './lib/api.ts';
-import { useMediaQuery } from './lib/hooks.ts';
+import { api, ApiError, call } from './lib/api.ts';
+import { useDelayed, useMediaQuery } from './lib/hooks.ts';
 import { usePathname } from './lib/router.ts';
 
 const AdminPage = lazy(() => import('./features/admin/AdminPage.tsx').then((m) => ({ default: m.AdminPage })));
-const AdminHome = lazy(() => import('./features/admin/AdminHome.tsx').then((m) => ({ default: m.AdminHome })));
 const AuthorizePage = lazy(() => import('./features/oauth/AuthorizePage.tsx').then((m) => ({ default: m.AuthorizePage })));
 
-type Boot =
-  | { state: 'loading' }
-  | { state: 'error'; message: string }
-  | { state: 'ready'; config: PublicConfig; session: SessionInfo | null; admin: AdminIdentity | null; notice?: string };
+type Ready = {
+  state: 'ready';
+  config: PublicConfig;
+  session: SessionInfo | null;
+  snapshot: Snapshot | null;
+  admin: AdminIdentity | null;
+  notice?: string;
+};
+type Boot = { state: 'loading' } | { state: 'error'; message: string } | Ready;
 
-async function boot(): Promise<Boot> {
-  // 这些页面自己处理登录状态，不在这里拉会话
-  const { pathname } = window.location;
-  const config = await call(api.config.$get());
-  if (pathname === '/join' || pathname === '/oauth/authorize' || pathname.startsWith('/admin')) {
-    return { state: 'ready', config, session: null, admin: null };
+async function loadSnapshot(): Promise<Snapshot | null> {
+  try {
+    return await call(api.ledger.$get());
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return null;
+    throw err;
   }
-  const session = await call(api.session.$get());
-  return { state: 'ready', config, session, admin: await detectAdmin(config, session) };
+}
+
+async function boot(): Promise<Ready> {
+  const { pathname } = window.location;
+  // 这些页面自己处理登录状态，不在这里拉会话
+  const standalone = pathname === '/join' || pathname === '/oauth/authorize' || pathname.startsWith('/admin');
+  const [config, session] = await Promise.all([call(api.config.$get()), standalone ? null : call(api.session.$get())]);
+  const [snapshot, admin] = await Promise.all([session ? loadSnapshot() : null, detectAdmin(config, session)]);
+  if (admin) await preloadAdmin(session?.ledger.id ?? null);
+  return { state: 'ready', config, session: snapshot ? session : null, snapshot, admin };
+}
+
+function Pending() {
+  const visible = useDelayed(true, 300);
+  return <div className="flex min-h-dvh items-center justify-center text-zinc-400">{visible && <Spinner className="size-7" />}</div>;
 }
 
 export function App() {
@@ -45,13 +63,17 @@ export function App() {
     };
   }, []);
 
+  const open = useCallback(async (session: SessionInfo) => {
+    const [snapshot] = await Promise.all([
+      call(api.ledger.$get()),
+      app.state === 'ready' && app.admin ? prefetchAdminData(session.ledger.id) : null,
+    ]);
+    setApp((a) => (a.state === 'ready' ? { ...a, session, snapshot, notice: undefined } : a));
+  }, [app]);
+
   let page;
   if (app.state === 'loading') {
-    page = (
-      <div className="flex min-h-dvh items-center justify-center text-zinc-400">
-        <Spinner className="size-7" />
-      </div>
-    );
+    page = <Pending />;
   } else if (app.state === 'error') {
     page = (
       <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center text-sm text-zinc-500">
@@ -63,35 +85,33 @@ export function App() {
     );
   } else if (pathname.startsWith('/admin')) {
     page = (
-      <Suspense fallback={<div className="flex min-h-dvh items-center justify-center text-zinc-400"><Spinner className="size-7" /></div>}>
+      <Suspense fallback={<Pending />}>
         <AdminPage config={app.config} />
       </Suspense>
     );
   } else if (pathname === '/oauth/authorize') {
     page = (
-      <Suspense fallback={<div className="flex min-h-dvh items-center justify-center text-zinc-400"><Spinner className="size-7" /></div>}>
+      <Suspense fallback={<Pending />}>
         <AuthorizePage config={app.config} />
       </Suspense>
     );
-  } else if (app.session) {
+  } else if (app.session && app.snapshot) {
     page = (
       <LedgerPage
         key={app.session.ledger.id}
         session={app.session}
+        initialSnapshot={app.snapshot}
         config={app.config}
         admin={app.admin}
-        onSwitch={(session) => setApp({ ...app, session })}
-        onExit={(notice) => setApp({ ...app, session: null, notice })}
+        onSwitch={open}
+        onExit={(notice) => setApp({ ...app, session: null, snapshot: null, notice })}
       />
     );
   } else if (app.admin) {
-    page = (
-      <Suspense fallback={<div className="flex min-h-dvh items-center justify-center text-zinc-400"><Spinner className="size-7" /></div>}>
-        <AdminHome admin={app.admin} notice={app.notice} onEnter={(session) => setApp({ ...app, session, notice: undefined })} />
-      </Suspense>
-    );
+    const AdminHome = adminModules()?.AdminHome;
+    page = AdminHome ? <AdminHome admin={app.admin} notice={app.notice} onEnter={open} /> : <Pending />;
   } else {
-    page = <JoinPage config={app.config} notice={app.notice} onJoined={(session) => setApp({ ...app, session, notice: undefined })} />;
+    page = <JoinPage config={app.config} notice={app.notice} onJoined={open} />;
   }
 
   return (

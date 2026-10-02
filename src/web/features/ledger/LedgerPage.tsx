@@ -8,6 +8,7 @@ import { Card } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { useMediaQuery, useMinuteTick, usePersistentState } from '../../lib/hooks.ts';
+import { adminModules } from '../admin/preload.ts';
 import { LedgerContext, type LedgerContextValue } from './context.tsx';
 import { ExpenseForm } from './ExpenseForm.tsx';
 import { Header } from './Header.tsx';
@@ -18,7 +19,7 @@ import { SettlementCard } from './Settlement.tsx';
 import { LedgerStore, type CloseReason } from './store.ts';
 import { Timeline } from './Timeline.tsx';
 
-const AdminCard = lazy(() => import('../admin/AdminCard.tsx').then((m) => ({ default: m.AdminCard })));
+const LazyAdminCard = lazy(() => import('../admin/AdminCard.tsx').then((m) => ({ default: m.AdminCard })));
 
 const CLOSE_MESSAGES: Record<CloseReason, string> = {
   deleted: '这个账本已被管理员删除',
@@ -53,15 +54,17 @@ function describe({ event }: LiveMessage, before: Snapshot, after: Snapshot): st
 
 export function LedgerPage({
   session,
+  initialSnapshot,
   config,
   admin,
   onSwitch,
   onExit,
 }: {
   session: SessionInfo;
+  initialSnapshot: Snapshot;
   config: PublicConfig;
   admin: AdminIdentity | null;
-  onSwitch: (session: SessionInfo) => void;
+  onSwitch: (session: SessionInfo) => Promise<void>;
   onExit: (message?: string) => void;
 }) {
   const [store] = useState(
@@ -74,9 +77,10 @@ export function LedgerPage({
           const via = message.origin?.startsWith('mcp:') ? message.origin.slice(4) : null;
           if (text) toast(via ? `${via} · ${text}` : text, { icon: via ? '✨' : '🔔' });
         },
-      }),
+      }, initialSnapshot),
   );
   const state = useSyncExternalStore(store.subscribe, store.getState);
+  const AdminCard = adminModules()?.AdminCard ?? LazyAdminCard;
   const desktop = useMediaQuery('(min-width: 1024px)');
   const [composerOpen, setComposerOpen] = useState(false);
   useMinuteTick();
@@ -131,14 +135,14 @@ export function LedgerPage({
 
   return (
     <LedgerContext value={context}>
-      <Header live={state.live} config={config} admin={!!admin} onLeave={() => onExit()} />
+      <Header live={state.live} config={config} admin={!!admin} onSwitch={onSwitch} onLeave={() => onExit()} />
       <main className="mx-auto max-w-6xl px-4 pt-4 pb-32 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-12">
         {admin && (
-          <Suspense fallback={null}>
-            <div className="mb-4 lg:col-span-2 lg:mb-0">
+          <div className="mb-4 lg:col-span-2 lg:mb-0">
+            <Suspense fallback={null}>
               <AdminCard admin={admin} current={session} onEnter={onSwitch} />
-            </div>
-          </Suspense>
+            </Suspense>
+          </div>
         )}
         <aside className="space-y-4 lg:sticky lg:top-20">
           {desktop && (

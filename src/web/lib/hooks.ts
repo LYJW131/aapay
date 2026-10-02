@@ -25,3 +25,13 @@ export function useMinuteTick() {
     return () => clearInterval(id);
   }, []);
 }
+
+export function useDelayed(active: boolean, delay = 150) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!active) return setShown(false);
+    const id = setTimeout(() => setShown(true), delay);
+    return () => clearTimeout(id);
+  }, [active, delay]);
+  return active && shown;
+}
