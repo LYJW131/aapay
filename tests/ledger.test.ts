@@ -23,7 +23,6 @@ describe('LedgerService', () => {
     expect(snap.version).toBe(4);
     expect(messages.map((m) => m.v)).toEqual([1, 2, 3, 4]);
     expect(snap.members.map((m) => m.name)).toEqual(['小明', '小红']);
-    // 零头归给先加入的成员
     expect(snap.expenses[0]!.shares).toEqual([
       { memberId: a, amount: 501 },
       { memberId: b, amount: 500 },

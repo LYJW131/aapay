@@ -18,10 +18,7 @@ function jwks(team: string) {
 const allowed = (config: Config, identity: string) =>
   config.adminEmails.length === 0 || config.adminEmails.includes(identity.toLowerCase());
 
-/**
- * 校验管理员身份。即使边缘已有 Cloudflare Access 拦截，Worker 仍会独立校验
- * Access 签发的 JWT（签名、issuer、audience），防止绕过 Access 直接访问。
- */
+// 即使边缘已有 Access 拦截，仍独立校验 Access JWT，防止绕过 Access 直连 Worker
 export async function authenticateAdmin(c: Context, config: Config, platform: Platform): Promise<AdminIdentity | null> {
   switch (config.adminAuth) {
     case 'none':
@@ -60,7 +57,7 @@ export async function authenticateAdmin(c: Context, config: Config, platform: Pl
   }
 }
 
-/** 常量时间比较，避免通过响应时间猜测密码 */
+// 常量时间比较，避免通过响应时间猜测密码
 export async function passwordMatches(input: string, expected: string): Promise<boolean> {
   const [a, b] = await Promise.all([sha256(input), sha256(expected)]);
   let diff = 0;

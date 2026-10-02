@@ -14,26 +14,13 @@ import { OAUTH_TTL, type GrantSource, type OAuthClient } from '../core/registry.
 import { clientIp, findSession } from '../session.ts';
 import { body } from '../validate.ts';
 
-/**
- * OAuth 2.1 授权服务器，按 MCP Authorization 规范实现：
- *   - RFC 9728 受保护资源元数据 / RFC 8414 授权服务器元数据
- *   - RFC 7591 动态客户端注册，以及 Client ID Metadata Document（client_id 即元数据 URL）
- *   - 授权码 + PKCE（仅 S256），RFC 8707 资源指示符把令牌绑定到 /mcp
- *   - 刷新令牌轮换、RFC 7009 令牌撤销、RFC 9207 iss 回传
- *
- * 「用户」即账本：授权页上输入分享口令（或沿用浏览器里已登录的账本），
- * 签发的令牌只能访问这一个账本，口令被撤销时一并失效。
- */
-
 export const MCP_PATH = '/mcp';
 export const SCOPES = ['ledger:read', 'ledger:write'] as const satisfies readonly McpScope[];
 const AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic', 'private_key_jwt'] as const;
-/** private_key_jwt 断言允许的签名算法 */
 const ASSERTION_ALGS = ['RS256', 'PS256', 'ES256', 'EdDSA'];
 const JWT_BEARER = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
 
-/** OAuth 协议错误：以 { error, error_description } 返回 */
 export class OAuthError extends Error {
   constructor(
     readonly code: string,
@@ -45,9 +32,6 @@ export class OAuthError extends Error {
   }
 }
 
-// ---------- 地址 ----------
-
-/** 对外地址：优先 PUBLIC_URL，否则按请求（含反向代理头）推断 */
 export function baseUrl(c: Context<AppEnv>) {
   if (c.var.config.publicUrl) return c.var.config.publicUrl;
   const url = new URL(c.req.url);
@@ -61,12 +45,9 @@ export const resourceMetadataUrl = (c: Context<AppEnv>) => `${baseUrl(c)}/.well-
 
 const stripSlash = (s: string) => s.replace(/\/+$/, '');
 
-// ---------- 回调地址 ----------
-
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 const FORBIDDEN_SCHEMES = new Set(['javascript:', 'data:', 'file:', 'vbscript:', 'blob:', 'about:']);
 
-/** https、回环地址上的 http，或原生应用的私有 scheme（RFC 8252） */
 function isValidRedirect(uri: string) {
   const url = URL.parse(uri);
   if (!url || url.hash || url.username || url.password) return false;
@@ -75,7 +56,7 @@ function isValidRedirect(uri: string) {
   return !FORBIDDEN_SCHEMES.has(url.protocol);
 }
 
-/** 精确匹配；回环地址忽略端口（RFC 8252 §7.3） */
+// 回环地址忽略端口（RFC 8252 §7.3）
 function matchRedirect(registered: readonly string[], requested: string) {
   if (registered.includes(requested)) return true;
   const req = URL.parse(requested);
@@ -91,8 +72,6 @@ function matchRedirect(registered: readonly string[], requested: string) {
   });
 }
 
-// ---------- 客户端 ----------
-
 const httpUrl = z
   .string()
   .max(512)
@@ -105,7 +84,7 @@ const clientMetadata = z.looseObject({
     .max(10),
   client_name: z.string().trim().max(100).optional().catch(undefined),
   client_uri: httpUrl.optional().catch(undefined),
-  // 不同客户端声明的认证方式各异（如 ChatGPT 用 private_key_jwt），具体是否支持由 authPolicy 判断
+  // 不能用枚举：客户端声明的方式各异（如 ChatGPT 的 private_key_jwt），由 authPolicy 判断
   token_endpoint_auth_method: z.string().optional(),
   token_endpoint_auth_methods_supported: z.array(z.string()).optional().catch(undefined),
   jwks_uri: z.string().max(512).optional(),
@@ -119,7 +98,7 @@ const clientMetadata = z.looseObject({
     .refine((r) => !r || r.includes('code'), '必须支持 code'),
 });
 
-/** 服务端会主动请求的外部地址：只允许 https 域名，不允许直接指向 IP 或本机，减小请求伪造风险 */
+// 服务端会主动请求的地址：只允许 https 域名，不允许 IP 或本机，减小请求伪造风险
 function isSafeRemoteUrl(value: string) {
   const url = URL.parse(value);
   return (
@@ -133,17 +112,10 @@ function isSafeRemoteUrl(value: string) {
   );
 }
 
-/** Client ID Metadata Document：client_id 是一个 https URL，指向客户端自己托管的元数据 */
 const isMetadataUrl = (clientId: string) => isSafeRemoteUrl(clientId) && URL.parse(clientId)!.pathname !== '/';
 
 type ClientMetadata = z.infer<typeof clientMetadata>;
 
-/**
- * 根据客户端声明的认证方式决定令牌端点如何验证它：
- *   none            → 公共客户端，靠 PKCE 保护
- *   private_key_jwt → 用 jwks_uri 上的公钥验证客户端签名的断言
- *   client_secret_* → 仅动态注册时签发 client_secret
- */
 function authPolicy(meta: ClientMetadata, kind: 'dcr' | 'cimd') {
   // RFC 7591 的默认值是 client_secret_basic；CIMD 客户端无法持有我们签发的密钥，默认按公共客户端处理
   const declared = meta.token_endpoint_auth_method ?? (kind === 'dcr' ? 'client_secret_basic' : 'none');
@@ -158,8 +130,7 @@ function authPolicy(meta: ClientMetadata, kind: 'dcr' | 'cimd') {
 }
 
 async function fetchClientMetadata(clientId: string): Promise<OAuthClient> {
-  // 不跟随跳转：元数据必须就在 client_id 这个 URL 上。Workers 不支持 redirect: 'error'，
-  // 用 manual 拿到原始响应后，非 200（含 3xx）一律拒绝
+  // Workers 的 fetch 不支持 redirect: 'error'（直接抛错），用 manual 并拒绝非 200（含 3xx）
   const res = await fetch(clientId, {
     headers: { accept: 'application/json' },
     redirect: 'manual',
@@ -204,8 +175,6 @@ async function findClient(c: Context<AppEnv>, clientId: string): Promise<OAuthCl
 
 const hostOf = (uri: string | null | undefined) => (uri ? (URL.parse(uri)?.host ?? null) : null);
 
-// ---------- 授权请求 ----------
-
 interface AuthorizeRequest {
   client: OAuthClient;
   redirectUri: string;
@@ -215,7 +184,6 @@ interface AuthorizeRequest {
   resource: string;
 }
 
-/** 在回调地址上附加参数（含 RFC 9207 的 iss，帮助客户端防御混淆攻击） */
 function redirectWith(c: Context<AppEnv>, uri: string, params: Record<string, string | null>) {
   const url = new URL(uri);
   for (const [k, v] of Object.entries(params)) if (v !== null) url.searchParams.set(k, v);
@@ -231,10 +199,7 @@ function parseScopes(raw: string | null): McpScope[] {
   return scopes.length ? scopes : [...SCOPES];
 }
 
-/**
- * 校验授权请求。client_id / redirect_uri 无效时绝不能重定向（直接报错给用户看）；
- * 其余错误按 OAuth 规范带着 error 跳回客户端。
- */
+// client_id / redirect_uri 无效时绝不能重定向（防开放跳转），其余错误按规范带着 error 跳回客户端
 async function parseAuthorize(
   c: Context<AppEnv>,
   params: URLSearchParams,
@@ -269,8 +234,6 @@ async function parseAuthorize(
   };
 }
 
-// ---------- 令牌端点 ----------
-
 async function readForm(c: Context): Promise<URLSearchParams> {
   const type = c.req.header('content-type') ?? '';
   if (type.includes('application/json')) {
@@ -284,7 +247,6 @@ async function readForm(c: Context): Promise<URLSearchParams> {
 
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
-/** RFC 7523：客户端用私钥签发的断言，iss 与 sub 都是 client_id，aud 是令牌端点（或 issuer） */
 async function verifyClientAssertion(c: Context<AppEnv>, client: OAuthClient, assertion: string) {
   if (!client.jwksUri) throw new OAuthError('invalid_client', 'client does not support private_key_jwt', 401);
   let jwks = jwksCache.get(client.jwksUri);
@@ -303,7 +265,6 @@ async function verifyClientAssertion(c: Context<AppEnv>, client: OAuthClient, as
   }
 }
 
-/** 支持 client_secret_basic / client_secret_post / private_key_jwt / none（公共客户端靠 PKCE 保护） */
 async function authenticateClient(c: Context<AppEnv>, form: URLSearchParams): Promise<OAuthClient> {
   let id = form.get('client_id');
   let secret = form.get('client_secret');
@@ -312,7 +273,7 @@ async function authenticateClient(c: Context<AppEnv>, form: URLSearchParams): Pr
     if (form.get('client_assertion_type') !== JWT_BEARER) {
       throw new OAuthError('invalid_client', `client_assertion_type must be ${JWT_BEARER}`, 401);
     }
-    // 断言里的 iss 即 client_id（请求可以不单独携带 client_id）
+    // 断言里的 iss 即 client_id，请求可以不单独携带 client_id（RFC 7523）
     try {
       id ??= String(decodeJwt(assertion).iss ?? '') || null;
     } catch {
@@ -341,7 +302,6 @@ async function authenticateClient(c: Context<AppEnv>, form: URLSearchParams): Pr
   return client;
 }
 
-/** PKCE S256：BASE64URL(SHA-256(code_verifier)) */
 async function s256(verifier: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
   return btoa(String.fromCharCode(...new Uint8Array(digest))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -349,14 +309,12 @@ async function s256(verifier: string) {
 
 const NO_STORE = { 'Cache-Control': 'no-store', Pragma: 'no-cache' };
 
-// ---------- 路由 ----------
-
 export const requireMcp = createMiddleware<AppEnv>(async (c, next) => {
   if (!c.var.config.mcp) throw notFound('MCP 未启用');
   await next();
 });
 
-/** 元数据、令牌与注册端点会被浏览器里的 MCP 客户端（如 Inspector）跨域调用；它们不使用 Cookie */
+// 浏览器里的 MCP 客户端（如 Inspector）会跨域调用；这些端点不使用 Cookie
 export const openCors = cors({
   origin: '*',
   allowMethods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
@@ -398,7 +356,7 @@ function protectedResourceMetadata(c: Context<AppEnv>) {
   };
 }
 
-/** /.well-known/*：资源元数据同时提供根路径与按路径插入（RFC 9728 §3.1）两种位置 */
+// 资源元数据同时提供根路径与按路径插入（RFC 9728 §3.1）两种位置
 export const wellKnownRoutes = new Hono<AppEnv>()
   .use(openCors, requireMcp)
   .get('/oauth-protected-resource', (c) => c.json(protectedResourceMetadata(c)))
@@ -406,7 +364,7 @@ export const wellKnownRoutes = new Hono<AppEnv>()
   .get('/oauth-authorization-server', (c) => c.json(authorizationServerMetadata(c)))
   .get(`/oauth-authorization-server${MCP_PATH}`, (c) => c.json(authorizationServerMetadata(c)));
 
-/** /oauth/*：令牌、注册、撤销。授权页 /oauth/authorize 由前端渲染，中间件不能覆盖到它 */
+// 中间件按具体路径挂载：/oauth/authorize 是前端页面，不能被拦截
 export const oauthRoutes = new Hono<AppEnv>()
   .use('/register', openCors, requireMcp)
   .use('/token', openCors, requireMcp)
@@ -521,21 +479,15 @@ export const oauthRoutes = new Hono<AppEnv>()
   });
 
 export const approveInput = z.object({
-  /** 授权页地址上的原始查询串，服务端重新校验，不信任前端解析结果 */
+  // 服务端用原始查询串重新校验整个请求，不信任前端的解析结果
   query: z.string().max(8192),
-  /** 输入的分享口令；不填则使用当前浏览器已登录的账本 */
   code: passphraseCode.optional(),
-  /** 是否允许修改账目 */
   write: z.boolean(),
 });
 
 export type ApproveInput = z.infer<typeof approveInput>;
 
-/**
- * 同意授权：校验请求、签发授权码并返回带 code 的回调地址。
- * 成员授权走 /api/oauth/authorize；管理员授权走 /api/admin/oauth/authorize，
- * 由与 /admin 入口相同的管理员认证（Cloudflare 上 Access 会在边缘拦截该路径）把关。
- */
+// 管理员授权走 /api/admin/oauth/authorize，由 Access 在边缘把关（不依赖 Cookie 的作用路径）
 export async function approveAuthorization(c: Context<AppEnv>, input: ApproveInput, admin: string | null) {
   const { platform, config } = c.var;
   const parsed = await parseAuthorize(c, new URLSearchParams(input.query));
@@ -571,7 +523,6 @@ export async function approveAuthorization(c: Context<AppEnv>, input: ApproveInp
   return { redirect: redirectWith(c, request.redirectUri, { code, state: request.state }), ledger };
 }
 
-/** /api/oauth/*：授权页使用的接口（同源、带 Cookie，受全局跨站写保护） */
 export const authorizeRoutes = new Hono<AppEnv>()
   .use(requireMcp)
   .get('/authorize', async (c) => {
@@ -580,7 +531,6 @@ export const authorizeRoutes = new Hono<AppEnv>()
     const { client, redirectUri, scopes, state } = parsed.request;
     const { config } = c.var;
     const url = new URL(c.req.url);
-    // 管理员可以先去 /admin 完成认证（Access 会拦截该路径），再回到这个授权页
     const canLogin = config.mode !== 'shared' && (config.adminAuth === 'access' || config.adminAuth === 'password');
     return c.json({
       client: { name: client.name, host: hostOf(client.uri) ?? (client.kind === 'cimd' ? hostOf(client.id) : null) },

@@ -21,7 +21,6 @@ interface Day {
 
 const PAGE = 14;
 
-/** 多日账本：按日期分组展示支出与还款，每天带小计 */
 export function Timeline({ expenses, settlements, range }: { expenses: Expense[]; settlements: Settlement[]; range: RangeFilter }) {
   const [visible, setVisible] = useState(PAGE);
   const [editing, setEditing] = useState<Expense | null>(null);

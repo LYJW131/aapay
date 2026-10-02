@@ -3,15 +3,11 @@ import type { Expense, Member, Settlement } from './types.ts';
 
 export interface Balance {
   memberId: string;
-  /** 替大家垫付的总额 */
   paid: Cents;
-  /** 自己应分摊的总额 */
   consumed: Cents;
-  /** 已还给别人的钱 */
   sent: Cents;
-  /** 已收到别人还的钱 */
   received: Cents;
-  /** 净额：> 0 表示别人还欠 TA，< 0 表示 TA 还欠别人 */
+  // > 0 表示别人还欠 TA，< 0 表示 TA 还欠别人
   net: Cents;
 }
 
@@ -45,10 +41,7 @@ export function computeBalances(
   return [...map.values()];
 }
 
-/**
- * 根据净额给出最少转账方案：每次让欠得最多的人还给被欠得最多的人，
- * n 个有余额的人最多只需要 n - 1 笔转账。
- */
+// 贪心：每次让欠得最多的人还给被欠得最多的人，n 个有余额的人最多 n - 1 笔
 export function suggestTransfers(balances: readonly Balance[]): Transfer[] {
   const debtors = balances.filter((b) => b.net < 0).map((b) => ({ id: b.memberId, left: -b.net }));
   const creditors = balances.filter((b) => b.net > 0).map((b) => ({ id: b.memberId, left: b.net }));

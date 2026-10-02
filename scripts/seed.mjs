@@ -1,5 +1,3 @@
-// 生成演示账本：node scripts/seed.mjs [baseUrl]
-// 远端启用 Access 时可通过 CF_ACCESS_CLIENT_ID / CF_ACCESS_CLIENT_SECRET 使用 Service Token 调用管理接口
 const base = (process.argv[2] ?? 'http://127.0.0.1:5173').replace(/\/$/, '');
 const cookies = new Map();
 const accessHeaders = process.env.CF_ACCESS_CLIENT_ID

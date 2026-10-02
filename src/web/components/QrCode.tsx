@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { encode } from 'uqr';
 
-/** 圆点风格二维码，中间嵌入应用图标（使用 H 级纠错保证可识别） */
+// 中间嵌入图标，所以用 H 级纠错
 export function QrCode({ value, className }: { value: string; className?: string }) {
   const { size, path } = useMemo(() => {
     const { data, size } = encode(value, { ecc: 'H', border: 0 });

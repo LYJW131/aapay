@@ -1,7 +1,6 @@
 import { useId } from 'react';
 import { cn } from '../lib/cn.ts';
 
-/** 品牌标识：一枚被均分、向两侧滑开的硬币 —— AA 分账 */
 export function LogoMark({ className }: { className?: string }) {
   const id = useId();
   return (

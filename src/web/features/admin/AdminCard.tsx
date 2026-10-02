@@ -17,7 +17,6 @@ import { formatDateTime } from '../../lib/dates.ts';
 import { usePersistentState } from '../../lib/hooks.ts';
 import { joinLink } from '../ledger/Header.tsx';
 
-/** 账本或口令在其他设备上变化时（管理员多端同时操作）实时刷新 */
 function useAdminLive(onEvent: (event: RegistryEvent) => void) {
   useEffect(() => {
     let ws: WebSocket | null = null;
@@ -41,18 +40,11 @@ function useAdminLive(onEvent: (event: RegistryEvent) => void) {
 
 interface Props {
   admin: AdminIdentity;
-  /** 当前所在的账本；为空时（尚未进入任何账本）只显示账本列表 */
   current: SessionInfo | null;
-  /** 切换到某个账本后回调 */
   onEnter: (session: SessionInfo) => void;
-  /** 独立显示（没有账本页时），不可折叠 */
   standalone?: boolean;
 }
 
-/**
- * 管理员卡片：嵌在账本页顶部，切换账本、新建 / 重命名 / 删除账本、管理当前账本的分享口令。
- * 对这样一个轻量应用来说，比单独的控制台页面更顺手。
- */
 export function AdminCard({ admin, current, onEnter, standalone = false }: Props) {
   const [collapsed, setCollapsed] = usePersistentState('aapay:admin:collapsed', false);
   const [ledgers, setLedgers] = useState<LedgerOverview[] | null>(null);
@@ -169,8 +161,6 @@ export function AdminCard({ admin, current, onEnter, standalone = false }: Props
     </section>
   );
 }
-
-// ---------- 账本 ----------
 
 function Ledgers({
   ledgers,
@@ -396,8 +386,6 @@ function DeleteLedger({ ledger, onClose, onDeleted }: { ledger: LedgerOverview |
     </Sheet>
   );
 }
-
-// ---------- 分享口令 ----------
 
 function Passphrases({
   ledgerId,

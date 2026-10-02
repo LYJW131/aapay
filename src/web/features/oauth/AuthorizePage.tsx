@@ -16,7 +16,6 @@ type State =
   | { step: 'consent'; info: AuthorizeInfo }
   | { step: 'leaving'; host: string; message: string };
 
-/** 授权信息接口会校验整个 OAuth 请求；参数有误但可以回跳时直接带着错误返回客户端 */
 async function loadInfo(): Promise<AuthorizeInfo | { redirect: string }> {
   const res = await fetch(`/api/oauth/authorize${window.location.search}`, { credentials: 'same-origin' }).catch(() => null);
   if (!res) throw new Error('网络连接失败，请检查网络');
@@ -134,7 +133,6 @@ function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: Public
   const name = info.client.name || info.client.host || '未知应用';
   const needCode = !shared && target === 'code';
 
-  // 已登录的管理员可以授权管理全部账本（与 /admin 入口使用同一套管理员认证）
   useEffect(() => {
     if (shared || config.adminAuth === 'disabled') return;
     call(api.admin.me.$get()).then(

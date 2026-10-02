@@ -23,10 +23,9 @@ const app = createApp(async (c, next) => {
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 platform = createNodePlatform(dataDir, upgradeWebSocket);
 
-// 前端静态资源：带哈希的文件长期缓存，其余路径回退到 index.html（SPA）。
-// 开发模式（npm run dev:node）下前端由 Vite 提供，这里不存在构建产物。
+// npm run dev:node 时前端由 Vite 提供，这里没有构建产物
 if (existsSync(clientDir)) {
-  // 页面不允许被嵌入，防止授权页被点击劫持（Cloudflare 上由 public/_headers 设置）
+  // 防止授权页被点击劫持；Cloudflare 上由 public/_headers 设置
   app.use('/*', async (c, next) => {
     await next();
     if (c.res.headers.get('content-type')?.startsWith('text/html')) {

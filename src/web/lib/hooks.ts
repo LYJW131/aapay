@@ -12,14 +12,12 @@ export function useMediaQuery(query: string) {
   );
 }
 
-/** 持久化到 localStorage 的 state */
 export function usePersistentState<T>(key: string, fallback: T) {
   const [value, setValue] = useState<T>(() => load(key, fallback));
   useEffect(() => save(key, value), [key, value]);
   return [value, setValue] as const;
 }
 
-/** 每分钟刷新一次（用于“今天”、“刚刚”这类相对时间） */
 export function useMinuteTick() {
   const [, setTick] = useState(0);
   useEffect(() => {

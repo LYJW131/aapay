@@ -16,7 +16,6 @@ export const RANGE_OPTIONS: { key: Exclude<RangeKey, 'custom'>; label: string }[
   { key: 'month', label: '本月' },
 ];
 
-/** 把筛选条件解析为闭区间 [from, to]；null 表示不限 */
 export function resolveRange(range: RangeFilter): { from: IsoDate | null; to: IsoDate | null } {
   const t = today();
   switch (range.key) {

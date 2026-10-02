@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1
 
-# ---- 构建：前端静态资源 + 单文件 Node 服务端 ----
 FROM node:24-alpine AS build
 WORKDIR /src
 COPY package.json package-lock.json ./
@@ -8,7 +7,6 @@ RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npm run build:node
 
-# ---- 运行：只包含构建产物，无 node_modules，无原生依赖（使用内置 node:sqlite）----
 FROM node:24-alpine
 ENV NODE_ENV=production \
     PORT=8787 \

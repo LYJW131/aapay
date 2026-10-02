@@ -83,11 +83,9 @@ describe('API (isolated mode)', () => {
     const overview = (await call('GET', '/admin/ledgers')).data;
     expect(overview[0]).toMatchObject({ activePassphrases: 1, stats: { members: 2, expenses: 1, total: 20000 } });
 
-    // 撤销口令后，成员会话立即失效
     await call('DELETE', `/admin/passphrases/${phrase.id}`);
     expect((await call('GET', '/ledger')).status).toBe(401);
 
-    // 管理员可以直接进入账本
     const entered = (await call('POST', `/admin/ledgers/${ledger.id}/enter`)).data;
     expect(entered.role).toBe('admin');
     expect((await call('GET', '/ledger')).status).toBe(200);

@@ -15,7 +15,6 @@ import { dayLabel, formatDateTime, today } from '../../lib/dates.ts';
 import { useLedger } from './context.tsx';
 import { MemberChip } from './ExpenseForm.tsx';
 
-/** 结算：根据全部账目与已记录的还款，计算每人净额与最少转账方案 */
 export function SettlementCard() {
   const { snapshot, memberById, store } = useLedger();
   const [draft, setDraft] = useState<Partial<Transfer> | null>(null);

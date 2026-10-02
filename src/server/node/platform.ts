@@ -9,7 +9,6 @@ import { dispatch, remote } from '../core/remote.ts';
 import type { LedgerHost, Platform, RateLimitBucket } from '../platform.ts';
 import { openSqlite } from './sqlite.ts';
 
-/** 进程内的 WebSocket 房间 */
 class Room {
   private readonly sockets = new Map<WSContext, string>();
 
@@ -75,7 +74,6 @@ class NodeLedger implements LedgerHost {
   }
 }
 
-/** 简单的固定窗口限流 */
 class RateLimiter {
   private readonly hits = new Map<string, { count: number; reset: number }>();
 
@@ -96,11 +94,6 @@ class RateLimiter {
   }
 }
 
-/**
- * Docker / Node 平台：
- *   data/registry.db         账本列表、口令与会话
- *   data/ledgers/<id>.db     每个账本一个独立数据库
- */
 export function createNodePlatform(dataDir: string, upgrade: UpgradeWebSocket): Platform {
   const ledgerDir = join(dataDir, 'ledgers');
   mkdirSync(ledgerDir, { recursive: true });

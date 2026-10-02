@@ -4,7 +4,6 @@ import type { AdminIdentity, SessionInfo } from '../../../shared/types.ts';
 import { Wordmark } from '../../components/Logo.tsx';
 import { AdminCard } from './AdminCard.tsx';
 
-/** 管理员尚未进入任何账本时的首页：只有一张管理卡片 */
 export function AdminHome({ admin, notice, onEnter }: { admin: AdminIdentity; notice?: string; onEnter: (session: SessionInfo) => void }) {
   useEffect(() => {
     document.title = 'AAPay';

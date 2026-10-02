@@ -8,12 +8,9 @@ import { AppIcon } from '../../components/Logo.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { navigate } from '../../lib/router.ts';
 
-/** 从 /join#口令（或旧版 /#p=口令）链接中读取口令 */
 function codeFromUrl() {
   const hash = decodeURIComponent(window.location.hash.slice(1));
-  if (window.location.pathname === '/join' && hash) return hash;
-  if (hash.startsWith('p=')) return hash.slice(2);
-  return null;
+  return window.location.pathname === '/join' && hash ? hash : null;
 }
 
 export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; notice?: string; onJoined: (s: SessionInfo) => void }) {

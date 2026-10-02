@@ -14,7 +14,6 @@ interface SheetProps {
   className?: string;
 }
 
-/** 移动端是可下拉关闭的底部抽屉，桌面端是居中对话框 */
 export function Sheet({ open, onClose, title, description, children, className }: SheetProps) {
   const desktop = useMediaQuery('(min-width: 640px)');
   const drag = useDragControls();

@@ -9,7 +9,6 @@ export const SHARED_LEDGER = { id: 'shared', name: '共享账本' } as const;
 
 let sharedLedger: Promise<LedgerInfo> | undefined;
 
-/** 通过 Cookie 中的会话令牌确定所属账本；共享模式下所有人进入同一个账本 */
 export async function findSession(c: Context<AppEnv>): Promise<SessionInfo | null> {
   const { config, platform } = c.var;
   if (config.mode === 'shared') {

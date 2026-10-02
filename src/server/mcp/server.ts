@@ -7,11 +7,6 @@ import type { AccessGrant } from '../core/registry.ts';
 import { baseUrl, openCors, requireMcp, resourceMetadataUrl, resourceUrl, SCOPES } from './oauth.ts';
 import { callTool, listTools, UnknownToolError, type McpSession } from './tools.ts';
 
-/**
- * MCP Streamable HTTP 端点（无状态模式）：每个 POST 携带一条或一批 JSON-RPC 消息，
- * 直接以 application/json 回复，不需要会话 ID 或 SSE 长连接，Workers 与 Node 上行为一致。
- */
-
 const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 const SERVER_INFO = { name: 'aapay', title: 'AAPay', version: '2.0.0' };
 
@@ -30,11 +25,10 @@ const rpcError = (id: JsonRpcId, code: number, message: string) => ({ jsonrpc: '
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** 校验 Bearer 令牌；失败时按 RFC 9728 在 WWW-Authenticate 中指出资源元数据位置 */
 async function authenticate(c: Context<AppEnv>): Promise<AccessGrant | Response> {
   const token = /^Bearer\s+(\S+)$/i.exec(c.req.header('authorization') ?? '')?.[1];
   const grant = token ? await c.var.platform.registry.resolveAccessToken(await sha256(token)) : null;
-  // 令牌必须是签发给本资源的（RFC 8707 audience）；管理员授权还要确认此人现在仍是管理员
+  // 令牌必须签发给本资源（RFC 8707）；管理员授权还要确认此人现在仍是管理员
   if (grant && grant.resource === resourceUrl(c) && (grant.role !== 'admin' || stillAdmin(c.var.config, grant.subject))) {
     return grant;
   }
@@ -55,10 +49,7 @@ function today(timezone: string) {
   );
 }
 
-/**
- * 关闭管理后台或把此人移出 ADMIN_EMAILS 后，已签发的管理员令牌立即失效。
- * 与管理员认证保持一致：白名单只在 access / proxy 模式下生效。
- */
+// 与 authenticateAdmin 一致：白名单只在 access / proxy 模式下生效
 function stillAdmin(config: Config, subject: string | null) {
   if (config.adminAuth === 'disabled' || !subject) return false;
   if (config.adminAuth !== 'access' && config.adminAuth !== 'proxy') return true;
@@ -124,7 +115,6 @@ async function dispatch(method: string, params: Record<string, unknown>, ctx: Mc
 async function handle(message: unknown, ctx: McpSession, timezone: string) {
   if (!isObject(message) || message.jsonrpc !== '2.0') return rpcError(null, -32600, 'Invalid Request');
   const id = (message.id ?? null) as JsonRpcId;
-  // 客户端发来的响应或通知不需要回复
   if (typeof message.method !== 'string') return null;
   if (!('id' in message)) return null;
   try {
@@ -173,7 +163,7 @@ export const mcpRoutes = new Hono<AppEnv>()
     if (!replies.length) return c.body(null, 202);
     return c.json(batch ? replies : replies[0]);
   })
-  // 无状态模式不提供服务端推送流，也没有会话可以结束；先校验令牌以便客户端发现授权方式
+  // 无状态模式没有推送流和会话；先校验令牌，让客户端能从 401 发现授权方式
   .on(['GET', 'DELETE'], '/', async (c) => {
     const grant = await authenticate(c);
     if (grant instanceof Response) return grant;

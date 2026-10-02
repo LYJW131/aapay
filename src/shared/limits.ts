@@ -1,4 +1,4 @@
-/** 各字段长度与数量限制（前后端共用；不依赖 zod，避免把校验库打进前端包） */
+// 不依赖 zod，避免把校验库打进前端包
 export const LIMITS = {
   members: 30,
   memberName: 12,

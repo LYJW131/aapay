@@ -18,7 +18,6 @@ import { SettlementCard } from './Settlement.tsx';
 import { LedgerStore, type CloseReason } from './store.ts';
 import { Timeline } from './Timeline.tsx';
 
-// 只有管理员会用到，按需加载
 const AdminCard = lazy(() => import('../admin/AdminCard.tsx').then((m) => ({ default: m.AdminCard })));
 
 const CLOSE_MESSAGES: Record<CloseReason, string> = {
@@ -27,7 +26,6 @@ const CLOSE_MESSAGES: Record<CloseReason, string> = {
   unauthorized: '登录已过期，请重新输入口令',
 };
 
-/** 把其他人的操作描述成一句通知 */
 function describe({ event }: LiveMessage, before: Snapshot, after: Snapshot): string | null {
   const name = (id: string) => after.members.find((m) => m.id === id)?.name ?? before.members.find((m) => m.id === id)?.name ?? '某人';
   switch (event.type) {
@@ -62,7 +60,6 @@ export function LedgerPage({
 }: {
   session: SessionInfo;
   config: PublicConfig;
-  /** 已登录的管理员会在页面顶部看到管理卡片 */
   admin: AdminIdentity | null;
   onSwitch: (session: SessionInfo) => void;
   onExit: (message?: string) => void;

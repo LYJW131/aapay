@@ -112,7 +112,6 @@ const ledgerRoutes = new Hono<AppEnv>()
       await c.var.platform.ledger(c.var.session.ledger.id).api.deleteSettlement(c.req.param('id'), originOf(c)),
     ),
   )
-  // 已通过 MCP 连接到本账本的 AI 应用，成员可以随时断开
   .get('/connections', async (c) => c.json(await c.var.platform.registry.listConnections(c.var.session.ledger.id)))
   .delete('/connections/:id', async (c) => {
     await c.var.platform.registry.revokeConnection(c.req.param('id'), c.var.session.ledger.id);
@@ -120,7 +119,6 @@ const ledgerRoutes = new Hono<AppEnv>()
   });
 
 const adminRoutes = new Hono<AppEnv>()
-  // 密码模式的登录入口本身不需要管理员身份
   .post('/login', body(loginInput), async (c) => {
     const { config, platform } = c.var;
     if (config.adminAuth !== 'password') throw notFound('当前未启用密码登录');
@@ -141,7 +139,6 @@ const adminRoutes = new Hono<AppEnv>()
   })
   .use(requireAdmin)
   .get('/me', (c) => c.json(c.var.admin))
-  // 以管理员身份授权 AI 应用管理全部账本（授权页调用）
   .post('/oauth/authorize', requireMcp, body(approveInput), async (c) =>
     c.json(await approveAuthorization(c, c.req.valid('json'), c.var.admin.name)),
   )
@@ -164,7 +161,6 @@ const adminRoutes = new Hono<AppEnv>()
     c.json(await c.var.platform.registry.createPassphrase(c.req.param('id'), c.req.valid('json'))),
   )
   .delete('/passphrases/:id', async (c) => c.json(await adminActions(c.var.platform).revokePassphrase(c.req.param('id'))))
-  // 以管理员身份连接的 AI 应用
   .get('/connections', async (c) => c.json(await c.var.platform.registry.listAdminConnections()))
   .delete('/connections/:id', async (c) => {
     await c.var.platform.registry.revokeAdminConnection(c.req.param('id'));
@@ -211,22 +207,16 @@ function buildApi() {
     .route('/oauth', authorizeRoutes);
 }
 
-/** 前端通过 hono/client 使用的端到端类型 */
 export type ApiType = ReturnType<typeof buildApi>;
 
-/** 由服务端处理的路径；其余都是前端静态资源（Cloudflare 上需与 wrangler.jsonc 的 run_worker_first 保持一致） */
+// 需与 wrangler.jsonc 的 assets.run_worker_first 保持一致，否则 Cloudflare 上会被 SPA 回退接走
 export const SERVER_PATHS = ['/api/*', '/mcp', '/mcp/*', '/oauth/token', '/oauth/register', '/oauth/revoke', '/.well-known/*'];
 
-/**
- * 创建与平台无关的应用。inject 中间件负责为每个请求注入 platform 与 config：
- * Cloudflare 上来自 env 绑定，Node 上则是进程内单例。
- */
 export function createApp(inject: MiddlewareHandler<AppEnv>) {
   // 不区分结尾斜杠：用户粘贴 https://…/mcp/ 也能连上
   const app = new Hono<AppEnv>({ strict: false });
   app.use('/api/*', async (c, next) => {
-    // 拒绝跨站的写请求（JSON 请求本身也会触发 CORS 预检，这里再加一道保险）
-    // 只比较主机名：反向代理（如 Traefik 终止 TLS）后协议可能不同
+    // 只比较主机名：反向代理终止 TLS 后协议可能不同
     const origin = c.req.header('origin');
     const host = c.req.header('x-forwarded-host') ?? new URL(c.req.url).host;
     if (c.req.method !== 'GET' && origin && URL.parse(origin)?.host !== host) {
@@ -237,11 +227,11 @@ export function createApp(inject: MiddlewareHandler<AppEnv>) {
   for (const path of SERVER_PATHS) app.use(path, inject);
   app.route('/api', buildApi());
   app.all('/api/*', (c) => c.json({ error: '接口不存在' }, 404));
-  // MCP 与 OAuth 端点面向 AI 应用，不走 Cookie，也不受上面的同源写保护
+  // MCP 与 OAuth 端点面向 AI 应用，不走 Cookie，不能挂在上面的同源写保护之下
   app.route('/mcp', mcpRoutes);
   app.route('/oauth', oauthRoutes);
   app.route('/.well-known', wellKnownRoutes);
-  // 未实现的发现文档（如 openid-configuration）明确返回 404，不能落到前端页面
+  // 未实现的发现文档（如 openid-configuration）必须明确 404，不能落到前端页面
   app.all('/.well-known/*', (c) => c.json({ error: 'not_found' }, 404));
   app.all('/mcp/*', (c) => c.json({ error: 'not_found' }, 404));
   app.onError((err, c) => {

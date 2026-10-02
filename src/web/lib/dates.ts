@@ -2,7 +2,6 @@ import type { IsoDate } from '../../shared/types.ts';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** 本地时区的 YYYY-MM-DD */
 export function toIsoDate(d: Date): IsoDate {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
@@ -26,7 +25,6 @@ export function daysBetween(from: IsoDate, to: IsoDate) {
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 
-/** “今天” / “昨天” / “10月2日 周四”（跨年时带年份） */
 export function dayLabel(s: IsoDate): { title: string; sub: string } {
   const d = parseIsoDate(s);
   const t = today();

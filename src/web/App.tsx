@@ -19,7 +19,7 @@ type Boot =
   | { state: 'ready'; config: PublicConfig; session: SessionInfo | null; admin: AdminIdentity | null; notice?: string };
 
 async function boot(): Promise<Boot> {
-  // 带着口令链接进来时，先展示加入页，由它完成加入；授权页、管理员入口自己会查询登录状态
+  // 这些页面自己处理登录状态，不在这里拉会话
   const { pathname } = window.location;
   const config = await call(api.config.$get());
   if (pathname === '/join' || pathname === '/oauth/authorize' || pathname.startsWith('/admin')) {
@@ -85,7 +85,6 @@ export function App() {
       />
     );
   } else if (app.admin) {
-    // 管理员还没进入任何账本：只显示管理卡片，用来选择或新建账本
     page = (
       <Suspense fallback={<div className="flex min-h-dvh items-center justify-center text-zinc-400"><Spinner className="size-7" /></div>}>
         <AdminHome admin={app.admin} notice={app.notice} onEnter={(session) => setApp({ ...app, session, notice: undefined })} />

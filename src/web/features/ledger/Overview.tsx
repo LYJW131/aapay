@@ -14,7 +14,6 @@ interface Props {
   onRange: (range: RangeFilter) => void;
   memberId: string | null;
   onMember: (id: string | null) => void;
-  /** 已按时间与成员筛选后的支出 */
   expenses: Expense[];
 }
 
@@ -26,7 +25,6 @@ interface Bucket {
   range: RangeFilter;
 }
 
-/** 把支出按天（跨度 ≤ 62 天）或按月聚合成柱状图数据 */
 function buckets(expenses: Expense[], from: IsoDate, to: IsoDate): Bucket[] {
   const totals = new Map<string, number>();
   const span = daysBetween(from, to) + 1;
@@ -203,7 +201,6 @@ function Chip({ active, onClick, children }: { active: boolean; onClick: () => v
   );
 }
 
-/** 单系列柱状图：每日（或每月）支出。悬停显示数值，点击下钻到该时间段。 */
 function SpendChart({ series, onPick }: { series: Bucket[]; onPick: (b: Bucket) => void }) {
   const [hover, setHover] = useState<number | null>(null);
   const max = Math.max(...series.map((b) => b.total));

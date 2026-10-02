@@ -1,8 +1,7 @@
 import type { Cents } from './money.ts';
 
-/** YYYY-MM-DD（记账日期，由客户端按本地时区决定） */
+// 记账日期由客户端按本地时区决定
 export type IsoDate = string;
-/** Unix 毫秒时间戳 */
 export type Timestamp = number;
 
 export interface Member {
@@ -28,7 +27,6 @@ export interface Expense {
   updatedAt: Timestamp;
 }
 
-/** 一笔还款：from 向 to 支付了 amount */
 export interface Settlement {
   id: string;
   fromId: string;
@@ -73,11 +71,8 @@ export type LedgerEvent =
   | { type: 'ledger.renamed'; name: string }
   | { type: 'ledger.closed'; reason: 'deleted' | 'revoked' };
 
-/** 通过 WebSocket 推送给账本内所有在线客户端的消息 */
 export interface LiveMessage {
-  /** 数据版本号；账目变更时递增，客户端据此判断是否漏掉消息 */
   v?: number;
-  /** 发起变更的客户端 ID，用于避免给自己弹通知；来自 MCP 时形如 mcp:Claude */
   origin?: string;
   event: LedgerEvent;
   at: Timestamp;
@@ -88,7 +83,6 @@ export type SessionRole = 'member' | 'admin' | 'shared';
 export interface SessionInfo {
   ledger: LedgerInfo;
   role: SessionRole;
-  /** 成员通过口令加入时返回该口令，便于继续分享 */
   passphrase: string | null;
   expiresAt: Timestamp | null;
 }
@@ -99,7 +93,6 @@ export type AdminAuthMode = 'access' | 'password' | 'proxy' | 'none' | 'disabled
 export interface PublicConfig {
   mode: Mode;
   adminAuth: AdminAuthMode;
-  /** 是否开放 /mcp 端点供 Claude、ChatGPT 等 AI 应用连接 */
   mcp: boolean;
 }
 
@@ -113,7 +106,6 @@ export interface LedgerRecord {
   name: string;
   createdAt: Timestamp;
   activePassphrases: number;
-  /** 已连接的 AI 应用数 */
   connections: number;
 }
 
@@ -133,19 +125,15 @@ export interface Passphrase {
 export type RegistryEvent =
   | { type: 'ledgers.changed' }
   | { type: 'passphrases.changed'; ledgerId: string }
-  /** ledgerId 为 null 表示管理员授权 */
   | { type: 'connections.changed'; ledgerId: string | null };
 
 export type McpScope = 'ledger:read' | 'ledger:write';
 
-/** 通过 OAuth 连接到某个账本的 AI 应用（一次授权） */
 export interface Connection {
   id: string;
-  /** 客户端自报的名称（如 Claude），未经验证 */
+  // 客户端自报，未经验证
   clientName: string | null;
-  /** 客户端主页或回调地址的主机名，用于辨认来源 */
   clientHost: string | null;
-  /** 管理员授权时为授权人的身份（邮箱等） */
   subject: string | null;
   scopes: McpScope[];
   createdAt: Timestamp;
@@ -153,16 +141,11 @@ export interface Connection {
   expiresAt: Timestamp;
 }
 
-/** OAuth 授权页需要展示的信息 */
 export interface AuthorizeInfo {
   client: { name: string | null; host: string | null };
-  /** 授权完成后跳回的主机 */
   redirectHost: string;
   scopes: McpScope[];
-  /** 当前浏览器已登录的账本，可直接授权 */
   session: SessionInfo | null;
-  /** 管理员登录入口（登录后回到授权页）；已登录的管理员可以授权管理全部账本 */
   adminLoginUrl: string | null;
-  /** 用户拒绝时跳转的地址 */
   denyUrl: string;
 }

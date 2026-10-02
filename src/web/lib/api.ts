@@ -1,7 +1,7 @@
 import { hc, type ClientResponse } from 'hono/client';
 import type { ApiType } from '../../server/app.ts';
 
-/** 当前标签页的唯一 ID：服务端会把它带回实时事件里，用于识别“自己发起的变更” */
+// 服务端把它带回实时事件，用来识别自己发起的变更
 export const CLIENT_ID = crypto.randomUUID();
 
 export const api = hc<ApiType>('/api', {
@@ -22,7 +22,6 @@ export class ApiError extends Error {
 type Body<R> = R extends ClientResponse<infer T, number, string> ? T : never;
 type Ok<R> = Exclude<Body<R>, { error: string }>;
 
-/** 统一处理响应：非 2xx 时抛出带中文信息的 ApiError */
 export async function call<R extends ClientResponse<unknown, number, string>>(request: Promise<R>): Promise<Ok<R>> {
   let res: R;
   try {

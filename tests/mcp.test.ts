@@ -60,12 +60,10 @@ function setup(env: Record<string, string> = { ADMIN_AUTH: 'none' }) {
     try {
       data = JSON.parse(text);
     } catch {
-      // 非 JSON 响应保留原文
     }
     return { status: res.status, headers: res.headers, data };
   }
 
-  /** 走一遍完整授权：注册（可选）→ 授权页 → 换取令牌 */
   async function connect(opts: { clientId?: string; code?: string; write?: boolean; scope?: string } = {}) {
     const clientId =
       opts.clientId ??
@@ -125,7 +123,6 @@ function setup(env: Record<string, string> = { ADMIN_AUTH: 'none' }) {
     return res.data.result as { isError?: boolean; structuredContent?: any; content: { text: string }[] };
   }
 
-  /** 以管理员身份授权（需要当前请求能通过管理员认证） */
   async function connectAdmin(headers: Record<string, string> = {}, write = true) {
     const clientId = (await request('POST', '/oauth/register', {
       json: { client_name: 'Claude', redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' },
@@ -220,7 +217,6 @@ describe('OAuth + MCP flow', () => {
     const conn = await s.connect({ code: 'camp2026' });
     expect(conn.scope).toBe('ledger:read ledger:write');
 
-    // 授权码只能用一次
     const replay = await s.request('POST', '/oauth/token', {
       form: { grant_type: 'authorization_code', code: conn.code, client_id: conn.clientId, code_verifier: conn.verifier },
     });
@@ -277,7 +273,6 @@ describe('OAuth + MCP flow', () => {
     expect((await s.tool(conn.access_token, 'delete_expense', { id: camp.id })).structuredContent.deleted.title).toBe('营地');
     expect((await s.tool(conn.access_token, 'delete_expense', { id: camp.id })).isError).toBe(true);
 
-    // 变更带着 mcp:客户端名 的来源，网页端会提示「由 Claude 修改」
     s.resetCookies();
     await s.request('POST', '/api/join', { json: { code: 'Camp2026' } });
     const snapshot = (await s.request('GET', '/api/ledger')).data;
@@ -303,12 +298,10 @@ describe('OAuth + MCP flow', () => {
     expect((await s.rpc(next.data.access_token, 'ping')).data.result).toEqual({});
     expect((await refresh(conn.refresh_token)).data.error).toBe('invalid_grant');
 
-    // 其他客户端拿不走这个刷新令牌
     const other = (await s.request('POST', '/oauth/register', { json: { redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' } })).data;
     const stolen = await s.request('POST', '/oauth/token', { form: { grant_type: 'refresh_token', refresh_token: next.data.refresh_token, client_id: other.client_id } });
     expect(stolen.data.error).toBe('invalid_grant');
 
-    // 撤销刷新令牌会结束整个授权
     await s.request('POST', '/oauth/revoke', { form: { token: next.data.refresh_token } });
     expect((await s.rpc(next.data.access_token, 'ping')).status).toBe(401);
   });
@@ -326,7 +319,6 @@ describe('OAuth + MCP flow', () => {
     expect(list[0]).toMatchObject({ clientName: 'Claude', clientHost: 'claude.ai' });
     expect(list.map((c: { scopes: string[] }) => c.scopes.length).sort()).toEqual([1, 2]);
 
-    // 只读授权：只能看到查询工具，写操作被拒绝
     const readOnly = (await s.rpc(b.access_token, 'tools/list')).data.result.tools;
     expect(readOnly.map((t: { name: string }) => t.name)).toEqual(['get_ledger', 'list_transactions']);
     expect((await s.tool(b.access_token, 'add_member', { name: '某人' })).isError).toBe(true);
@@ -379,7 +371,6 @@ describe('OAuth request validation', () => {
 
     expect((await authorize({ client_id: 'unknown', redirect_uri: REDIRECT })).status).toBe(400);
     expect((await authorize({ redirect_uri: 'https://evil.example/cb' })).status).toBe(400);
-    // 回环地址允许任意端口（RFC 8252）
     expect((await authorize({ redirect_uri: 'http://127.0.0.1:51234/cb' })).data.redirectHost).toBe('127.0.0.1:51234');
 
     const noPkce = await authorize({ redirect_uri: REDIRECT, code_challenge_method: 'plain' });
@@ -409,7 +400,6 @@ describe('OAuth request validation', () => {
     expect(client.token_endpoint_auth_method).toBe('client_secret_basic');
     expect(client.client_secret).toBeTruthy();
     const conn = await s.connect({ clientId: client.client_id, code: 'check123' }).catch((e: unknown) => e);
-    // 没带 client_secret 的令牌请求会被拒绝
     expect(conn).toBeInstanceOf(Error);
 
     const basic = `Basic ${btoa(`${client.client_id}:${client.client_secret}`)}`;
@@ -442,13 +432,11 @@ describe('OAuth request validation', () => {
     expect(info.data).toMatchObject({ client: { name: 'Example AI', host: 'app.example.com' }, redirectHost: 'app.example.com' });
     expect(fetchMock).toHaveBeenCalledOnce();
 
-    // 元数据 URL 发生跳转时不跟随
     const moved = 'https://moved.example.com/client.json';
     vi.stubGlobal('fetch', async () => new Response(null, { status: 302, headers: { location: 'https://evil.example.com/client.json' } }));
     const redirected = await s.request('GET', `/api/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: moved, redirect_uri: 'https://moved.example.com/cb', code_challenge: challenge, code_challenge_method: 'S256' })}`);
     expect(redirected.status).toBe(400);
 
-    // 文档里的 client_id 必须与 URL 一致
     const forged = 'https://evil.example.com/client.json';
     vi.stubGlobal('fetch', async () => Response.json({ client_id: clientId, redirect_uris: ['https://evil.example.com/cb'] }));
     const res = await s.request('GET', `/api/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: forged, redirect_uri: 'https://evil.example.com/cb', code_challenge: challenge, code_challenge_method: 'S256' })}`);
@@ -508,7 +496,6 @@ describe('private_key_jwt (ChatGPT-style client)', () => {
     expect(signed.status).toBe(200);
     expect((await s.rpc(signed.data.access_token, 'ping')).data.result).toEqual({});
 
-    // 断言签名不对：拒绝，且不消耗授权码
     const grant = await code();
     const { privateKey: other } = await generateKeyPair('RS256');
     const forged = await exchange(grant, { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: await assertion(other) });
@@ -516,7 +503,6 @@ describe('private_key_jwt (ChatGPT-style client)', () => {
     const wrongAud = await exchange(grant, { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: await assertion(undefined, 'https://other.example') });
     expect(wrongAud.status).toBe(401);
 
-    // 文档里也声明了 none，可以作为公共客户端
     const pub = await exchange(grant, { client_id: clientId });
     expect(pub.status).toBe(200);
   });
@@ -548,7 +534,6 @@ describe('admin connections', () => {
     expect(created.created.name).toBe('公司团建');
     expect(created.passphrase).toMatchObject({ status: 'active', joinLink: expect.stringMatching(new RegExp(`^${ORIGIN}/join#`)) });
 
-    // 账本工具需要指定 ledger，可以用名称
     expect((await s.tool(token, 'get_ledger')).isError).toBe(true);
     await s.tool(token, 'add_member', { ledger: '公司团建', name: '小李' });
     await s.tool(token, 'add_member', { ledger: '公司团建', name: '小王' });
@@ -571,7 +556,6 @@ describe('admin connections', () => {
     expect(wrong.isError).toBe(true);
     expect((await s.tool(token, 'delete_ledger', { ledger: '团建 2026', confirm_name: '团建 2026' })).structuredContent.deleted.name).toBe('团建 2026');
 
-    // 管理接口能看到并断开管理员连接
     const connections = (await s.request('GET', '/api/admin/connections')).data;
     expect(connections).toHaveLength(1);
     expect(connections[0]).toMatchObject({ clientName: 'Claude', subject: 'developer' });
@@ -601,7 +585,6 @@ describe('admin connections', () => {
     const ok = await s.connectAdmin({ 'x-forwarded-email': 'me@example.com' });
     const token = ok.token;
     expect((await s.rpc(token, 'ping')).status).toBe(200);
-    // 从 ADMIN_EMAILS 移除后，已签发的管理员令牌立即失效
     s.config.adminEmails = ['someone-else@example.com'];
     expect((await s.rpc(token, 'ping')).status).toBe(401);
   });
@@ -610,7 +593,6 @@ describe('admin connections', () => {
     const s = setup({ ADMIN_AUTH: 'none', ADMIN_EMAILS: 'me@example.com' });
     const admin = await s.connectAdmin();
     expect((await s.rpc(admin.token, 'ping')).status).toBe(200);
-    // 关闭管理后台后立即失效
     s.config.adminAuth = 'disabled';
     expect((await s.rpc(admin.token, 'ping')).status).toBe(401);
   });
@@ -636,7 +618,6 @@ describe('registry migration', () => {
 
     const registry = new RegistryService(db, () => undefined);
     expect(registry.resolveAccessToken(await sha256('tok'))).toMatchObject({ role: 'member', ledger: { id: 'L1', name: '老账本' }, clientName: 'Claude' });
-    // 外键在重命名后仍然生效：删除账本会级联删除授权和令牌
     registry.deleteLedger('L1');
     expect(registry.resolveAccessToken(await sha256('tok'))).toBeNull();
     expect(db.all('SELECT * FROM oauth_tokens')).toHaveLength(0);

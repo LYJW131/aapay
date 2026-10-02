@@ -4,7 +4,6 @@ import { relativeTime } from '../lib/dates.ts';
 import { Button } from './Button.tsx';
 import { Spinner } from './Spinner.tsx';
 
-/** 已通过 OAuth 连接的 AI 应用列表（账本连接与管理员连接共用） */
 export function ConnectionList({
   connections,
   busy,

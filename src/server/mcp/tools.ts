@@ -30,14 +30,12 @@ import type { GrantRole } from '../core/registry.ts';
 import type { Remote } from '../core/remote.ts';
 import type { Platform } from '../platform.ts';
 
-/** 账本工具执行时的上下文：作用于哪个账本由授权（或管理员的 ledger 参数）决定 */
 export interface ToolContext {
   ledger: Remote<LedgerService>;
   info: LedgerInfo;
   scopes: ReadonlySet<McpScope>;
-  /** 写入实时事件的来源标记（mcp:客户端名），网页端据此提示「由 Claude 添加」 */
+  // 网页端按 mcp: 前缀识别并提示是哪个 AI 应用改的
   origin: string;
-  /** 配置时区下的今天（YYYY-MM-DD） */
   today: string;
 }
 
@@ -46,7 +44,6 @@ interface Tool<S extends z.ZodObject = z.ZodObject> {
   title: string;
   description: string;
   input: S;
-  /** 需要 ledger:write 权限 */
   write: boolean;
   destructive?: boolean;
   idempotent?: boolean;
@@ -54,8 +51,6 @@ interface Tool<S extends z.ZodObject = z.ZodObject> {
 }
 
 const tool = <S extends z.ZodObject>(t: Tool<S>) => t as unknown as Tool;
-
-// ---------- 参数与格式 ----------
 
 const yuan = (cents: Cents) => cents / 100;
 
@@ -70,14 +65,13 @@ const memberRef = z.string().trim().min(1).max(64);
 const date = isoDate.describe('日期 YYYY-MM-DD');
 const recordId = z.string().trim().min(1).max(64);
 
-/** 复用网页端的业务校验，错误信息保持一致 */
+// 复用网页端的 zod 校验，错误信息保持一致
 function validate<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const result = schema.safeParse(value);
   if (!result.success) throw badRequest(result.error.issues[0]?.message ?? '参数错误');
   return result.data;
 }
 
-/** 成员可以用 ID 或名字（不区分大小写）指代 */
 function resolveMember(members: readonly Member[], ref: string): Member {
   const key = ref.trim();
   const found = members.find((m) => m.id === key) ?? members.find((m) => m.name.toLowerCase() === key.toLowerCase());
@@ -112,13 +106,10 @@ function viewer(data: LedgerData) {
   };
 }
 
-/** 从变更结果里取出保存后的实体 */
 function saved<K extends 'expense' | 'settlement' | 'member'>(message: LiveMessage, key: K) {
   const event = message.event as Record<string, unknown>;
   return event[key] as K extends 'expense' ? Expense : K extends 'settlement' ? Settlement : Member;
 }
-
-// ---------- 工具 ----------
 
 const getLedger = tool({
   name: 'get_ledger',
@@ -374,17 +365,12 @@ const LEDGER_TOOLS = [
   deleteSettlement,
 ];
 
-// ---------- 管理员工具 ----------
-
-/** 一次 MCP 请求所代表的授权 */
 export interface McpSession {
   role: GrantRole;
-  /** 成员授权绑定的账本；管理员授权为 null，账本工具需要显式传 ledger */
   ledger: LedgerInfo | null;
   scopes: ReadonlySet<McpScope>;
   origin: string;
   today: string;
-  /** 站点对外地址，用于生成邀请链接 */
   baseUrl: string;
   platform: Platform;
 }
@@ -402,7 +388,6 @@ const adminTool = <S extends z.ZodObject>(t: AdminTool<S>) => t as unknown as Ad
 
 const ledgerRef = z.string().trim().min(1).max(64).describe('账本名称或 ID（可用 list_ledgers 查看）');
 
-/** 账本可以用 ID 或名称（不区分大小写）指代 */
 async function resolveLedger(platform: Platform, ref: string): Promise<LedgerInfo> {
   const ledgers = await platform.registry.listLedgers();
   const key = ref.trim();
@@ -560,11 +545,8 @@ const revokePassphrase = adminTool({
 
 const ADMIN_TOOLS = [listLedgers, createLedger, renameLedger, deleteLedger, listPassphrases, createPassphraseTool, revokePassphrase];
 
-// ---------- 列表与调用 ----------
-
 type AnyTool = { kind: 'ledger'; tool: Tool } | { kind: 'admin'; tool: AdminTool };
 
-/** 当前授权可见的工具：管理员看到管理工具，以及需要指定 ledger 的账本工具 */
 function available(session: McpSession): AnyTool[] {
   const canWrite = session.scopes.has('ledger:write');
   const tools: AnyTool[] = [];
@@ -573,7 +555,6 @@ function available(session: McpSession): AnyTool[] {
   return tools.filter(({ tool }) => canWrite || !tool.write);
 }
 
-/** 管理员调用账本工具时多一个必填的 ledger 参数 */
 function schemaOf(entry: AnyTool, session: McpSession): z.ZodObject {
   return entry.kind === 'ledger' && session.role === 'admin' ? entry.tool.input.extend({ ledger: ledgerRef }) : entry.tool.input;
 }
@@ -583,7 +564,6 @@ function inputSchema(schema: z.ZodObject) {
   return json;
 }
 
-/** tools/list：只列出当前授权可用的工具 */
 export function listTools(session: McpSession) {
   return available(session).map((entry) => {
     const t = entry.tool;
@@ -605,7 +585,7 @@ export function listTools(session: McpSession) {
 
 export class UnknownToolError extends Error {}
 
-/** tools/call：业务错误作为工具结果（isError）返回，模型可据此自行修正 */
+// 业务错误作为工具结果（isError）返回而非协议错误，模型可据此自行修正
 export async function callTool(name: string, args: unknown, session: McpSession) {
   const fail = (text: string) => ({ content: [{ type: 'text', text }], isError: true });
   const entry = available({ ...session, scopes: new Set(['ledger:read', 'ledger:write']) }).find((e) => e.tool.name === name);

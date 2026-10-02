@@ -1,4 +1,3 @@
-// 把 Node 服务端打包成单个 ESM 文件，运行时镜像无需 node_modules
 import { build } from 'esbuild';
 
 await build({
@@ -11,7 +10,7 @@ await build({
   minify: true,
   sourcemap: true,
   legalComments: 'none',
-  // ws 的可选原生加速模块
+  // ws 的可选原生加速模块，不打包
   external: ['bufferutil', 'utf-8-validate'],
   banner: {
     js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",

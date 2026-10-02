@@ -15,26 +15,17 @@ import { first, migrate, type SqlDriver, type SqlValue } from './sql.ts';
 
 const DAY = 86_400_000;
 export const SESSION_TTL = {
-  /** 永久口令换来的成员会话最长有效期 */
   member: 180 * DAY,
-  /** 管理员进入账本时签发的会话 */
   admin: 7 * DAY,
-  /** 密码模式下的管理控制台会话 */
   console: 7 * DAY,
 } as const;
 
 export const OAUTH_TTL = {
-  /** 授权码只能使用一次，且必须很快兑换 */
   code: 5 * 60_000,
-  /** MCP 访问令牌 */
   access: 60 * 60_000,
-  /** 一次授权（刷新令牌）的最长有效期，同时不会超过口令本身的有效期 */
   grant: 180 * DAY,
-  /** 管理员授权权限大，有效期更短，到期需重新登录授权 */
   adminGrant: 30 * DAY,
-  /** 长期无授权的动态注册客户端会被清理 */
   idleClient: 30 * DAY,
-  /** 客户端元数据文档（CIMD）的缓存时间 */
   metadata: DAY,
 } as const;
 
@@ -71,7 +62,6 @@ export const MIGRATIONS = [
   CREATE INDEX sessions_expires ON sessions (expires_at);
   `,
   `
-  -- OAuth 2.1 客户端：动态注册（dcr）或以元数据文档 URL 作为 client_id（cimd）
   CREATE TABLE oauth_clients (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL CHECK (kind IN ('dcr', 'cimd')),
@@ -98,7 +88,6 @@ export const MIGRATIONS = [
     expires_at INTEGER NOT NULL
   );
 
-  -- 一次授权 = 一个已连接的 AI 应用；撤销口令或删除账本时级联失效
   CREATE TABLE oauth_grants (
     id TEXT PRIMARY KEY,
     client_id TEXT NOT NULL REFERENCES oauth_clients (id) ON DELETE CASCADE,
@@ -124,12 +113,11 @@ export const MIGRATIONS = [
   CREATE INDEX oauth_tokens_expires ON oauth_tokens (expires_at);
   `,
   `
-  -- private_key_jwt 客户端认证：客户端公布的 JWKS 地址；以及是否允许不带凭证的公共客户端
   ALTER TABLE oauth_clients ADD COLUMN jwks_uri TEXT;
   ALTER TABLE oauth_clients ADD COLUMN public_allowed INTEGER NOT NULL DEFAULT 1;
   `,
   `
-  -- 管理员授权：不绑定账本（ledger_id 为空），可以管理全部账本。保留已有的成员授权与令牌
+  -- 管理员授权不绑定账本；重建表时保留已有的成员授权与令牌
   CREATE TABLE oauth_grants_v2 (
     id TEXT PRIMARY KEY,
     client_id TEXT NOT NULL REFERENCES oauth_clients (id) ON DELETE CASCADE,
@@ -189,28 +177,22 @@ export const MIGRATIONS = [
 export type GrantRole = 'member' | 'admin';
 
 export interface OAuthClient {
-  /** 动态注册时生成的随机 ID，或 CIMD 客户端的元数据文档 URL */
   id: string;
   kind: 'dcr' | 'cimd';
   name: string | null;
   uri: string | null;
   redirectUris: string[];
-  /** 机密客户端 client_secret 的 SHA-256；公共客户端为 null */
   secretHash: string | null;
-  /** 支持 private_key_jwt 时，验证客户端断言所用的 JWKS 地址 */
   jwksUri: string | null;
-  /** 是否允许不带任何凭证（仅靠 PKCE）换取令牌 */
   publicAllowed: boolean;
   createdAt: number;
   fetchedAt: number | null;
 }
 
-/** 用户在授权页上证明自己能访问哪个账本的方式 */
 export type GrantSource =
   | { kind: 'passphrase'; code: string }
   | { kind: 'session'; tokenHash: string }
   | { kind: 'ledger'; ledgerId: string; subject: string }
-  /** 已通过管理员认证（Access / 密码 / 代理）的用户，授权管理全部账本 */
   | { kind: 'admin'; subject: string };
 
 export interface AuthCodeInput {
@@ -227,21 +209,17 @@ export interface TokenInput {
   refreshHash: string;
 }
 
-/** 签发令牌后返回给 token 端点的信息 */
 export interface IssuedGrant {
   scope: string;
   accessExpiresAt: number;
 }
 
-/** 一个有效的 MCP 访问令牌所代表的权限 */
 export interface AccessGrant {
   grantId: string;
   clientId: string;
   clientName: string | null;
   role: GrantRole;
-  /** 成员授权绑定的账本；管理员授权为 null */
   ledger: LedgerInfo | null;
-  /** 管理员授权时为管理员身份（邮箱等） */
   subject: string | null;
   scope: string;
   resource: string;
@@ -287,7 +265,6 @@ const toClient = (r: ClientRow): OAuthClient => ({
   fetchedAt: r.fetched_at,
 });
 
-/** 连接列表里展示的来源：优先客户端主页，其次回调地址的主机名 */
 function clientHost(uri: string | null, redirectUris: string[], id: string) {
   for (const candidate of [uri, redirectUris[0], id]) {
     const host = candidate ? URL.parse(candidate)?.host : undefined;
@@ -317,7 +294,6 @@ const toPassphrase = (r: PassphraseRow): Passphrase => ({
 
 const ACTIVE = '(p.valid_from <= ? AND (p.valid_until IS NULL OR p.valid_until > ?))';
 
-/** 全局注册表：账本列表、分享口令与登录会话。 */
 export class RegistryService {
   constructor(
     private readonly db: SqlDriver,
@@ -325,8 +301,6 @@ export class RegistryService {
   ) {
     migrate(db, MIGRATIONS);
   }
-
-  // ---------- 账本 ----------
 
   listLedgers(): LedgerRecord[] {
     const now = Date.now();
@@ -363,7 +337,6 @@ export class RegistryService {
     return ledger;
   }
 
-  /** 共享模式下使用的固定账本 */
   ensureLedger(id: string, name: string): LedgerInfo {
     this.db.run('INSERT OR IGNORE INTO ledgers (id, name, created_at) VALUES (?, ?, ?)', id, name, Date.now());
     return this.getLedger(id);
@@ -383,8 +356,6 @@ export class RegistryService {
     this.emit({ type: 'ledgers.changed' });
     return ledger;
   }
-
-  // ---------- 分享口令 ----------
 
   listPassphrases(ledgerId: string): Passphrase[] {
     this.getLedger(ledgerId);
@@ -424,7 +395,7 @@ export class RegistryService {
     });
   }
 
-  /** 撤销口令：通过外键级联，用它登录的会话也会立即失效 */
+  // 通过外键级联，用该口令登录的会话与 AI 授权也会立即失效
   revokePassphrase(id: string): Passphrase {
     const row = first(this.db.all<PassphraseRow>('DELETE FROM passphrases WHERE id = ? RETURNING *', id));
     if (!row) throw notFound('口令不存在');
@@ -432,9 +403,6 @@ export class RegistryService {
     return toPassphrase(row);
   }
 
-  // ---------- 会话 ----------
-
-  /** 用口令加入账本，tokenHash 为调用方生成的会话令牌哈希 */
   join(code: string, tokenHash: string): SessionInfo {
     const now = Date.now();
     const p = this.activePassphrase(code, now);
@@ -443,7 +411,6 @@ export class RegistryService {
     return { ledger: { id: p.ledger_id, name: p.name }, role: 'member', passphrase: p.code, expiresAt };
   }
 
-  /** 管理员直接进入某个账本 */
   openLedgerSession(tokenHash: string, ledgerId: string, subject: string): SessionInfo {
     const ledger = this.getLedger(ledgerId);
     const expiresAt = Date.now() + SESSION_TTL.admin;
@@ -493,14 +460,12 @@ export class RegistryService {
     this.db.run('DELETE FROM sessions WHERE token_hash = ?', tokenHash);
   }
 
-  // ---------- OAuth（MCP 连接） ----------
-
   getClient(id: string): OAuthClient | null {
     const row = first(this.db.all<ClientRow>('SELECT * FROM oauth_clients WHERE id = ?', id));
     return row ? toClient(row) : null;
   }
 
-  /** 注册或更新客户端；用 UPSERT 而非 REPLACE，避免级联删除已有授权 */
+  // 用 UPSERT 而非 REPLACE：REPLACE 会先删除行，级联删除已有授权
   saveClient(client: OAuthClient): void {
     const now = Date.now();
     this.db.run(
@@ -529,7 +494,6 @@ export class RegistryService {
     );
   }
 
-  /** 用户同意授权后签发授权码，返回被授权的账本（管理员授权返回 null） */
   createAuthCode(source: GrantSource, input: AuthCodeInput): LedgerInfo | null {
     const now = Date.now();
     const grant = this.resolveGrantSource(source, now);
@@ -555,11 +519,7 @@ export class RegistryService {
     return grant.ledger;
   }
 
-  /**
-   * 兑换授权码（只能使用一次）。challenge 是调用方由 code_verifier 计算出的 S256 值；
-   * redirectUri / resource 为 null 表示令牌请求未携带。任何一项不匹配都返回 null，
-   * 由调用方回复 invalid_grant。
-   */
+  // redirectUri / resource 为 null 表示令牌请求未携带，此时不校验该项
   exchangeCode(
     check: { codeHash: string; clientId: string; redirectUri: string | null; challenge: string; resource: string | null },
     tokens: TokenInput,
@@ -601,7 +561,6 @@ export class RegistryService {
     });
   }
 
-  /** 刷新令牌轮换：旧的刷新令牌立即作废，同时签发新的访问令牌 */
   refreshGrant(refreshHash: string, clientId: string, tokens: TokenInput): IssuedGrant | null {
     return this.db.transaction(() => {
       const now = Date.now();
@@ -668,7 +627,7 @@ export class RegistryService {
     };
   }
 
-  /** RFC 7009：撤销刷新令牌会结束整个授权，撤销访问令牌只作废它本身 */
+  // RFC 7009：撤销刷新令牌结束整个授权，撤销访问令牌只作废它本身
   revokeToken(tokenHash: string): void {
     const grant = first(
       this.db.all<{ ledger_id: string | null }>('DELETE FROM oauth_grants WHERE refresh_hash = ? RETURNING ledger_id', tokenHash),
@@ -677,7 +636,6 @@ export class RegistryService {
     else this.db.run('DELETE FROM oauth_tokens WHERE token_hash = ?', tokenHash);
   }
 
-  /** 连接到某个账本的成员授权 */
   listConnections(ledgerId: string): Connection[] {
     return this.connections('g.ledger_id = ?', ledgerId);
   }
@@ -689,7 +647,6 @@ export class RegistryService {
     this.emit({ type: 'connections.changed', ledgerId });
   }
 
-  /** 以管理员身份连接、可管理全部账本的授权 */
   listAdminConnections(): Connection[] {
     return this.connections("g.role = 'admin'");
   }
@@ -700,8 +657,6 @@ export class RegistryService {
     }
     this.emit({ type: 'connections.changed', ledgerId: null });
   }
-
-  // ---------- 内部工具 ----------
 
   private connections(where: string, ...params: SqlValue[]): Connection[] {
     return this.db

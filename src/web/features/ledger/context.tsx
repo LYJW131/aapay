@@ -7,7 +7,6 @@ export interface LedgerContextValue {
   session: SessionInfo;
   store: LedgerStore;
   memberById: Map<string, Member>;
-  /** 按账本隔离的本地存储 key */
   key: (name: string) => string;
 }
 

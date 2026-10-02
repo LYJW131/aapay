@@ -93,10 +93,6 @@ const toSettlement = (r: SettlementRow): Settlement => ({
   createdAt: r.created_at,
 });
 
-/**
- * 单个账本的全部业务逻辑。每个账本拥有独立的 SQLite 数据库：
- * Cloudflare 上是一个 Durable Object，Docker 中是 data/ledgers/<id>.db。
- */
 export class LedgerService {
   constructor(
     private readonly db: SqlDriver,
@@ -135,8 +131,6 @@ export class LedgerService {
       lastActivityAt: row.last,
     };
   }
-
-  // ---------- 成员 ----------
 
   createMember(input: MemberInput, origin?: string) {
     return this.commit(origin, () => {
@@ -191,8 +185,6 @@ export class LedgerService {
     });
   }
 
-  // ---------- 支出 ----------
-
   createExpense(input: ExpenseInput, origin?: string) {
     return this.commit(origin, () => {
       const now = Date.now();
@@ -241,8 +233,6 @@ export class LedgerService {
     });
   }
 
-  // ---------- 还款 ----------
-
   createSettlement(input: SettlementInput, origin?: string) {
     return this.commit(origin, () => {
       this.member(input.fromId);
@@ -279,12 +269,10 @@ export class LedgerService {
     });
   }
 
-  /** 推送与账目无关的通知（改名、关闭），不改变版本号 */
+  // 不改变版本号：客户端用版本号检测漏掉的账目事件
   notify(event: LedgerEvent) {
     this.emit({ event, at: Date.now() });
   }
-
-  // ---------- 内部工具 ----------
 
   private commit(origin: string | undefined, mutate: () => LedgerEvent): LiveMessage {
     const message = this.db.transaction(() => {
@@ -349,7 +337,7 @@ export class LedgerService {
     if (!known.has(input.payerId)) throw badRequest('付款人不存在');
     const selected = new Set(input.participantIds);
     for (const pid of selected) if (!known.has(pid)) throw badRequest('参与者不存在');
-    // 按成员加入顺序排列，保证分摊结果（尤其是零头的归属）稳定可预期
+    // 按成员加入顺序排列，保证零头的归属稳定
     const ordered = members.sort(byMemberOrder).filter((m) => selected.has(m.id)).map((m) => m.id);
     return {
       id,

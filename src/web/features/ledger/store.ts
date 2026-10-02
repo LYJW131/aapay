@@ -13,16 +13,10 @@ export interface LedgerState {
 }
 
 interface Hooks {
-  /** 账本被删除、口令被撤销或会话失效 */
   onClosed(reason: CloseReason): void;
-  /** 其他人（其他设备/标签页）产生的变更 */
   onRemote(message: LiveMessage, before: Snapshot): void;
 }
 
-/**
- * 账本的客户端状态：首屏拉取快照，之后通过 WebSocket 接收增量事件。
- * 每条事件带有递增版本号，发现缺口时自动重新拉取快照，保证最终一致。
- */
 export class LedgerStore {
   private state: LedgerState = { snapshot: null, live: 'connecting', error: null };
   private readonly listeners = new Set<() => void>();
@@ -76,7 +70,7 @@ export class LedgerStore {
     }
   }
 
-  /** 发起一次变更：立即应用服务端返回的事件，WebSocket 回声会因版本号相同而被忽略 */
+  // 立即应用服务端返回的事件，WebSocket 回声会因版本号相同而被忽略
   async mutate(request: Promise<ClientResponse<unknown>>) {
     try {
       const message = (await call(request)) as LiveMessage;
@@ -128,7 +122,6 @@ export class LedgerStore {
       try {
         this.receive(JSON.parse(e.data as string) as LiveMessage);
       } catch {
-        // 忽略无法解析的消息
       }
     };
     ws.onclose = (e) => {

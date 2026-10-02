@@ -6,7 +6,6 @@
     'Microsoft YaHei', 'Noto Sans SC', sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, monospace;
 
-  /* 品牌色：来自 logo 的靛紫 → 青 */
   --color-brand-50: oklch(0.97 0.02 277);
   --color-brand-100: oklch(0.94 0.04 277);
   --color-brand-200: oklch(0.88 0.08 277);

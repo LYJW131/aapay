@@ -1,20 +1,5 @@
 import type { AdminAuthMode, Mode } from '../shared/types.ts';
 
-/**
- * 运行配置，Cloudflare（wrangler vars / secrets）与 Docker（环境变量）共用同一套变量名：
- *
- * MODE                isolated（默认，多账本 + 口令加入）| shared（单一公共账本，无需口令）
- * ADMIN_AUTH          access | password | proxy | none | disabled（默认）
- * ACCESS_TEAM_DOMAIN  ADMIN_AUTH=access 时必填，例如 myteam.cloudflareaccess.com
- * ACCESS_AUD          ADMIN_AUTH=access 时必填，Access 应用的 Application Audience (AUD) Tag
- * ADMIN_PASSWORD      ADMIN_AUTH=password 时必填，至少 8 位
- * ADMIN_EMAIL_HEADER  ADMIN_AUTH=proxy 时读取的身份头，默认 X-Forwarded-Email
- * ADMIN_EMAILS        可选，逗号分隔的管理员邮箱白名单（access / proxy 模式下生效）
- * MCP                 enabled（默认）| disabled：是否开放 /mcp 端点（OAuth 2.1）供 Claude、ChatGPT 等连接
- * PUBLIC_URL          可选，对外访问地址，如 https://aapay.example.com；用作 OAuth issuer 与 MCP 资源标识。
- *                     不填则按请求推断（会信任 X-Forwarded-Proto / X-Forwarded-Host），反向代理后建议填写
- * TIMEZONE            可选，默认 Asia/Shanghai；AI 记账未指定日期时按此时区取「今天」
- */
 export interface Config {
   mode: Mode;
   adminAuth: AdminAuthMode;

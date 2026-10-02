@@ -11,11 +11,7 @@ import { ADMIN_HINT } from './identity.ts';
 
 type Gate = { state: 'loading' } | { state: 'denied' } | { state: 'disabled' };
 
-/**
- * /admin 只是管理员登录入口（Cloudflare Access 会拦截这个路径）：
- * 认证通过后回到首页，管理功能以卡片形式嵌在账本页顶部。
- * 从 AI 授权页过来的，登录后回到授权页（只允许站内授权页地址，避免开放跳转）。
- */
+// 只允许跳回站内授权页，避免开放跳转
 export function AdminPage({ config }: { config: PublicConfig }) {
   const [gate, setGate] = useState<Gate>({ state: 'loading' });
 

@@ -18,7 +18,6 @@ export interface Env {
 
 const TAG_HEADER = 'x-aapay-tag';
 
-/** Durable Object 内置 SQLite 的同步驱动 */
 function durableSql(storage: DurableObjectStorage): SqlDriver {
   const { sql } = storage;
   return {
@@ -29,7 +28,6 @@ function durableSql(storage: DurableObjectStorage): SqlDriver {
   };
 }
 
-/** 使用 WebSocket Hibernation：连接空闲时 DO 可以休眠，不产生时长费用 */
 abstract class LiveRoom extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -48,7 +46,6 @@ abstract class LiveRoom extends DurableObject<Env> {
       try {
         ws.send(data);
       } catch {
-        // 连接已断开，忽略
       }
     }
   }
@@ -57,7 +54,6 @@ abstract class LiveRoom extends DurableObject<Env> {
     try {
       ws.close(code >= 3000 && code <= 4999 ? code : 1000);
     } catch {
-      // 已关闭
     }
   }
 }
@@ -100,7 +96,6 @@ export class RegistryRoom extends LiveRoom {
   }
 }
 
-/** 把升级请求连同 tag 一起转发给 Durable Object */
 function forwardUpgrade(stub: { fetch(request: Request): Promise<Response> }, c: Context, tag: string) {
   const headers = new Headers(c.req.raw.headers);
   headers.set(TAG_HEADER, tag);

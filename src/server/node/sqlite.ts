@@ -1,7 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import type { SqlDriver, SqlValue } from '../core/sql.ts';
 
-/** 基于 Node 内置 node:sqlite 的同步驱动，无需任何原生依赖 */
 export function openSqlite(path: string): SqlDriver & { close(): void } {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;');

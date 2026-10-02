@@ -19,7 +19,6 @@ interface Remembered {
   at: number;
 }
 
-/** 新增或编辑一笔支出。新增时会记住上次的付款人与参与者。 */
 export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: () => void }) {
   const { snapshot, store, key } = useLedger();
   const { members } = snapshot;

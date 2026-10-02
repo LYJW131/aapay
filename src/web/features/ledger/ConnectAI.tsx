@@ -15,7 +15,7 @@ const STEPS = [
   { app: '其他应用', how: 'Cursor、VS Code 等支持远程 MCP（OAuth）的客户端同样可用' },
 ];
 
-/** 一组 AI 连接的加载与断开；授权通常在另一个标签页完成，回到这里时自动刷新 */
+// 授权通常在另一个标签页完成，回到这里时刷新
 function useConnections(list: () => Promise<Connection[]>, remove: (id: string) => Promise<unknown>) {
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -56,7 +56,6 @@ const removeLedgerConnection = (id: string) => call(api.ledger.connections[':id'
 const adminConnections = () => call(api.admin.connections.$get());
 const removeAdminConnection = (id: string) => call(api.admin.connections[':id'].$delete({ param: { id } }));
 
-/** 把 MCP 地址交给 AI 应用，并管理已连接到本账本（以及管理员连接）的应用 */
 export function ConnectAI({ admin }: { admin: boolean }) {
   const [copied, setCopied] = useState(false);
   const ledger = useConnections(ledgerConnections, removeLedgerConnection);
