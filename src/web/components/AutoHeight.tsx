@@ -8,7 +8,13 @@ export function AutoHeight({ children, className }: { children: ReactNode; class
 
   useLayoutEffect(() => {
     const el = inner.current!;
-    const observer = new ResizeObserver(() => setHeight(el.offsetHeight));
+    let last: number | null = null;
+    const observer = new ResizeObserver(() => {
+      const next = el.offsetHeight;
+      if (last !== null && last !== next) setAnimating(true);
+      last = next;
+      setHeight(next);
+    });
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -18,10 +24,9 @@ export function AutoHeight({ children, className }: { children: ReactNode; class
       initial={false}
       animate={{ height }}
       transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-      onAnimationStart={() => setAnimating(true)}
       onAnimationComplete={() => setAnimating(false)}
       className={className}
-      // 只在高度过渡时裁切，平时放开，避免切掉子元素的阴影和焦点环
+      // 只在高度真正变化的过渡中裁切（首次测量不算），避免切掉子元素的阴影和焦点环
       style={{ overflow: animating ? 'hidden' : 'visible' }}
     >
       <div ref={inner} className="flow-root">

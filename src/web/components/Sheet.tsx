@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
-import { useEffect, useId, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn.ts';
 import { useMediaQuery } from '../lib/hooks.ts';
@@ -18,6 +18,7 @@ export function Sheet({ open, onClose, title, description, children, className }
   const desktop = useMediaQuery('(min-width: 640px)');
   const drag = useDragControls();
   const titleId = useId();
+  const panel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -25,6 +26,8 @@ export function Sheet({ open, onClose, title, description, children, className }
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKey);
+    // 焦点留在打开弹窗的按钮上，关闭后那个按钮会一直显示焦点框
+    if (!panel.current?.contains(document.activeElement)) panel.current?.focus({ preventScroll: true });
     return () => {
       document.body.style.overflow = overflow;
       window.removeEventListener('keydown', onKey);
@@ -43,11 +46,13 @@ export function Sheet({ open, onClose, title, description, children, className }
             onClick={onClose}
           />
           <motion.div
+            ref={panel}
             role="dialog"
             aria-modal="true"
             aria-labelledby={titleId}
+            tabIndex={-1}
             className={cn(
-              'relative flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[28px] bg-surface shadow-2xl ring-1 ring-zinc-900/5 sm:max-w-md sm:rounded-[28px] dark:ring-white/10',
+              'relative flex max-h-[92dvh] w-full flex-col overflow-hidden outline-none rounded-t-[28px] bg-surface shadow-2xl ring-1 ring-zinc-900/5 sm:max-w-md sm:rounded-[28px] dark:ring-white/10',
               className,
             )}
             initial={desktop ? { opacity: 0, scale: 0.96, y: 12 } : { y: '100%' }}
