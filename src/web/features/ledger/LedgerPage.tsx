@@ -133,8 +133,8 @@ export function LedgerPage({
   }, [snapshot, range, memberId]);
 
   useEffect(() => {
-    if (snapshot) document.title = `${snapshot.ledger.name} · AAPay`;
-  }, [snapshot?.ledger.name]);
+    if (snapshot) document.title = `${snapshot.ledger.emoji} ${snapshot.ledger.name} · AAPay`;
+  }, [snapshot?.ledger.name, snapshot?.ledger.emoji]);
 
   if (!context) {
     return (

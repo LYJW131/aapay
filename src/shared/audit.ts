@@ -29,8 +29,9 @@ export interface AuditSettlement {
 }
 
 export type AuditAction =
-  | { type: 'ledger.create'; name: string }
+  | { type: 'ledger.create'; name: string; emoji?: string }
   | { type: 'ledger.rename'; from: string; to: string }
+  | { type: 'ledger.update'; before: { name: string; emoji: string }; after: { name: string; emoji: string } }
   | { type: 'member.create'; name: string; avatar: string }
   | { type: 'member.update'; before: { name: string; avatar: string }; after: { name: string; avatar: string } }
   | { type: 'member.delete'; name: string }

@@ -551,7 +551,7 @@ describe('admin connections', () => {
     expect((await s.tool(token, 'revoke_passphrase', { ledger: '周末露营', code: 'CAMP2027' })).structuredContent.revoked).toBe('camp2027');
     expect((await s.request('POST', '/api/join', { json: { code: 'camp2027' } })).status).toBe(401);
 
-    expect((await s.tool(token, 'rename_ledger', { ledger: '公司团建', name: '团建 2026' })).structuredContent.renamed.name).toBe('团建 2026');
+    expect((await s.tool(token, 'update_ledger', { ledger: '公司团建', name: '团建 2026', emoji: '🎉' })).structuredContent.updated).toMatchObject({ name: '团建 2026', emoji: '🎉' });
     const wrong = await s.tool(token, 'delete_ledger', { ledger: '团建 2026', confirm_name: '团建' });
     expect(wrong.isError).toBe(true);
     expect((await s.tool(token, 'delete_ledger', { ledger: '团建 2026', confirm_name: '团建 2026' })).structuredContent.deleted.name).toBe('团建 2026');

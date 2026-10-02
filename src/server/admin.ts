@@ -1,5 +1,5 @@
 import type { AuditActor } from '../shared/audit.ts';
-import type { PassphraseInput } from '../shared/schema.ts';
+import type { LedgerInput, PassphraseInput } from '../shared/schema.ts';
 import type { LedgerInfo, LedgerOverview, LedgerRecord, Passphrase } from '../shared/types.ts';
 import type { Platform } from './platform.ts';
 
@@ -11,18 +11,22 @@ export function adminActions(platform: Platform, actor: AuditActor) {
       return ledgers.map((l, i) => ({ ...l, stats: stats[i] ?? null }));
     },
 
-    async createLedger(name: string): Promise<LedgerRecord> {
-      const ledger = await platform.registry.createLedger(name);
-      await platform.ledger(ledger.id).api.record(actor, { type: 'ledger.create', name: ledger.name });
+    async createLedger(input: LedgerInput): Promise<LedgerRecord> {
+      const ledger = await platform.registry.createLedger(input);
+      await platform.ledger(ledger.id).api.record(actor, { type: 'ledger.create', name: ledger.name, emoji: ledger.emoji });
       return ledger;
     },
 
-    async renameLedger(id: string, name: string): Promise<LedgerInfo> {
+    async updateLedger(id: string, input: LedgerInput): Promise<LedgerInfo> {
       const before = await platform.registry.getLedger(id);
-      const ledger = await platform.registry.renameLedger(id, name);
+      const ledger = await platform.registry.updateLedger(id, input);
       const api = platform.ledger(ledger.id).api;
-      await api.record(actor, { type: 'ledger.rename', from: before.name, to: ledger.name });
-      await api.notify({ type: 'ledger.renamed', name: ledger.name });
+      await api.record(actor, {
+        type: 'ledger.update',
+        before: { name: before.name, emoji: before.emoji },
+        after: { name: ledger.name, emoji: ledger.emoji },
+      });
+      await api.notify({ type: 'ledger.updated', ledger });
       return ledger;
     },
 

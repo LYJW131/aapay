@@ -62,7 +62,10 @@ export function Header({
       <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
         <LogoMark className="size-7 shrink-0" />
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[15px] leading-tight font-semibold tracking-tight">{snapshot.ledger.name}</h1>
+          <h1 className="truncate text-[15px] leading-tight font-semibold tracking-tight">
+            <span className="mr-1">{snapshot.ledger.emoji}</span>
+            {snapshot.ledger.name}
+          </h1>
           <p className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
             <span className={cn('size-1.5 rounded-full', status.dot)} />
             {status.label}
@@ -74,7 +77,7 @@ export function Header({
           {unread && <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-rose-500 ring-2 ring-canvas" />}
         </Button>
       </div>
-      <Sheet open={open} onClose={() => setOpen(false)} title={snapshot.ledger.name}>
+      <Sheet open={open} onClose={() => setOpen(false)} title={`${snapshot.ledger.emoji} ${snapshot.ledger.name}`}>
         {tabs.length > 1 && (
           <div className="sticky top-0 z-10 -mx-5 bg-surface px-5 pb-4">
             <div role="tablist" className="flex rounded-2xl bg-zinc-100 p-1 dark:bg-white/6">

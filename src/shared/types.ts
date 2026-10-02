@@ -48,6 +48,7 @@ export interface LedgerData {
 export interface LedgerInfo {
   id: string;
   name: string;
+  emoji: string;
 }
 
 export interface Snapshot extends LedgerData {
@@ -69,7 +70,7 @@ export type LedgerEvent =
   | { type: 'expense.deleted'; id: string }
   | { type: 'settlement.saved'; settlement: Settlement }
   | { type: 'settlement.deleted'; id: string }
-  | { type: 'ledger.renamed'; name: string }
+  | { type: 'ledger.updated'; ledger: LedgerInfo }
   | { type: 'audit.appended' }
   | { type: 'ledger.closed'; reason: 'deleted' | 'revoked' };
 
@@ -108,6 +109,7 @@ export interface AdminIdentity {
 export interface LedgerRecord {
   id: string;
   name: string;
+  emoji: string;
   createdAt: Timestamp;
   activePassphrases: number;
   connections: number;

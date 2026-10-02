@@ -162,7 +162,7 @@ describe('audit log (app)', () => {
     expect(entries.map((e) => [e.action.type, actorLabel(e.actor)])).toEqual([
       ['ledger.create', '管理员 developer'],
       ['passphrase.create', '管理员 developer'],
-      ['ledger.rename', '管理员 developer'],
+      ['ledger.update', '管理员 developer'],
       ['member.create', '成员（口令 camp88）'],
     ]);
     expect(verifyAudit([...page.records].reverse(), page.publicKey, null).ok).toBe(true);

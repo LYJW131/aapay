@@ -59,7 +59,7 @@ export const settlementInput = z
 
 export const joinInput = z.object({ code: passphraseCode });
 export const loginInput = z.object({ password: z.string().min(1).max(256) });
-export const ledgerInput = z.object({ name: text(LIMITS.ledgerName, '账本名称') });
+export const ledgerInput = z.object({ name: text(LIMITS.ledgerName, '账本名称'), emoji: z.string().trim().max(LIMITS.avatar).optional() });
 
 export const passphraseInput = z
   .object({
@@ -73,6 +73,7 @@ export const passphraseInput = z
   });
 
 export type MemberInput = z.infer<typeof memberInput>;
+export type LedgerInput = z.infer<typeof ledgerInput>;
 export type ExpenseInput = z.infer<typeof expenseInput>;
 export type SettlementInput = z.infer<typeof settlementInput>;
 export type PassphraseInput = z.infer<typeof passphraseInput>;

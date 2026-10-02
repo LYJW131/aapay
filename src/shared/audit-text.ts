@@ -33,9 +33,15 @@ function expenseChanges(before: AuditExpense, after: AuditExpense) {
 export function describeAudit(action: AuditAction): { summary: string; details: string[] } {
   switch (action.type) {
     case 'ledger.create':
-      return { summary: `创建了账本「${action.name}」`, details: [] };
+      return { summary: `创建了账本 ${action.emoji ? `${action.emoji} ` : ''}「${action.name}」`, details: [] };
     case 'ledger.rename':
       return { summary: `把账本「${action.from}」改名为「${action.to}」`, details: [] };
+    case 'ledger.update': {
+      const details: string[] = [];
+      if (action.before.name !== action.after.name) details.push(`名称：${action.before.name} → ${action.after.name}`);
+      if (action.before.emoji !== action.after.emoji) details.push(`图标：${action.before.emoji} → ${action.after.emoji}`);
+      return { summary: `修改了账本「${action.after.name}」`, details };
+    }
     case 'member.create':
       return { summary: `添加了成员 ${action.avatar} ${action.name}`, details: [] };
     case 'member.update': {

@@ -159,10 +159,10 @@ const adminRoutes = new Hono<AppEnv>()
   })
   .get('/ledgers', async (c) => c.json((await admin(c).listLedgers()) satisfies LedgerOverview[]))
   .post('/ledgers', body(ledgerInput), async (c) =>
-    c.json(await admin(c).createLedger(c.req.valid('json').name)),
+    c.json(await admin(c).createLedger(c.req.valid('json'))),
   )
   .patch('/ledgers/:id', body(ledgerInput), async (c) =>
-    c.json(await admin(c).renameLedger(c.req.param('id'), c.req.valid('json').name)),
+    c.json(await admin(c).updateLedger(c.req.param('id'), c.req.valid('json'))),
   )
   .delete('/ledgers/:id', async (c) => c.json(await admin(c).deleteLedger(c.req.param('id'))))
   .get('/ledgers/:id/passphrases', async (c) =>

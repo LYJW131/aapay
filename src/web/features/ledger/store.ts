@@ -95,8 +95,8 @@ export class LedgerStore {
     if (message.audit) this.hooks.onAudit(message.audit, message.origin === CLIENT_ID);
     if (event.type === 'ledger.closed') return this.close(event.reason);
     if (!snapshot) return;
-    if (event.type === 'ledger.renamed') {
-      return this.set({ snapshot: { ...snapshot, ledger: { ...snapshot.ledger, name: event.name } } });
+    if (event.type === 'ledger.updated') {
+      return this.set({ snapshot: { ...snapshot, ledger: event.ledger } });
     }
     if (message.v === undefined || message.v <= snapshot.version) return;
     if (message.v > snapshot.version + 1) return void this.refresh();

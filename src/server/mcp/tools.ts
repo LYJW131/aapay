@@ -419,7 +419,7 @@ async function resolveLedger(platform: Platform, ref: string): Promise<LedgerInf
   const ledgers = await platform.registry.listLedgers();
   const key = ref.trim();
   const found = ledgers.find((l) => l.id === key) ?? ledgers.find((l) => l.name.toLowerCase() === key.toLowerCase());
-  if (found) return { id: found.id, name: found.name };
+  if (found) return { id: found.id, name: found.name, emoji: found.emoji };
   const names = ledgers.map((l) => `「${l.name}」`).join('');
   throw notFound(`找不到账本「${ref}」。${names ? `现有账本：${names}` : '还没有任何账本，可以用 create_ledger 创建'}`);
 }
@@ -462,6 +462,7 @@ const listLedgers = adminTool({
       ledgers: ledgers.map((l) => ({
         id: l.id,
         name: l.name,
+        emoji: l.emoji,
         createdAt: isoDay(l.createdAt),
         members: l.stats?.members ?? null,
         expenses: l.stats?.expenses ?? null,
@@ -480,30 +481,34 @@ const createLedger = adminTool({
   description: '创建一个新账本，默认同时生成一个分享口令并返回邀请链接，发给朋友即可加入。',
   input: z.object({
     name: z.string().describe(`账本名称，最多 ${LIMITS.ledgerName} 个字，不能与已有账本重名`),
+    emoji: z.string().optional().describe('账本图标（一个 emoji）；不填随机挑一个'),
     create_passphrase: z.boolean().default(true).describe('是否同时生成分享口令'),
     passphrase: z.string().optional().describe(`自定义口令（${LIMITS.codeMin}-${LIMITS.codeMax} 位字母或数字）；不填随机生成`),
     valid_days: validDays,
   }),
   write: true,
   async run(args, ctx) {
-    const { name } = validate(ledgerInput, { name: args.name });
-    const ledger = await ctx.actions.createLedger(name);
+    const ledger = await ctx.actions.createLedger(validate(ledgerInput, { name: args.name, emoji: args.emoji }));
     const passphrase = args.create_passphrase ? await createPassphrase(ctx, ledger.id, args.passphrase, args.valid_days) : null;
-    return { created: { id: ledger.id, name: ledger.name }, passphrase };
+    return { created: { id: ledger.id, name: ledger.name, emoji: ledger.emoji }, passphrase };
   },
 });
 
-const renameLedger = adminTool({
-  name: 'rename_ledger',
-  title: '重命名账本',
-  description: '修改账本名称，正在查看该账本的成员会立即看到新名称。',
-  input: z.object({ ledger: ledgerRef, name: z.string().describe('新名称') }),
+const updateLedger = adminTool({
+  name: 'update_ledger',
+  title: '修改账本',
+  description: '修改账本名称或图标，正在查看该账本的成员会立即看到。',
+  input: z.object({
+    ledger: ledgerRef,
+    name: z.string().optional().describe('新名称；不填保持不变'),
+    emoji: z.string().optional().describe('新图标（一个 emoji）；不填保持不变'),
+  }),
   write: true,
   idempotent: true,
   async run(args, ctx) {
     const target = await resolveLedger(ctx.session.platform, args.ledger);
-    const { name } = validate(ledgerInput, { name: args.name });
-    return { renamed: await ctx.actions.renameLedger(target.id, name), before: target.name };
+    const input = validate(ledgerInput, { name: args.name ?? target.name, emoji: args.emoji ?? target.emoji });
+    return { updated: await ctx.actions.updateLedger(target.id, input), before: target };
   },
 });
 
@@ -570,7 +575,7 @@ const revokePassphrase = adminTool({
   },
 });
 
-const ADMIN_TOOLS = [listLedgers, createLedger, renameLedger, deleteLedger, listPassphrases, createPassphraseTool, revokePassphrase];
+const ADMIN_TOOLS = [listLedgers, createLedger, updateLedger, deleteLedger, listPassphrases, createPassphraseTool, revokePassphrase];
 
 type AnyTool = { kind: 'ledger'; tool: Tool } | { kind: 'admin'; tool: AdminTool };
 

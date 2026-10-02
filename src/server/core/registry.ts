@@ -1,5 +1,6 @@
 import type { AuditActor } from '../../shared/audit.ts';
-import type { PassphraseInput } from '../../shared/schema.ts';
+import { LEDGER_EMOJIS } from '../../shared/emoji.ts';
+import type { LedgerInput, PassphraseInput } from '../../shared/schema.ts';
 import type {
   Connection,
   LedgerInfo,
@@ -173,6 +174,7 @@ export const MIGRATIONS = [
     expires_at INTEGER NOT NULL
   );
   `,
+  `ALTER TABLE ledgers ADD COLUMN emoji TEXT NOT NULL DEFAULT '📒';`,
 ];
 
 export type GrantRole = 'member' | 'admin';
@@ -289,7 +291,7 @@ function clientHost(uri: string | null, redirectUris: string[], id: string) {
   return null;
 }
 
-type LedgerRow = { id: string; name: string; created_at: number; active: number; connections: number };
+type LedgerRow = { id: string; name: string; emoji: string; created_at: number; active: number; connections: number };
 type PassphraseRow = {
   id: string;
   ledger_id: string;
@@ -322,7 +324,7 @@ export class RegistryService {
     const now = Date.now();
     return this.db
       .all<LedgerRow>(
-        `SELECT l.id, l.name, l.created_at,
+        `SELECT l.id, l.name, l.emoji, l.created_at,
                 (SELECT COUNT(*) FROM passphrases p WHERE p.ledger_id = l.id AND ${ACTIVE}) AS active,
                 (SELECT COUNT(*) FROM oauth_grants g WHERE g.ledger_id = l.id AND g.expires_at > ?) AS connections
          FROM ledgers l ORDER BY l.created_at DESC`,
@@ -333,6 +335,7 @@ export class RegistryService {
       .map((r) => ({
         id: r.id,
         name: r.name,
+        emoji: r.emoji,
         createdAt: r.created_at,
         activePassphrases: r.active,
         connections: r.connections,
@@ -340,15 +343,22 @@ export class RegistryService {
   }
 
   getLedger(id: string): LedgerInfo {
-    const row = first(this.db.all<{ id: string; name: string }>('SELECT id, name FROM ledgers WHERE id = ?', id));
+    const row = first(this.db.all<LedgerInfo>('SELECT id, name, emoji FROM ledgers WHERE id = ?', id));
     if (!row) throw notFound('账本不存在');
     return row;
   }
 
-  createLedger(name: string): LedgerRecord {
+  createLedger({ name, emoji }: LedgerInput): LedgerRecord {
     this.assertLedgerNameFree(name);
-    const ledger = { id: newId(), name, createdAt: Date.now(), activePassphrases: 0, connections: 0 };
-    this.db.run('INSERT INTO ledgers (id, name, created_at) VALUES (?, ?, ?)', ledger.id, name, ledger.createdAt);
+    const ledger = {
+      id: newId(),
+      name,
+      emoji: emoji || LEDGER_EMOJIS[Math.floor(Math.random() * LEDGER_EMOJIS.length)]!,
+      createdAt: Date.now(),
+      activePassphrases: 0,
+      connections: 0,
+    };
+    this.db.run('INSERT INTO ledgers (id, name, emoji, created_at) VALUES (?, ?, ?, ?)', ledger.id, name, ledger.emoji, ledger.createdAt);
     this.emit({ type: 'ledgers.changed' });
     return ledger;
   }
@@ -358,12 +368,13 @@ export class RegistryService {
     return this.getLedger(id);
   }
 
-  renameLedger(id: string, name: string): LedgerInfo {
-    this.getLedger(id);
+  updateLedger(id: string, { name, emoji }: LedgerInput): LedgerInfo {
+    const current = this.getLedger(id);
     this.assertLedgerNameFree(name, id);
-    this.db.run('UPDATE ledgers SET name = ? WHERE id = ?', name, id);
+    const ledger = { id, name, emoji: emoji || current.emoji };
+    this.db.run('UPDATE ledgers SET name = ?, emoji = ? WHERE id = ?', ledger.name, ledger.emoji, id);
     this.emit({ type: 'ledgers.changed' });
-    return { id, name };
+    return ledger;
   }
 
   deleteLedger(id: string): LedgerInfo {
@@ -424,7 +435,7 @@ export class RegistryService {
     const p = this.activePassphrase(code, now);
     const expiresAt = Math.min(p.valid_until ?? Infinity, now + SESSION_TTL.member);
     this.insertSession(tokenHash, 'ledger', 'member', p.ledger_id, p.id, null, expiresAt);
-    return { ledger: { id: p.ledger_id, name: p.name }, role: 'member', passphrase: p.code, subject: null, expiresAt };
+    return { ledger: { id: p.ledger_id, name: p.name, emoji: p.emoji }, role: 'member', passphrase: p.code, subject: null, expiresAt };
   }
 
   openLedgerSession(tokenHash: string, ledgerId: string, subject: string): SessionInfo {
@@ -442,8 +453,8 @@ export class RegistryService {
 
   resolveLedgerSession(tokenHash: string): SessionInfo | null {
     const row = first(
-      this.db.all<{ role: SessionRole; ledger_id: string; name: string; code: string | null; subject: string | null; expires_at: number }>(
-        `SELECT s.role, s.ledger_id, l.name, p.code, s.subject, s.expires_at
+      this.db.all<{ role: SessionRole; ledger_id: string; name: string; emoji: string; code: string | null; subject: string | null; expires_at: number }>(
+        `SELECT s.role, s.ledger_id, l.name, l.emoji, p.code, s.subject, s.expires_at
          FROM sessions s
          JOIN ledgers l ON l.id = s.ledger_id
          LEFT JOIN passphrases p ON p.id = s.passphrase_id
@@ -454,7 +465,7 @@ export class RegistryService {
     );
     if (!row) return null;
     return {
-      ledger: { id: row.ledger_id, name: row.name },
+      ledger: { id: row.ledger_id, name: row.name, emoji: row.emoji },
       role: row.role,
       passphrase: row.code,
       subject: row.subject,
@@ -622,13 +633,14 @@ export class RegistryService {
         role: GrantRole;
         ledger_id: string | null;
         ledger_name: string | null;
+        ledger_emoji: string | null;
         subject: string | null;
         scope: string;
         resource: string;
         last_used_at: number;
       }>(
         `SELECT g.id AS grant_id, g.client_id, c.name AS client_name, c.kind AS client_kind, c.uri AS client_uri, c.redirect_uris,
-                g.role, g.ledger_id, l.name AS ledger_name,
+                g.role, g.ledger_id, l.name AS ledger_name, l.emoji AS ledger_emoji,
                 g.subject, g.scope, g.resource, g.last_used_at
          FROM oauth_tokens t
          JOIN oauth_grants g ON g.id = t.grant_id
@@ -652,7 +664,7 @@ export class RegistryService {
       clientHost: clientHost(row.client_uri, JSON.parse(row.redirect_uris) as string[], row.client_id),
       clientVerified: row.client_kind === 'cimd',
       role: row.role,
-      ledger: row.ledger_id ? { id: row.ledger_id, name: row.ledger_name! } : null,
+      ledger: row.ledger_id ? { id: row.ledger_id, name: row.ledger_name!, emoji: row.ledger_emoji! } : null,
       subject: row.role === 'admin' ? row.subject : null,
       scope: row.scope,
       resource: row.resource,
@@ -753,12 +765,12 @@ export class RegistryService {
         return { role: 'admin', ledger: null, passphraseId: null, subject: source.subject, expiresAt: now + OAUTH_TTL.adminGrant };
       case 'passphrase': {
         const p = this.activePassphrase(source.code, now);
-        return { role: 'member', ledger: { id: p.ledger_id, name: p.name }, passphraseId: p.id, subject: null, expiresAt: cap(p.valid_until) };
+        return { role: 'member', ledger: { id: p.ledger_id, name: p.name, emoji: p.emoji }, passphraseId: p.id, subject: null, expiresAt: cap(p.valid_until) };
       }
       case 'session': {
         const row = first(
-          this.db.all<{ ledger_id: string; name: string; passphrase_id: string | null; subject: string | null; valid_until: number | null }>(
-            `SELECT s.ledger_id, l.name, s.passphrase_id, s.subject, p.valid_until
+          this.db.all<{ ledger_id: string; name: string; emoji: string; passphrase_id: string | null; subject: string | null; valid_until: number | null }>(
+            `SELECT s.ledger_id, l.name, l.emoji, s.passphrase_id, s.subject, p.valid_until
              FROM sessions s
              JOIN ledgers l ON l.id = s.ledger_id
              LEFT JOIN passphrases p ON p.id = s.passphrase_id
@@ -770,7 +782,7 @@ export class RegistryService {
         if (!row) throw new AppError(401, '当前浏览器的账本登录已过期，请输入口令');
         return {
           role: 'member',
-          ledger: { id: row.ledger_id, name: row.name },
+          ledger: { id: row.ledger_id, name: row.name, emoji: row.emoji },
           passphraseId: row.passphrase_id,
           subject: row.subject,
           expiresAt: cap(row.valid_until),
@@ -782,8 +794,8 @@ export class RegistryService {
   }
 
   private activePassphrase(code: string, now: number) {
-    const rows = this.db.all<PassphraseRow & { name: string }>(
-      `SELECT p.*, l.name FROM passphrases p JOIN ledgers l ON l.id = p.ledger_id
+    const rows = this.db.all<PassphraseRow & { name: string; emoji: string }>(
+      `SELECT p.*, l.name, l.emoji FROM passphrases p JOIN ledgers l ON l.id = p.ledger_id
        WHERE p.code = ? AND (p.valid_until IS NULL OR p.valid_until > ?)
        ORDER BY p.valid_from`,
       code,

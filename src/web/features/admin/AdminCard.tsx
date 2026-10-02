@@ -2,6 +2,7 @@ import { Check, ChevronDown, Copy, Dices, FolderOpen, KeyRound, LogOut, Pencil, 
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import { LEDGER_EMOJIS } from '../../../shared/emoji.ts';
 import { LIMITS } from '../../../shared/limits.ts';
 import { formatMoney } from '../../../shared/money.ts';
 import { randomPassphrase } from '../../../shared/passphrase.ts';
@@ -239,7 +240,7 @@ function Ledgers({
                 transition={{ duration: 0.2 }}
               >
                 {renaming === l.id ? (
-                  <RenameForm ledger={l} onDone={() => (setRenaming(null), onChanged())} />
+                  <EditLedgerForm ledger={l} onDone={() => (setRenaming(null), onChanged())} />
                 ) : (
                   <LedgerRow
                     ledger={l}
@@ -285,8 +286,8 @@ function LedgerRow({
           current ? 'bg-brand-500/10 dark:bg-brand-400/12' : 'hover:bg-zinc-900/4 dark:hover:bg-white/5',
         )}
       >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500/15 to-accent-500/15 text-sm font-semibold text-brand-600 dark:text-brand-300">
-          {spinning ? <Spinner className="size-4" /> : [...l.name][0]}
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500/15 to-accent-500/15 text-lg text-brand-600 dark:text-brand-300">
+          {spinning ? <Spinner className="size-4" /> : l.emoji}
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
@@ -310,11 +311,9 @@ function LedgerRow({
           </span>
         )}
       </button>
-      {current && (
-        <Button size="icon" variant="ghost" className="size-9 text-zinc-400" onClick={onRename} aria-label="重命名">
-          <Pencil className="size-4" />
-        </Button>
-      )}
+      <Button size="icon" variant="ghost" className="size-9 text-zinc-400" onClick={onRename} aria-label="编辑账本">
+        <Pencil className="size-4" />
+      </Button>
       <Button size="icon" variant="ghost" className="size-9 text-zinc-400 hover:bg-rose-500/10 hover:text-rose-500" onClick={onDelete} aria-label="删除账本">
         <Trash2 className="size-4" />
       </Button>
@@ -322,16 +321,17 @@ function LedgerRow({
   );
 }
 
-function RenameForm({ ledger, onDone }: { ledger: LedgerOverview; onDone: () => void }) {
+function EditLedgerForm({ ledger, onDone }: { ledger: LedgerOverview; onDone: () => void }) {
   const [name, setName] = useState(ledger.name);
+  const [emoji, setEmoji] = useState(ledger.emoji);
   const [saving, setSaving] = useState(false);
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    if (name.trim() === ledger.name) return onDone();
+    if (name.trim() === ledger.name && emoji === ledger.emoji) return onDone();
     setSaving(true);
     try {
-      await call(api.admin.ledgers[':id'].$patch({ param: { id: ledger.id }, json: { name: name.trim() } }));
+      await call(api.admin.ledgers[':id'].$patch({ param: { id: ledger.id }, json: { name: name.trim(), emoji } }));
       onDone();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -340,12 +340,40 @@ function RenameForm({ ledger, onDone }: { ledger: LedgerOverview; onDone: () => 
   }
 
   return (
-    <form onSubmit={save} className="flex gap-2 py-1">
-      <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} autoFocus className="field" />
-      <Button type="submit" variant="primary" size="icon" className="size-11 rounded-2xl" loading={saving} aria-label="保存" icon={<Check className="size-4" />} />
-      <Button variant="ghost" size="icon" className="size-11 rounded-2xl" onClick={onDone} aria-label="取消">
-        <X className="size-4" />
-      </Button>
+    <form onSubmit={save} className="space-y-2 rounded-2xl bg-zinc-50 p-2 dark:bg-white/3">
+      <div className="flex gap-2">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-brand-500/15 to-accent-500/15 text-xl">
+          {emoji}
+        </span>
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} autoFocus className="field" aria-label="账本名称" />
+        <Button type="submit" variant="primary" size="icon" className="size-11 rounded-2xl" loading={saving} aria-label="保存" icon={<Check className="size-4" />} />
+        <Button variant="ghost" size="icon" className="size-11 rounded-2xl" onClick={onDone} aria-label="取消">
+          <X className="size-4" />
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {LEDGER_EMOJIS.map((e) => (
+          <button
+            key={e}
+            type="button"
+            onClick={() => setEmoji(e)}
+            aria-pressed={emoji === e}
+            className={cn(
+              'flex size-9 items-center justify-center rounded-xl text-lg transition active:scale-90',
+              emoji === e ? 'bg-brand-500/15 ring-2 ring-brand-500' : 'hover:bg-zinc-900/5 dark:hover:bg-white/8',
+            )}
+          >
+            {e}
+          </button>
+        ))}
+        <input
+          value={LEDGER_EMOJIS.includes(emoji) ? '' : emoji}
+          onChange={(e) => setEmoji([...new Intl.Segmenter().segment(e.target.value)].at(-1)?.segment ?? ledger.emoji)}
+          placeholder="自定义"
+          aria-label="自定义图标"
+          className="field h-9 w-20 rounded-xl px-2 text-center text-sm"
+        />
+      </div>
     </form>
   );
 }
