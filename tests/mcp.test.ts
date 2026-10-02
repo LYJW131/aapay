@@ -414,14 +414,22 @@ describe('OAuth request validation', () => {
 
   it('supports client ID metadata documents', async () => {
     const clientId = 'https://app.example.com/oauth/client.json';
-    const fetchMock = vi.fn(async () =>
-      Response.json({ client_id: clientId, client_name: 'Example AI', client_uri: 'https://app.example.com', redirect_uris: ['https://app.example.com/callback'] }),
-    );
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      // 与 Cloudflare Workers 行为一致：不支持 redirect: 'error'
+      if (init?.redirect === 'error') throw new TypeError('Invalid redirect value, must be one of "follow" or "manual"');
+      return Response.json({ client_id: clientId, client_name: 'Example AI', client_uri: 'https://app.example.com', redirect_uris: ['https://app.example.com/callback'] });
+    });
     vi.stubGlobal('fetch', fetchMock);
     const { challenge } = await pkce();
     const info = await s.request('GET', `/api/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: 'https://app.example.com/callback', code_challenge: challenge, code_challenge_method: 'S256' })}`);
     expect(info.data).toMatchObject({ client: { name: 'Example AI', host: 'app.example.com' }, redirectHost: 'app.example.com' });
     expect(fetchMock).toHaveBeenCalledOnce();
+
+    // 元数据 URL 发生跳转时不跟随
+    const moved = 'https://moved.example.com/client.json';
+    vi.stubGlobal('fetch', async () => new Response(null, { status: 302, headers: { location: 'https://evil.example.com/client.json' } }));
+    const redirected = await s.request('GET', `/api/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: moved, redirect_uri: 'https://moved.example.com/cb', code_challenge: challenge, code_challenge_method: 'S256' })}`);
+    expect(redirected.status).toBe(400);
 
     // 文档里的 client_id 必须与 URL 一致
     const forged = 'https://evil.example.com/client.json';

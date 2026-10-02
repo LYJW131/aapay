@@ -129,12 +129,14 @@ function isMetadataUrl(clientId: string) {
 }
 
 async function fetchClientMetadata(clientId: string): Promise<OAuthClient> {
+  // 不跟随跳转：元数据必须就在 client_id 这个 URL 上。Workers 不支持 redirect: 'error'，
+  // 用 manual 拿到原始响应后，非 200（含 3xx）一律拒绝
   const res = await fetch(clientId, {
     headers: { accept: 'application/json' },
-    redirect: 'error',
+    redirect: 'manual',
     signal: AbortSignal.timeout(5000),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
   const text = await res.text();
   if (text.length > 16_384) throw new Error('元数据文档过大');
   const doc = clientMetadata.extend({ client_id: z.literal(clientId) }).parse(JSON.parse(text));
