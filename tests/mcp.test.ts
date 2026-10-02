@@ -571,7 +571,7 @@ describe('admin connections', () => {
     expect(wrong.isError).toBe(true);
     expect((await s.tool(token, 'delete_ledger', { ledger: '团建 2026', confirm_name: '团建 2026' })).structuredContent.deleted.name).toBe('团建 2026');
 
-    // 控制台能看到并断开管理员连接
+    // 管理接口能看到并断开管理员连接
     const connections = (await s.request('GET', '/api/admin/connections')).data;
     expect(connections).toHaveLength(1);
     expect(connections[0]).toMatchObject({ clientName: 'Claude', subject: 'developer' });

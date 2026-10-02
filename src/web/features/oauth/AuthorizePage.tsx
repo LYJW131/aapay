@@ -134,7 +134,7 @@ function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: Public
   const name = info.client.name || info.client.host || '未知应用';
   const needCode = !shared && target === 'code';
 
-  // 已登录控制台的管理员可以授权管理全部账本（与控制台使用同一套管理员认证）
+  // 已登录的管理员可以授权管理全部账本（与 /admin 入口使用同一套管理员认证）
   useEffect(() => {
     if (shared || config.adminAuth === 'disabled') return;
     call(api.admin.me.$get()).then(
@@ -298,7 +298,7 @@ function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: Public
 
       <p className="mt-5 px-2 text-center text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
         {target === 'admin'
-          ? '应用名称由对方自行声明，请确认跳转地址是你信任的应用。管理员授权 30 天内有效，可随时在控制台断开；关闭管理后台或移出管理员名单后立即失效。'
+          ? '应用名称由对方自行声明，请确认跳转地址是你信任的应用。管理员授权 30 天内有效，可随时在账本页的「连接 AI」中断开；关闭管理后台或移出管理员名单后立即失效。'
           : '应用名称由对方自行声明，请确认跳转地址是你信任的应用。授权只对这一个账本有效，可随时在账本的「连接 AI」中断开；口令被撤销时也会自动失效。'}
       </p>
     </Shell>

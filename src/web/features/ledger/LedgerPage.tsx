@@ -1,9 +1,9 @@
 import { Plus } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { formatMoney } from '../../../shared/money.ts';
-import type { LiveMessage, PublicConfig, SessionInfo, Snapshot } from '../../../shared/types.ts';
+import type { AdminIdentity, LiveMessage, PublicConfig, SessionInfo, Snapshot } from '../../../shared/types.ts';
 import { Card } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
@@ -17,6 +17,9 @@ import { inRange, involves, resolveRange, type RangeFilter } from './range.ts';
 import { SettlementCard } from './Settlement.tsx';
 import { LedgerStore, type CloseReason } from './store.ts';
 import { Timeline } from './Timeline.tsx';
+
+// 只有管理员会用到，按需加载
+const AdminCard = lazy(() => import('../admin/AdminCard.tsx').then((m) => ({ default: m.AdminCard })));
 
 const CLOSE_MESSAGES: Record<CloseReason, string> = {
   deleted: '这个账本已被管理员删除',
@@ -50,7 +53,20 @@ function describe({ event }: LiveMessage, before: Snapshot, after: Snapshot): st
   }
 }
 
-export function LedgerPage({ session, config, onExit }: { session: SessionInfo; config: PublicConfig; onExit: (message?: string) => void }) {
+export function LedgerPage({
+  session,
+  config,
+  admin,
+  onSwitch,
+  onExit,
+}: {
+  session: SessionInfo;
+  config: PublicConfig;
+  /** 已登录的管理员会在页面顶部看到管理卡片 */
+  admin: AdminIdentity | null;
+  onSwitch: (session: SessionInfo) => void;
+  onExit: (message?: string) => void;
+}) {
   const [store] = useState(
     () =>
       new LedgerStore({
@@ -118,8 +134,15 @@ export function LedgerPage({ session, config, onExit }: { session: SessionInfo; 
 
   return (
     <LedgerContext value={context}>
-      <Header live={state.live} config={config} onLeave={() => onExit()} />
+      <Header live={state.live} config={config} admin={!!admin} onLeave={() => onExit()} />
       <main className="mx-auto max-w-6xl px-4 pt-4 pb-32 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-12">
+        {admin && (
+          <Suspense fallback={null}>
+            <div className="mb-4 lg:col-span-2 lg:mb-0">
+              <AdminCard admin={admin} current={session} onEnter={onSwitch} />
+            </div>
+          </Suspense>
+        )}
         <aside className="space-y-4 lg:sticky lg:top-20">
           {desktop && (
             <Card title="记一笔" icon={<Plus />}>

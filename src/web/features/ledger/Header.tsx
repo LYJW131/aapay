@@ -1,4 +1,4 @@
-import { Check, Copy, LayoutDashboard, LogIn, LogOut, Share2, Sparkles, UserPlus } from 'lucide-react';
+import { Check, Copy, LogIn, LogOut, Share2, ShieldCheck, Sparkles, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import type { PublicConfig } from '../../../shared/types.ts';
@@ -23,7 +23,7 @@ export function joinLink(code: string) {
   return `${window.location.origin}/join#${encodeURIComponent(code)}`;
 }
 
-export function Header({ live, config, onLeave }: { live: LiveStatus; config: PublicConfig; onLeave: () => void }) {
+export function Header({ live, config, admin, onLeave }: { live: LiveStatus; config: PublicConfig; admin: boolean; onLeave: () => void }) {
   const { snapshot, session } = useLedger();
   const [shareOpen, setShareOpen] = useState(false);
   const [aiOpen, setAiOpen] = useState(false);
@@ -41,11 +41,6 @@ export function Header({ live, config, onLeave }: { live: LiveStatus; config: Pu
             {session.role === 'admin' && <span className="rounded bg-brand-500/12 px-1 text-brand-600 dark:text-brand-300">管理员</span>}
           </p>
         </div>
-        {session.role === 'admin' && (
-          <Button size="sm" variant="ghost" icon={<LayoutDashboard className="size-4" />} onClick={() => window.location.assign('/admin')}>
-            <span className="hidden sm:inline">控制台</span>
-          </Button>
-        )}
         {config.mcp && (
           <Button size="sm" variant="ghost" icon={<Sparkles className="size-4" />} onClick={() => setAiOpen(true)} aria-label="连接 AI">
             <span className="hidden sm:inline">连接 AI</span>
@@ -59,7 +54,7 @@ export function Header({ live, config, onLeave }: { live: LiveStatus; config: Pu
       </div>
       {config.mcp && (
         <Sheet open={aiOpen} onClose={() => setAiOpen(false)} title="连接 AI 助手" description="让 Claude、ChatGPT 直接记账和查账">
-          <ConnectAI />
+          <ConnectAI admin={admin} />
         </Sheet>
       )}
       {session.role !== 'shared' && (
@@ -138,7 +133,7 @@ function ShareContent({ config, onLeave }: { config: PublicConfig; onLeave: () =
         </div>
       ) : (
         <p className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-500 dark:bg-white/4">
-          你以管理员身份进入此账本。前往 <button className="text-brand-600 underline" onClick={() => window.location.assign('/admin')}>控制台</button> 创建分享口令邀请成员。
+          你以管理员身份进入此账本，在页面顶部的「管理员」卡片里生成分享口令即可邀请成员。
         </p>
       )}
 
@@ -162,8 +157,8 @@ function ShareContent({ config, onLeave }: { config: PublicConfig; onLeave: () =
 
       <div className="flex gap-2">
         {config.adminAuth !== 'disabled' && session.role !== 'admin' && (
-          <Button variant="ghost" className="flex-1" onClick={() => window.location.assign('/admin')} icon={<LayoutDashboard className="size-4" />}>
-            管理控制台
+          <Button variant="ghost" className="flex-1" onClick={() => window.location.assign('/admin')} icon={<ShieldCheck className="size-4" />}>
+            管理员登录
           </Button>
         )}
         <Button variant="danger" className="flex-1" onClick={leave} icon={<LogOut className="size-4" />}>

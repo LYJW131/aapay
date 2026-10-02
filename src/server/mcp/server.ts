@@ -57,7 +57,7 @@ function today(timezone: string) {
 
 /**
  * 关闭管理后台或把此人移出 ADMIN_EMAILS 后，已签发的管理员令牌立即失效。
- * 与控制台认证保持一致：白名单只在 access / proxy 模式下生效。
+ * 与管理员认证保持一致：白名单只在 access / proxy 模式下生效。
  */
 function stillAdmin(config: Config, subject: string | null) {
   if (config.adminAuth === 'disabled' || !subject) return false;

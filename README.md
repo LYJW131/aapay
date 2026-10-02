@@ -14,7 +14,7 @@
   <img src="docs/screenshots/mobile-dark.png" width="240" alt="深色模式" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/admin-console.png" width="720" alt="管理控制台" />
+  <img src="docs/screenshots/admin-card.png" width="720" alt="管理员卡片" />
 </p>
 
 ---
@@ -27,7 +27,7 @@
 - **记账**：金额、用途（常用用途一键填入）、日期、付款人、分摊成员；自动记住上次的付款人与分摊成员；支出可编辑、删除
 - **金额精确**：全程以「分」为整数存储，均摊的零头按成员加入顺序分配，合计永远等于总额
 - **实时同步**：基于 WebSocket，其他人的操作即时出现并弹出通知；断线自动重连并补齐数据
-- **管理控制台**：创建 / 重命名 / 删除账本，生成带有效期的口令（1 天、7 天、30 天、永久或自定义时间段），二维码邀请，撤销口令后用它登录的成员立即失效，管理员可直接进入任意账本
+- **管理员卡片**：管理员登录后，账本页顶部多一张可折叠的管理卡片——切换 / 新建 / 重命名 / 删除账本，为当前账本生成带有效期的口令（1 天、7 天、30 天、永久或自定义时间段）、二维码邀请；撤销口令后用它登录的成员立即失效。`/admin` 是管理员登录入口
 - **连接 AI**：内置 OAuth 2.1 保护的远程 MCP 端点 `/mcp`，在 Claude、ChatGPT 等应用里添加连接器后，就能用自然语言记账、查账、算结算；修改实时同步给所有人（见下文「连接 AI（MCP）」）
 - **共享模式**：单一公共账本，打开即用（适合固定室友）
 - **体验**：移动端优先，底部抽屉式表单，自动跟随系统深色模式，可添加到主屏幕
@@ -70,7 +70,7 @@ npm run dev                      # Vite + Cloudflare 插件，在本地 workerd 
 node scripts/seed.mjs            # 可选：生成演示账本（口令 demo2026）
 ```
 
-打开 <http://localhost:5173>，管理控制台在 `/admin`。
+打开 <http://localhost:5173>，管理员入口在 `/admin`（本地 `ADMIN_AUTH=none`，打开即登录）。
 
 也可以用 Node 运行时开发：`npm run dev:node`（Node 服务监听 8787，Vite 代理 `/api`）。
 
@@ -147,9 +147,9 @@ AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`
 
 **提供的工具**：`get_ledger`（成员、余额、最少转账方案）、`list_transactions`（按日期 / 成员 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`。金额以「元」为单位，成员可以直接用名字指代。
 
-**管理员连接**：已登录控制台的管理员在授权页可以选择「全部账本」，AI 就能管理所有账本：`list_ledgers`、`create_ledger`（默认同时生成口令并返回邀请链接）、`rename_ledger`、`delete_ledger`（需再次输入名称确认）、`list_passphrases` / `create_passphrase` / `revoke_passphrase`；账本内的工具多一个 `ledger` 参数（名称或 ID）。管理员授权 30 天有效，在控制台「AI 助手（管理员）」中可查看与断开；关闭管理后台或把此人移出 `ADMIN_EMAILS` 后立即失效。还没登录时，授权页有「以管理员身份登录」入口，登录后自动回到授权页。
+**管理员连接**：已登录的管理员在授权页可以选择「全部账本」，AI 就能管理所有账本：`list_ledgers`、`create_ledger`（默认同时生成口令并返回邀请链接）、`rename_ledger`、`delete_ledger`（需再次输入名称确认）、`list_passphrases` / `create_passphrase` / `revoke_passphrase`；账本内的工具多一个 `ledger` 参数（名称或 ID）。管理员授权 30 天有效，在账本页的「连接 AI」中可查看与断开；关闭管理后台或把此人移出 `ADMIN_EMAILS` 后立即失效。还没登录时，授权页有「以管理员身份登录」入口，登录后自动回到授权页。
 
-**授权模型**：成员授权只对应一个账本，权限等同于用口令加入的成员。账本成员可在「连接 AI」里查看并断开已连接的应用，控制台的账本列表会显示连接数；口令被撤销、过期或账本被删除时，对应的授权会一并失效。
+**授权模型**：成员授权只对应一个账本，权限等同于用口令加入的成员。账本成员可在「连接 AI」里查看并断开已连接的应用，管理员卡片的账本列表会显示连接数；口令被撤销、过期或账本被删除时，对应的授权会一并失效。
 
 **协议细节**（按 [MCP Authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) 规范实现）：
 
@@ -194,7 +194,7 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `GET` `POST` | `/api/admin/ledgers/:id/passphrases` | 分享口令 |
 | `DELETE` | `/api/admin/passphrases/:id` | 撤销口令 |
 | `POST` | `/api/admin/ledgers/:id/enter` | 管理员进入账本 |
-| `GET` | `/api/admin/live` | 控制台 WebSocket |
+| `GET` | `/api/admin/live` | 管理员卡片的实时更新 WebSocket |
 | `GET` `DELETE` | `/api/ledger/connections[/:id]` | 已连接到本账本的 AI 应用 |
 | `GET` `POST` | `/api/oauth/authorize` | 授权页：校验请求 / 同意授权 |
 | `POST` | `/api/admin/oauth/authorize` | 授权页：以管理员身份授权 |

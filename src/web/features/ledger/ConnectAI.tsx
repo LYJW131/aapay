@@ -15,27 +15,51 @@ const STEPS = [
   { app: '其他应用', how: 'Cursor、VS Code 等支持远程 MCP（OAuth）的客户端同样可用' },
 ];
 
-/** 把 MCP 地址交给 AI 应用，并管理已连接到本账本的应用 */
-export function ConnectAI() {
-  const [copied, setCopied] = useState(false);
+/** 一组 AI 连接的加载与断开；授权通常在另一个标签页完成，回到这里时自动刷新 */
+function useConnections(list: () => Promise<Connection[]>, remove: (id: string) => Promise<unknown>) {
   const [connections, setConnections] = useState<Connection[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setConnections(await call(api.ledger.connections.$get()));
+      setConnections(await list());
     } catch (err) {
       toast.error(errorMessage(err));
     }
-  }, []);
+  }, [list]);
 
   useEffect(() => {
     void load();
-    // 授权通常在另一个标签页完成，回到这里时刷新列表
     const onFocus = () => document.visibilityState === 'visible' && void load();
     document.addEventListener('visibilitychange', onFocus);
     return () => document.removeEventListener('visibilitychange', onFocus);
   }, [load]);
+
+  async function disconnect(c: Connection) {
+    setBusy(c.id);
+    try {
+      await remove(c.id);
+      setConnections((all) => all?.filter((x) => x.id !== c.id) ?? null);
+      toast.success(`已断开 ${c.clientName ?? c.clientHost ?? 'AI 应用'}`);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return { connections, busy, disconnect };
+}
+
+const ledgerConnections = () => call(api.ledger.connections.$get());
+const removeLedgerConnection = (id: string) => call(api.ledger.connections[':id'].$delete({ param: { id } }));
+const adminConnections = () => call(api.admin.connections.$get());
+const removeAdminConnection = (id: string) => call(api.admin.connections[':id'].$delete({ param: { id } }));
+
+/** 把 MCP 地址交给 AI 应用，并管理已连接到本账本（以及管理员连接）的应用 */
+export function ConnectAI({ admin }: { admin: boolean }) {
+  const [copied, setCopied] = useState(false);
+  const ledger = useConnections(ledgerConnections, removeLedgerConnection);
 
   async function copy() {
     try {
@@ -44,19 +68,6 @@ export function ConnectAI() {
       setTimeout(() => setCopied(false), 1800);
     } catch {
       toast.error('复制失败，请手动选择地址复制');
-    }
-  }
-
-  async function disconnect(c: Connection) {
-    setBusy(c.id);
-    try {
-      await call(api.ledger.connections[':id'].$delete({ param: { id: c.id } }));
-      setConnections((list) => list?.filter((x) => x.id !== c.id) ?? null);
-      toast.success(`已断开 ${c.clientName ?? c.clientHost ?? 'AI 应用'}`);
-    } catch (err) {
-      toast.error(errorMessage(err));
-    } finally {
-      setBusy(null);
     }
   }
 
@@ -86,14 +97,30 @@ export function ConnectAI() {
           ))}
         </ol>
         <p className="mt-3 rounded-2xl bg-brand-500/8 px-4 py-3 text-[13px] leading-relaxed text-brand-700 dark:text-brand-200">
-          连接时会打开授权页：在已打开本账本的浏览器里可一键授权，否则输入本账本的分享口令即可。之后就能直接让 AI 记账、查账和算结算了。
+          {admin
+            ? '连接时会打开授权页：选「全部账本」，AI 就能以管理员身份管理所有账本（建账本、生成口令、记账查账）；也可以只授权当前账本。'
+            : '连接时会打开授权页：在已打开本账本的浏览器里可一键授权，否则输入本账本的分享口令即可。之后就能直接让 AI 记账、查账和算结算了。'}
         </p>
       </div>
 
       <div>
-        <Label aside={connections && connections.length > 0 && <span className="tabular">{connections.length}</span>}>已连接的应用</Label>
-        <ConnectionList connections={connections} busy={busy} onDisconnect={disconnect} />
+        <Label aside={ledger.connections && ledger.connections.length > 0 && <span className="tabular">{ledger.connections.length}</span>}>
+          已连接本账本的应用
+        </Label>
+        <ConnectionList connections={ledger.connections} busy={ledger.busy} onDisconnect={ledger.disconnect} />
       </div>
+
+      {admin && <AdminConnections />}
+    </div>
+  );
+}
+
+function AdminConnections() {
+  const { connections, busy, disconnect } = useConnections(adminConnections, removeAdminConnection);
+  return (
+    <div>
+      <Label aside={connections && connections.length > 0 && <span className="tabular">{connections.length}</span>}>管理员连接（全部账本）</Label>
+      <ConnectionList connections={connections} busy={busy} onDisconnect={disconnect} empty="还没有以管理员身份连接的应用" />
     </div>
   );
 }

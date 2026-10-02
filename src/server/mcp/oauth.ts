@@ -534,7 +534,7 @@ export type ApproveInput = z.infer<typeof approveInput>;
 /**
  * 同意授权：校验请求、签发授权码并返回带 code 的回调地址。
  * 成员授权走 /api/oauth/authorize；管理员授权走 /api/admin/oauth/authorize，
- * 由控制台同样的管理员认证（Cloudflare 上 Access 会在边缘拦截该路径）把关。
+ * 由与 /admin 入口相同的管理员认证（Cloudflare 上 Access 会在边缘拦截该路径）把关。
  */
 export async function approveAuthorization(c: Context<AppEnv>, input: ApproveInput, admin: string | null) {
   const { platform, config } = c.var;
@@ -580,7 +580,7 @@ export const authorizeRoutes = new Hono<AppEnv>()
     const { client, redirectUri, scopes, state } = parsed.request;
     const { config } = c.var;
     const url = new URL(c.req.url);
-    // 管理员可以先去控制台完成认证（Access 会拦截 /admin），再回到这个授权页
+    // 管理员可以先去 /admin 完成认证（Access 会拦截该路径），再回到这个授权页
     const canLogin = config.mode !== 'shared' && (config.adminAuth === 'access' || config.adminAuth === 'password');
     return c.json({
       client: { name: client.name, host: hostOf(client.uri) ?? (client.kind === 'cimd' ? hostOf(client.id) : null) },

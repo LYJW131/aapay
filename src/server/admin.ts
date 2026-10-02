@@ -2,7 +2,7 @@ import type { LedgerInfo, LedgerOverview, Passphrase } from '../shared/types.ts'
 import type { Platform } from './platform.ts';
 
 /**
- * 管理操作中需要同时处理注册表与账本的部分，管理控制台接口与 MCP 管理员工具共用：
+ * 管理操作中需要同时处理注册表与账本的部分，管理接口与 MCP 管理员工具共用：
  * 重命名要通知在线成员，删除要销毁账本数据，撤销口令要断开用它登录的连接。
  */
 export function adminActions(platform: Platform) {

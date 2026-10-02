@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
-import type { PublicConfig, SessionInfo } from '../shared/types.ts';
+import type { AdminIdentity, PublicConfig, SessionInfo } from '../shared/types.ts';
 import { Spinner } from './components/Spinner.tsx';
+import { detectAdmin } from './features/admin/identity.ts';
 import { JoinPage } from './features/join/JoinPage.tsx';
 import { LedgerPage } from './features/ledger/LedgerPage.tsx';
 import { api, call } from './lib/api.ts';
@@ -9,20 +10,23 @@ import { useMediaQuery } from './lib/hooks.ts';
 import { usePathname } from './lib/router.ts';
 
 const AdminPage = lazy(() => import('./features/admin/AdminPage.tsx').then((m) => ({ default: m.AdminPage })));
+const AdminHome = lazy(() => import('./features/admin/AdminHome.tsx').then((m) => ({ default: m.AdminHome })));
 const AuthorizePage = lazy(() => import('./features/oauth/AuthorizePage.tsx').then((m) => ({ default: m.AuthorizePage })));
 
 type Boot =
   | { state: 'loading' }
   | { state: 'error'; message: string }
-  | { state: 'ready'; config: PublicConfig; session: SessionInfo | null; notice?: string };
+  | { state: 'ready'; config: PublicConfig; session: SessionInfo | null; admin: AdminIdentity | null; notice?: string };
 
 async function boot(): Promise<Boot> {
-  // 带着口令链接进来时，先展示加入页，由它完成加入；授权页自己会查询登录状态
+  // 带着口令链接进来时，先展示加入页，由它完成加入；授权页、管理员入口自己会查询登录状态
   const { pathname } = window.location;
-  const joining = pathname === '/join' || pathname === '/oauth/authorize';
   const config = await call(api.config.$get());
-  if (joining) return { state: 'ready', config, session: null };
-  return { state: 'ready', config, session: await call(api.session.$get()) };
+  if (pathname === '/join' || pathname === '/oauth/authorize' || pathname.startsWith('/admin')) {
+    return { state: 'ready', config, session: null, admin: null };
+  }
+  const session = await call(api.session.$get());
+  return { state: 'ready', config, session, admin: await detectAdmin(config, session) };
 }
 
 export function App() {
@@ -75,8 +79,17 @@ export function App() {
         key={app.session.ledger.id}
         session={app.session}
         config={app.config}
+        admin={app.admin}
+        onSwitch={(session) => setApp({ ...app, session })}
         onExit={(notice) => setApp({ ...app, session: null, notice })}
       />
+    );
+  } else if (app.admin) {
+    // 管理员还没进入任何账本：只显示管理卡片，用来选择或新建账本
+    page = (
+      <Suspense fallback={<div className="flex min-h-dvh items-center justify-center text-zinc-400"><Spinner className="size-7" /></div>}>
+        <AdminHome admin={app.admin} notice={app.notice} onEnter={(session) => setApp({ ...app, session, notice: undefined })} />
+      </Suspense>
     );
   } else {
     page = <JoinPage config={app.config} notice={app.notice} onJoined={(session) => setApp({ ...app, session, notice: undefined })} />;

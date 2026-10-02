@@ -1,39 +1,39 @@
-import { ArrowLeft, KeyRound, LockKeyhole, LogOut, RefreshCw, ShieldAlert } from 'lucide-react';
+import { KeyRound, LockKeyhole, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
-import type { AdminIdentity, PublicConfig } from '../../../shared/types.ts';
+import type { PublicConfig } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
-import { AppIcon, Wordmark } from '../../components/Logo.tsx';
+import { AppIcon } from '../../components/Logo.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { api, ApiError, call, errorMessage } from '../../lib/api.ts';
-import { Console } from './Console.tsx';
+import { save } from '../../lib/storage.ts';
+import { ADMIN_HINT } from './identity.ts';
 
-type Gate = { state: 'loading' } | { state: 'ok'; me: AdminIdentity } | { state: 'denied' } | { state: 'disabled' };
+type Gate = { state: 'loading' } | { state: 'denied' } | { state: 'disabled' };
 
+/**
+ * /admin 只是管理员登录入口（Cloudflare Access 会拦截这个路径）：
+ * 认证通过后回到首页，管理功能以卡片形式嵌在账本页顶部。
+ * 从 AI 授权页过来的，登录后回到授权页（只允许站内授权页地址，避免开放跳转）。
+ */
 export function AdminPage({ config }: { config: PublicConfig }) {
   const [gate, setGate] = useState<Gate>({ state: 'loading' });
 
   const check = useCallback(async () => {
     try {
-      const me = await call(api.admin.me.$get());
-      // 从 AI 授权页过来登录的，登录后回到授权页（只允许站内的授权页地址，避免开放跳转）
+      await call(api.admin.me.$get());
+      save(ADMIN_HINT, true);
       const returnTo = new URLSearchParams(window.location.search).get('return_to');
-      if (returnTo?.startsWith('/oauth/authorize?')) return window.location.replace(returnTo);
-      setGate({ state: 'ok', me });
+      window.location.replace(returnTo?.startsWith('/oauth/authorize?') ? returnTo : '/');
     } catch (err) {
       setGate({ state: err instanceof ApiError && err.status === 404 ? 'disabled' : 'denied' });
     }
   }, []);
 
   useEffect(() => {
-    document.title = '控制台 · AAPay';
+    document.title = '管理员登录 · AAPay';
     void check();
   }, [check]);
-
-  async function logout() {
-    await call(api.admin.logout.$post()).catch(() => undefined);
-    setGate({ state: 'denied' });
-  }
 
   if (gate.state === 'loading') {
     return (
@@ -43,35 +43,12 @@ export function AdminPage({ config }: { config: PublicConfig }) {
     );
   }
 
-  if (gate.state === 'ok') {
-    return (
-      <div className="min-h-dvh">
-        <header className="sticky top-0 z-30 border-b border-zinc-900/5 bg-canvas/80 backdrop-blur-xl dark:border-white/5">
-          <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-            <Wordmark className="text-lg" />
-            <span className="rounded-lg bg-zinc-900/5 px-2 py-0.5 text-xs font-medium text-zinc-600 dark:bg-white/8 dark:text-zinc-300">
-              控制台
-            </span>
-            <span className="ml-auto hidden truncate text-xs text-zinc-500 sm:block">{gate.me.name}</span>
-            <Button size="sm" variant="ghost" icon={<ArrowLeft className="size-4" />} onClick={() => window.location.assign('/')}>
-              账本
-            </Button>
-            {gate.me.method === 'password' && (
-              <Button size="sm" variant="ghost" icon={<LogOut className="size-4" />} onClick={logout} aria-label="退出登录" />
-            )}
-          </div>
-        </header>
-        <Console config={config} />
-      </div>
-    );
-  }
-
   return (
     <div className="flex min-h-dvh items-center justify-center px-5">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-4 text-center">
           <AppIcon className="size-16" />
-          <h1 className="text-xl font-semibold tracking-tight">AAPay 管理控制台</h1>
+          <h1 className="text-xl font-semibold tracking-tight">AAPay 管理员登录</h1>
         </div>
         {gate.state === 'disabled' ? (
           <Notice icon={<ShieldAlert />} title="管理后台未启用">
