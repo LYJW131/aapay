@@ -13,18 +13,18 @@ function codeFromUrl() {
   return window.location.pathname === '/join' && hash ? hash : null;
 }
 
-export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; notice?: string; onJoined: (s: SessionInfo) => Promise<void> }) {
+export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; notice?: string; onJoined: (s: SessionInfo, welcome?: boolean) => Promise<void> }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState(notice ?? '');
   const [loading, setLoading] = useState(false);
   const auto = useRef(false);
 
-  async function join(value: string) {
+  async function join(value: string, fromLink = false) {
     setLoading(true);
     setError('');
     try {
       const session = await call(api.join.$post({ json: { code: value } }));
-      await onJoined(session);
+      await onJoined(session, fromLink);
       navigate('/', { replace: true });
     } catch (err) {
       setError(errorMessage(err));
@@ -38,7 +38,7 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
     auto.current = true;
     history.replaceState(null, '', '/');
     setCode(fromUrl);
-    void join(fromUrl);
+    void join(fromUrl, true);
   }, []);
 
   function submit(e: FormEvent) {

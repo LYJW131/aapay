@@ -8,6 +8,7 @@ import { Card } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { useMediaQuery, useMinuteTick, usePersistentState } from '../../lib/hooks.ts';
+import { load } from '../../lib/storage.ts';
 import { adminModules } from '../admin/preload.ts';
 import { ActivityLog } from './activity.ts';
 import { LedgerContext, type LedgerContextValue } from './context.tsx';
@@ -19,6 +20,7 @@ import { inRange, involves, resolveRange, type RangeFilter } from './range.ts';
 import { SettlementCard } from './Settlement.tsx';
 import { LedgerStore, type CloseReason } from './store.ts';
 import { Timeline } from './Timeline.tsx';
+import { WelcomeSheet } from './Welcome.tsx';
 
 const LazyAdminCard = lazy(() => import('../admin/AdminCard.tsx').then((m) => ({ default: m.AdminCard })));
 
@@ -56,6 +58,7 @@ function describe({ event }: LiveMessage, before: Snapshot, after: Snapshot): st
 export function LedgerPage({
   session,
   initialSnapshot,
+  welcome,
   config,
   admin,
   onSwitch,
@@ -63,6 +66,7 @@ export function LedgerPage({
 }: {
   session: SessionInfo;
   initialSnapshot: Snapshot;
+  welcome: boolean;
   config: PublicConfig;
   admin: AdminIdentity | null;
   onSwitch: (session: SessionInfo) => Promise<void>;
@@ -87,6 +91,10 @@ export function LedgerPage({
   const AdminCard = adminModules()?.AdminCard ?? LazyAdminCard;
   const desktop = useMediaQuery('(min-width: 1024px)');
   const [composerOpen, setComposerOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(() => {
+    const payer = load<string | null>(`${prefix}payer`, null);
+    return welcome && !initialSnapshot.members.some((m) => m.id === payer);
+  });
   useMinuteTick();
 
   useEffect(() => {
@@ -188,6 +196,7 @@ export function LedgerPage({
           </motion.button>
         )}
       </AnimatePresence>
+      <WelcomeSheet open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
       {!desktop && (
         <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title="记一笔">
           <ExpenseForm onDone={() => setComposerOpen(false)} />

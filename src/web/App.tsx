@@ -20,6 +20,7 @@ type Ready = {
   snapshot: Snapshot | null;
   admin: AdminIdentity | null;
   notice?: string;
+  welcome?: boolean;
 };
 type Boot = { state: 'loading' } | { state: 'error'; message: string } | Ready;
 
@@ -63,12 +64,12 @@ export function App() {
     };
   }, []);
 
-  const open = useCallback(async (session: SessionInfo) => {
+  const open = useCallback(async (session: SessionInfo, welcome = false) => {
     const [snapshot] = await Promise.all([
       call(api.ledger.$get()),
       app.state === 'ready' && app.admin ? prefetchAdminData(session.ledger.id) : null,
     ]);
-    setApp((a) => (a.state === 'ready' ? { ...a, session, snapshot, notice: undefined } : a));
+    setApp((a) => (a.state === 'ready' ? { ...a, session, snapshot, notice: undefined, welcome } : a));
   }, [app]);
 
   let page;
@@ -101,6 +102,7 @@ export function App() {
         key={app.session.ledger.id}
         session={app.session}
         initialSnapshot={app.snapshot}
+        welcome={!!app.welcome}
         config={app.config}
         admin={app.admin}
         onSwitch={open}

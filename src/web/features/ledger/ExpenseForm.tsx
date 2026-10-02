@@ -1,5 +1,5 @@
 import { Check, Trash2 } from 'lucide-react';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { centsToInput, formatMoney, parseAmount, splitEvenly } from '../../../shared/money.ts';
 import { LIMITS } from '../../../shared/limits.ts';
@@ -15,39 +15,52 @@ import { load, save } from '../../lib/storage.ts';
 import { useLedger } from './context.tsx';
 
 interface Remembered {
-  payerId: string;
   participantIds: string[];
   at: number;
 }
 
+const payerListeners = new Set<() => void>();
+
+export function saveDefaultPayer(storageKey: string, id: string) {
+  save(storageKey, id);
+  for (const l of payerListeners) l();
+}
+
+export function useDefaultPayer(storageKey: string) {
+  return useSyncExternalStore(
+    (cb) => {
+      payerListeners.add(cb);
+      return () => void payerListeners.delete(cb);
+    },
+    () => load<string | null>(storageKey, null),
+  );
+}
+
 export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: () => void }) {
-  const { snapshot, store, key } = useLedger();
+  const { snapshot, store, key, memberById } = useLedger();
   const { members } = snapshot;
 
-  const [initial] = useState(() => {
-    if (expense) {
-      return {
-        payerId: expense.payerId,
-        participantIds: expense.shares.map((s) => s.memberId),
-      };
-    }
+  const [initialParticipants] = useState(() => {
+    if (expense) return expense.shares.map((s) => s.memberId);
     const remembered = load<Remembered | null>(key('expense-defaults'), null);
     const ids = new Set(members.map((m) => m.id));
     // 上次之后新加入的成员默认也参与
-    const participantIds = remembered
+    return remembered
       ? [
           ...remembered.participantIds.filter((id) => ids.has(id)),
           ...members.filter((m) => m.createdAt > remembered.at).map((m) => m.id),
         ]
       : members.map((m) => m.id);
-    return { payerId: remembered && ids.has(remembered.payerId) ? remembered.payerId : '', participantIds };
   });
 
   const [amount, setAmount] = useState(expense ? centsToInput(expense.amount) : '');
   const [title, setTitle] = useState(expense?.title ?? '');
   const [date, setDate] = useState(expense?.date ?? today());
-  const [payerId, setPayerId] = useState(initial.payerId);
-  const [selected, setSelected] = useState(() => new Set(initial.participantIds));
+  const defaultPayer = useDefaultPayer(key('payer'));
+  const [editedPayer, setEditedPayer] = useState(expense?.payerId ?? '');
+  const payerId = expense ? editedPayer : defaultPayer && memberById.has(defaultPayer) ? defaultPayer : '';
+  const choosePayer = (id: string) => (expense ? setEditedPayer(id) : saveDefaultPayer(key('payer'), id));
+  const [selected, setSelected] = useState(() => new Set(initialParticipants));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -86,7 +99,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         toast.success('已保存修改');
       } else {
         await store.mutate(api.ledger.expenses.$post({ json: input }));
-        save(key('expense-defaults'), { payerId, participantIds, at: Date.now() } satisfies Remembered);
+        save(key('expense-defaults'), { participantIds, at: Date.now() } satisfies Remembered);
         toast.success(`已记录 ${input.title} ${formatMoney(cents)}`);
         setAmount('');
         setTitle('');
@@ -198,7 +211,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         <AutoHeight className="-m-1 p-1">
           <div className="flex flex-wrap gap-2">
             {members.map((m) => (
-              <MemberChip key={m.id} active={payerId === m.id} onClick={() => setPayerId(m.id)} member={m} />
+              <MemberChip key={m.id} active={payerId === m.id} onClick={() => choosePayer(m.id)} member={m} />
             ))}
           </div>
         </AutoHeight>
