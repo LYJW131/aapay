@@ -574,11 +574,11 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label>
             <Label>开始</Label>
-            <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} className="field tabular px-3 text-sm" />
+            <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} className="field tabular px-3" />
           </label>
           <label>
             <Label>结束</Label>
-            <input type="datetime-local" value={until} onChange={(e) => setUntil(e.target.value)} className="field tabular px-3 text-sm" />
+            <input type="datetime-local" value={until} onChange={(e) => setUntil(e.target.value)} className="field tabular px-3" />
           </label>
         </div>
       )}

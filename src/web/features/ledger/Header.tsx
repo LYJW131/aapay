@@ -73,7 +73,7 @@ export function Header({
           </p>
         </div>
         <Button size="sm" variant="secondary" className="relative" icon={<History className="size-4" />} onClick={show} aria-label="动态、邀请与连接 AI">
-          动态
+          {session.role === 'shared' ? '动态' : '动态 · 邀请'}
           {unread && <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-rose-500 ring-2 ring-canvas" />}
         </Button>
       </div>

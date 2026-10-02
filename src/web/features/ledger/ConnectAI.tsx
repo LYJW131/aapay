@@ -85,7 +85,7 @@ export function ConnectAI({ admin }: { admin: boolean }) {
       <div>
         <Label>MCP 服务器地址</Label>
         <div className="flex gap-2">
-          <input readOnly value={mcpUrl()} onFocus={(e) => e.currentTarget.select()} className="field font-mono text-sm" />
+          <input readOnly value={mcpUrl()} onFocus={(e) => e.currentTarget.select()} className="field font-mono" />
           <Button
             variant="primary"
             size="icon"

@@ -128,14 +128,14 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -4, scale: 0.98 }}
               transition={{ duration: 0.15 }}
-              className="absolute inset-x-0 top-full z-20 mt-1 flex items-center gap-1.5 rounded-2xl bg-surface p-2 shadow-lg ring-1 ring-zinc-900/8 dark:ring-white/10"
+              className="absolute inset-x-0 top-full z-20 mt-1 grid grid-cols-2 gap-1.5 rounded-2xl bg-surface p-2 shadow-lg ring-1 ring-zinc-900/8 dark:ring-white/10"
             >
               <input
                 type="date"
                 value={range.from ?? ''}
                 max={range.to}
                 onChange={(e) => onRange({ ...range, from: e.target.value || undefined })}
-                className="field tabular h-10 min-w-0 flex-1 px-2 text-center text-[13px]"
+                className="field tabular h-10 min-w-0 px-1 text-center"
                 aria-label="开始日期"
               />
               <input
@@ -143,16 +143,16 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
                 value={range.to ?? ''}
                 min={range.from}
                 onChange={(e) => onRange({ ...range, to: e.target.value || undefined })}
-                className="field tabular h-10 min-w-0 flex-1 px-2 text-center text-[13px]"
+                className="field tabular h-10 min-w-0 px-1 text-center"
                 aria-label="结束日期"
               />
               <button
                 type="button"
                 onClick={() => setCustomOpen(false)}
-                className="flex size-9 shrink-0 items-center justify-center rounded-xl text-brand-600 transition hover:bg-brand-500/10 dark:text-brand-300"
-                aria-label="完成"
+                className="col-span-2 flex h-9 items-center justify-center gap-1 rounded-xl text-sm font-medium text-brand-600 transition hover:bg-brand-500/10 dark:text-brand-300"
               >
                 <Check className="size-4" />
+                完成
               </button>
             </motion.div>
           )}
