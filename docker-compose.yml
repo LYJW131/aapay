@@ -1,0 +1,11 @@
+services:
+  aapay:
+    build: .
+    image: aapay:latest
+    container_name: aapay
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "${AAPAY_PORT:-8787}:8787"
+    volumes:
+      - ./data:/data

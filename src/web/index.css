@@ -1,0 +1,90 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'PingFang SC', 'HarmonyOS Sans SC', 'MiSans',
+    'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', 'Cascadia Code', Menlo, monospace;
+
+  /* 品牌色：来自 logo 的靛紫 → 青 */
+  --color-brand-50: oklch(0.97 0.02 277);
+  --color-brand-100: oklch(0.94 0.04 277);
+  --color-brand-200: oklch(0.88 0.08 277);
+  --color-brand-300: oklch(0.79 0.13 277);
+  --color-brand-400: oklch(0.68 0.18 277);
+  --color-brand-500: oklch(0.585 0.215 277);
+  --color-brand-600: oklch(0.52 0.22 277);
+  --color-brand-700: oklch(0.45 0.2 277);
+  --color-accent-400: oklch(0.78 0.12 210);
+  --color-accent-500: oklch(0.7 0.125 210);
+
+  --color-canvas: oklch(0.975 0.004 270);
+  --color-surface: #fff;
+  --color-chart: #5b5cf0;
+
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-fade-in: fade-in 0.4s var(--ease-spring) both;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: light dark;
+    -webkit-tap-highlight-color: transparent;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-canvas: oklch(0.155 0.006 270);
+      --color-surface: oklch(0.205 0.008 270);
+      --color-chart: #7a7cf5;
+    }
+  }
+
+  body {
+    @apply bg-canvas text-zinc-900 dark:text-zinc-100;
+    min-height: 100dvh;
+  }
+
+  button,
+  [role='button'] {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator {
+    opacity: 0.55;
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@utility card {
+  @apply rounded-3xl bg-surface shadow-[0_1px_2px_rgb(0_0_0/0.04),0_8px_24px_-12px_rgb(0_0_0/0.08)] ring-1 ring-zinc-900/5 dark:shadow-none dark:ring-white/8;
+}
+
+@utility field {
+  @apply h-11 w-full rounded-2xl border-0 bg-zinc-100/80 px-4 text-[15px] text-zinc-900 ring-1 ring-transparent transition outline-none placeholder:text-zinc-400 focus:bg-white focus:ring-2 focus:ring-brand-500/60 dark:bg-white/6 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:bg-white/8;
+}
+
+@utility safe-bottom {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}

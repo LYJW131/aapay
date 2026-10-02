@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aapay",
+  "main": "src/server/cloudflare/worker.ts",
+  "compatibility_date": "2026-09-30",
+  "observability": { "enabled": true },
+
+  // 前端静态资源；只有 /api/* 会进入 Worker，其余路径由资源服务直接返回（SPA 回退到 index.html）
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // 每个账本一个 Durable Object（内置 SQLite + WebSocket 实时推送），另有一个全局注册表
+  "durable_objects": {
+    "bindings": [
+      { "name": "LEDGER", "class_name": "LedgerRoom" },
+      { "name": "REGISTRY", "class_name": "RegistryRoom" }
+    ]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["LedgerRoom", "RegistryRoom"] }],
+
+  // 口令加入与密码登录的防爆破限流（每 IP 每分钟）
+  "ratelimits": [
+    { "name": "JOIN_LIMITER", "namespace_id": "4101", "simple": { "limit": 10, "period": 60 } },
+    { "name": "LOGIN_LIMITER", "namespace_id": "4102", "simple": { "limit": 5, "period": 60 } }
+  ],
+
+  // 运行配置，含义见 README「配置」一节；敏感值（如 ADMIN_PASSWORD）请用 `wrangler secret put`
+  "vars": {
+    "MODE": "isolated",
+    "ADMIN_AUTH": "access",
+    "ACCESS_TEAM_DOMAIN": "lyjw2007.cloudflareaccess.com",
+    "ACCESS_AUD": "b01dccf26beb9889b2e29d57e9680ebff6268ab9bd4da1b27b9d8eb0952bbb83",
+    "ADMIN_EMAILS": "lyjw2007@gmail.com"
+  },
+
+  "routes": [{ "pattern": "aapay.lyjw.dev", "custom_domain": true }],
+  "workers_dev": false,
+  "preview_urls": false
+}

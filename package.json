@@ -1,0 +1,54 @@
+{
+  "name": "aapay",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "AAPay — 多人记账与结算，支持 Cloudflare Workers 与 Docker 部署",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "vite",
+    "dev:node": "AAPAY_TARGET=node node --watch-path=src/server --watch-path=src/shared --experimental-transform-types --no-warnings src/server/node/main.ts & AAPAY_TARGET=node vite",
+    "build": "vite build",
+    "build:node": "AAPAY_TARGET=node vite build && node scripts/build-node.mjs",
+    "start": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning dist/node/server.mjs",
+    "deploy": "vite build && wrangler deploy",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.17",
+    "@hono/node-ws": "^1.3.1",
+    "@hono/zod-validator": "^0.9.1",
+    "hono": "^4.13.12",
+    "jose": "^6.2.12",
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.62.4",
+    "@cloudflare/workers-types": "^5.20261002.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.1.1",
+    "esbuild": "^0.28.2",
+    "lucide-react": "^1.49.0",
+    "motion": "^13.5.0",
+    "playwright": "^1.63.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "sonner": "^2.0.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "uqr": "^0.1.3",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3",
+    "wrangler": "^4.146.0"
+  }
+}
