@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { cors } from 'hono/cors';
 import { createMiddleware } from 'hono/factory';
+import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { z } from 'zod';
 import { passphraseCode } from '../../shared/schema.ts';
 import type { AuthorizeInfo, McpScope } from '../../shared/types.ts';
@@ -26,7 +27,10 @@ import { body } from '../validate.ts';
 
 export const MCP_PATH = '/mcp';
 export const SCOPES = ['ledger:read', 'ledger:write'] as const satisfies readonly McpScope[];
-const AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic'] as const;
+const AUTH_METHODS = ['none', 'client_secret_post', 'client_secret_basic', 'private_key_jwt'] as const;
+/** private_key_jwt 断言允许的签名算法 */
+const ASSERTION_ALGS = ['RS256', 'PS256', 'ES256', 'EdDSA'];
+const JWT_BEARER = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
 
 /** OAuth 协议错误：以 { error, error_description } 返回 */
@@ -101,7 +105,10 @@ const clientMetadata = z.looseObject({
     .max(10),
   client_name: z.string().trim().max(100).optional().catch(undefined),
   client_uri: httpUrl.optional().catch(undefined),
-  token_endpoint_auth_method: z.enum(AUTH_METHODS).optional(),
+  // 不同客户端声明的认证方式各异（如 ChatGPT 用 private_key_jwt），具体是否支持由 authPolicy 判断
+  token_endpoint_auth_method: z.string().optional(),
+  token_endpoint_auth_methods_supported: z.array(z.string()).optional().catch(undefined),
+  jwks_uri: z.string().max(512).optional(),
   grant_types: z
     .array(z.string())
     .optional()
@@ -112,20 +119,42 @@ const clientMetadata = z.looseObject({
     .refine((r) => !r || r.includes('code'), '必须支持 code'),
 });
 
-/** Client ID Metadata Document：client_id 是一个 https URL，指向客户端自己托管的元数据 */
-function isMetadataUrl(clientId: string) {
-  const url = URL.parse(clientId);
+/** 服务端会主动请求的外部地址：只允许 https 域名，不允许直接指向 IP 或本机，减小请求伪造风险 */
+function isSafeRemoteUrl(value: string) {
+  const url = URL.parse(value);
   return (
     !!url &&
     url.protocol === 'https:' &&
-    url.pathname !== '/' &&
     !url.hash &&
     !url.username &&
     !url.password &&
-    // 不允许直接指向 IP 或本机，减小服务端请求伪造的风险
     !LOOPBACK.has(url.hostname) &&
     !/^[\d.]+$|^\[.*\]$/.test(url.hostname)
   );
+}
+
+/** Client ID Metadata Document：client_id 是一个 https URL，指向客户端自己托管的元数据 */
+const isMetadataUrl = (clientId: string) => isSafeRemoteUrl(clientId) && URL.parse(clientId)!.pathname !== '/';
+
+type ClientMetadata = z.infer<typeof clientMetadata>;
+
+/**
+ * 根据客户端声明的认证方式决定令牌端点如何验证它：
+ *   none            → 公共客户端，靠 PKCE 保护
+ *   private_key_jwt → 用 jwks_uri 上的公钥验证客户端签名的断言
+ *   client_secret_* → 仅动态注册时签发 client_secret
+ */
+function authPolicy(meta: ClientMetadata, kind: 'dcr' | 'cimd') {
+  // RFC 7591 的默认值是 client_secret_basic；CIMD 客户端无法持有我们签发的密钥，默认按公共客户端处理
+  const declared = meta.token_endpoint_auth_method ?? (kind === 'dcr' ? 'client_secret_basic' : 'none');
+  const methods = new Set([declared, ...(kind === 'cimd' ? (meta.token_endpoint_auth_methods_supported ?? []) : [])]);
+  const jwksUri = methods.has('private_key_jwt') && meta.jwks_uri && isSafeRemoteUrl(meta.jwks_uri) ? meta.jwks_uri : null;
+  const issueSecret = kind === 'dcr' && (declared === 'client_secret_basic' || declared === 'client_secret_post');
+  const policy = { method: declared, publicAllowed: methods.has('none'), jwksUri, issueSecret };
+  if (!policy.publicAllowed && !policy.jwksUri && !policy.issueSecret) {
+    throw new OAuthError('invalid_client_metadata', `unsupported token_endpoint_auth_method: ${declared}`);
+  }
+  return policy;
 }
 
 async function fetchClientMetadata(clientId: string): Promise<OAuthClient> {
@@ -140,6 +169,7 @@ async function fetchClientMetadata(clientId: string): Promise<OAuthClient> {
   const text = await res.text();
   if (text.length > 16_384) throw new Error('元数据文档过大');
   const doc = clientMetadata.extend({ client_id: z.literal(clientId) }).parse(JSON.parse(text));
+  const policy = authPolicy(doc, 'cimd');
   const now = Date.now();
   return {
     id: clientId,
@@ -148,6 +178,8 @@ async function fetchClientMetadata(clientId: string): Promise<OAuthClient> {
     uri: doc.client_uri ?? null,
     redirectUris: doc.redirect_uris,
     secretHash: null,
+    jwksUri: policy.jwksUri,
+    publicAllowed: policy.publicAllowed,
     createdAt: now,
     fetchedAt: now,
   };
@@ -250,10 +282,43 @@ async function readForm(c: Context): Promise<URLSearchParams> {
   return new URLSearchParams(await c.req.text());
 }
 
-/** 支持 client_secret_basic / client_secret_post / none（公共客户端靠 PKCE 保护） */
+const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
+/** RFC 7523：客户端用私钥签发的断言，iss 与 sub 都是 client_id，aud 是令牌端点（或 issuer） */
+async function verifyClientAssertion(c: Context<AppEnv>, client: OAuthClient, assertion: string) {
+  if (!client.jwksUri) throw new OAuthError('invalid_client', 'client does not support private_key_jwt', 401);
+  let jwks = jwksCache.get(client.jwksUri);
+  if (!jwks) jwksCache.set(client.jwksUri, (jwks = createRemoteJWKSet(new URL(client.jwksUri), { timeoutDuration: 5000 })));
+  try {
+    await jwtVerify(assertion, jwks, {
+      issuer: client.id,
+      subject: client.id,
+      audience: [`${baseUrl(c)}/oauth/token`, baseUrl(c)],
+      algorithms: ASSERTION_ALGS,
+      requiredClaims: ['exp'],
+    });
+  } catch (err) {
+    console.warn(`客户端断言验证失败 ${client.id}:`, (err as Error).message);
+    throw new OAuthError('invalid_client', 'invalid client assertion', 401);
+  }
+}
+
+/** 支持 client_secret_basic / client_secret_post / private_key_jwt / none（公共客户端靠 PKCE 保护） */
 async function authenticateClient(c: Context<AppEnv>, form: URLSearchParams): Promise<OAuthClient> {
   let id = form.get('client_id');
   let secret = form.get('client_secret');
+  const assertion = form.get('client_assertion');
+  if (assertion) {
+    if (form.get('client_assertion_type') !== JWT_BEARER) {
+      throw new OAuthError('invalid_client', `client_assertion_type must be ${JWT_BEARER}`, 401);
+    }
+    // 断言里的 iss 即 client_id（请求可以不单独携带 client_id）
+    try {
+      id ??= String(decodeJwt(assertion).iss ?? '') || null;
+    } catch {
+      throw new OAuthError('invalid_client', 'malformed client assertion', 401);
+    }
+  }
   const basic = /^Basic\s+(.+)$/i.exec(c.req.header('authorization') ?? '')?.[1];
   if (basic) {
     const decoded = atob(basic);
@@ -264,8 +329,14 @@ async function authenticateClient(c: Context<AppEnv>, form: URLSearchParams): Pr
   if (!id) throw new OAuthError('invalid_client', 'client authentication required', 401);
   const client = await findClient(c, id);
   if (!client) throw new OAuthError('invalid_client', 'unknown client', 401);
-  if (client.secretHash && (!secret || (await sha256(secret)) !== client.secretHash)) {
-    throw new OAuthError('invalid_client', 'invalid client credentials', 401);
+  if (assertion) {
+    await verifyClientAssertion(c, client, assertion);
+  } else if (client.secretHash) {
+    if (!secret || (await sha256(secret)) !== client.secretHash) {
+      throw new OAuthError('invalid_client', 'invalid client credentials', 401);
+    }
+  } else if (!client.publicAllowed) {
+    throw new OAuthError('invalid_client', 'client authentication required', 401);
   }
   return client;
 }
@@ -308,6 +379,7 @@ function authorizationServerMetadata(c: Context<AppEnv>) {
     grant_types_supported: GRANT_TYPES,
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: AUTH_METHODS,
+    token_endpoint_auth_signing_alg_values_supported: ASSERTION_ALGS,
     revocation_endpoint_auth_methods_supported: AUTH_METHODS,
     client_id_metadata_document_supported: true,
     authorization_response_iss_parameter_supported: true,
@@ -350,9 +422,14 @@ export const oauthRoutes = new Hono<AppEnv>()
       throw new OAuthError(code, issue?.message ?? 'invalid client metadata');
     }
     const meta = parsed.data;
-    // RFC 7591：未声明时默认 client_secret_basic
-    const method = meta.token_endpoint_auth_method ?? 'client_secret_basic';
-    const secret = method === 'none' ? null : newToken();
+    if (meta.token_endpoint_auth_method && !(AUTH_METHODS as readonly string[]).includes(meta.token_endpoint_auth_method)) {
+      throw new OAuthError('invalid_client_metadata', `token_endpoint_auth_method must be one of ${AUTH_METHODS.join(', ')}`);
+    }
+    if (meta.token_endpoint_auth_method === 'private_key_jwt' && !(meta.jwks_uri && isSafeRemoteUrl(meta.jwks_uri))) {
+      throw new OAuthError('invalid_client_metadata', 'private_key_jwt requires an https jwks_uri');
+    }
+    const policy = authPolicy(meta, 'dcr');
+    const secret = policy.issueSecret ? newToken() : null;
     const now = Date.now();
     const client: OAuthClient = {
       id: newId(24),
@@ -361,6 +438,8 @@ export const oauthRoutes = new Hono<AppEnv>()
       uri: meta.client_uri ?? null,
       redirectUris: meta.redirect_uris,
       secretHash: secret ? await sha256(secret) : null,
+      jwksUri: policy.jwksUri,
+      publicAllowed: policy.publicAllowed,
       createdAt: now,
       fetchedAt: null,
     };
@@ -375,7 +454,8 @@ export const oauthRoutes = new Hono<AppEnv>()
         redirect_uris: client.redirectUris,
         grant_types: GRANT_TYPES,
         response_types: ['code'],
-        token_endpoint_auth_method: method,
+        token_endpoint_auth_method: policy.method,
+        ...(policy.jwksUri && { jwks_uri: policy.jwksUri }),
         scope: SCOPES.join(' '),
       },
       201,

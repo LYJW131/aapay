@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { UpgradeWebSocket } from 'hono/ws';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from '../src/server/app.ts';
 import { loadConfig } from '../src/server/config.ts';
@@ -436,6 +437,80 @@ describe('OAuth request validation', () => {
     vi.stubGlobal('fetch', async () => Response.json({ client_id: clientId, redirect_uris: ['https://evil.example.com/cb'] }));
     const res = await s.request('GET', `/api/oauth/authorize?${new URLSearchParams({ response_type: 'code', client_id: forged, redirect_uri: 'https://evil.example.com/cb', code_challenge: challenge, code_challenge_method: 'S256' })}`);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('private_key_jwt (ChatGPT-style client)', () => {
+  const clientId = 'https://chat.example.com/oauth/client.json';
+  const redirect = 'https://chat.example.com/connector_platform_oauth_redirect';
+
+  async function setupClient(doc: Record<string, unknown>) {
+    // 每个用例一个 JWKS 地址：jose 的远程 JWKS 在 30 秒冷却期内不会重复拉取
+    const jwksUri = `https://chat.example.com/oauth/jwks-${crypto.randomUUID()}.json`;
+    const { publicKey, privateKey } = await generateKeyPair('RS256', { extractable: true });
+    const kid = crypto.randomUUID();
+    const jwk = { ...(await exportJWK(publicKey)), kid, alg: 'RS256', use: 'sig' };
+    vi.stubGlobal('fetch', async (input: string | URL | Request) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url === clientId) {
+        return Response.json({ client_id: clientId, client_name: 'ChatGPT', redirect_uris: [redirect], grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'], jwks_uri: jwksUri, token_endpoint_auth_signing_alg: 'RS256', ...doc });
+      }
+      if (url === jwksUri) return Response.json({ keys: [jwk] });
+      return new Response('not found', { status: 404 });
+    });
+    const s = setup();
+    await seedLedger(s, '出差', 'trip2026');
+    const code = async () => {
+      const { verifier, challenge } = await pkce();
+      const query = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: redirect, code_challenge: challenge, code_challenge_method: 'S256', resource: `${ORIGIN}/mcp` }).toString();
+      const res = await s.request('POST', '/api/oauth/authorize', { json: { query, code: 'trip2026', write: true } });
+      return { code: new URL(res.data.redirect).searchParams.get('code')!, verifier };
+    };
+    const assertion = (key: CryptoKey = privateKey, aud = `${ORIGIN}/oauth/token`) =>
+      new SignJWT({ jti: crypto.randomUUID() })
+        .setProtectedHeader({ alg: 'RS256', kid })
+        .setIssuer(clientId)
+        .setSubject(clientId)
+        .setAudience(aud)
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .sign(key);
+    const exchange = (grant: { code: string; verifier: string }, extra: Record<string, string>) =>
+      s.request('POST', '/oauth/token', { form: { grant_type: 'authorization_code', code: grant.code, redirect_uri: redirect, code_verifier: grant.verifier, ...extra } });
+    return { s, code, assertion, exchange };
+  }
+
+  it('advertises private_key_jwt', async () => {
+    const as = (await setup().request('GET', '/.well-known/oauth-authorization-server')).data;
+    expect(as.token_endpoint_auth_methods_supported).toContain('private_key_jwt');
+    expect(as.token_endpoint_auth_signing_alg_values_supported).toContain('RS256');
+  });
+
+  it('accepts a signed client assertion and also the public fallback', async () => {
+    const { s, code, assertion, exchange } = await setupClient({ token_endpoint_auth_method: 'private_key_jwt', token_endpoint_auth_methods_supported: ['none', 'private_key_jwt'] });
+    const signed = await exchange(await code(), { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: await assertion() });
+    expect(signed.status).toBe(200);
+    expect((await s.rpc(signed.data.access_token, 'ping')).data.result).toEqual({});
+
+    // 断言签名不对：拒绝，且不消耗授权码
+    const grant = await code();
+    const { privateKey: other } = await generateKeyPair('RS256');
+    const forged = await exchange(grant, { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: await assertion(other) });
+    expect(forged).toMatchObject({ status: 401, data: { error: 'invalid_client' } });
+    const wrongAud = await exchange(grant, { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: await assertion(undefined, 'https://other.example') });
+    expect(wrongAud.status).toBe(401);
+
+    // 文档里也声明了 none，可以作为公共客户端
+    const pub = await exchange(grant, { client_id: clientId });
+    expect(pub.status).toBe(200);
+  });
+
+  it('requires the assertion when the client only supports private_key_jwt', async () => {
+    const { code, assertion, exchange } = await setupClient({ token_endpoint_auth_method: 'private_key_jwt' });
+    const grant = await code();
+    expect((await exchange(grant, { client_id: clientId })).data.error).toBe('invalid_client');
+    const ok = await exchange(grant, { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: await assertion() });
+    expect(ok.status).toBe(200);
   });
 });
 

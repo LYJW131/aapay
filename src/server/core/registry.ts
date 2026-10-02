@@ -121,6 +121,11 @@ const MIGRATIONS = [
   CREATE INDEX oauth_tokens_grant ON oauth_tokens (grant_id);
   CREATE INDEX oauth_tokens_expires ON oauth_tokens (expires_at);
   `,
+  `
+  -- private_key_jwt 客户端认证：客户端公布的 JWKS 地址；以及是否允许不带凭证的公共客户端
+  ALTER TABLE oauth_clients ADD COLUMN jwks_uri TEXT;
+  ALTER TABLE oauth_clients ADD COLUMN public_allowed INTEGER NOT NULL DEFAULT 1;
+  `,
 ];
 
 export interface OAuthClient {
@@ -132,6 +137,10 @@ export interface OAuthClient {
   redirectUris: string[];
   /** 机密客户端 client_secret 的 SHA-256；公共客户端为 null */
   secretHash: string | null;
+  /** 支持 private_key_jwt 时，验证客户端断言所用的 JWKS 地址 */
+  jwksUri: string | null;
+  /** 是否允许不带任何凭证（仅靠 PKCE）换取令牌 */
+  publicAllowed: boolean;
   createdAt: number;
   fetchedAt: number | null;
 }
@@ -179,6 +188,8 @@ type ClientRow = {
   uri: string | null;
   redirect_uris: string;
   secret_hash: string | null;
+  jwks_uri: string | null;
+  public_allowed: number;
   created_at: number;
   fetched_at: number | null;
 };
@@ -203,6 +214,8 @@ const toClient = (r: ClientRow): OAuthClient => ({
   uri: r.uri,
   redirectUris: JSON.parse(r.redirect_uris) as string[],
   secretHash: r.secret_hash,
+  jwksUri: r.jwks_uri,
+  publicAllowed: r.public_allowed === 1,
   createdAt: r.created_at,
   fetchedAt: r.fetched_at,
 });
@@ -429,16 +442,20 @@ export class RegistryService {
       now - OAUTH_TTL.idleClient,
     );
     this.db.run(
-      `INSERT INTO oauth_clients (id, kind, name, uri, redirect_uris, secret_hash, created_at, fetched_at, last_used_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO oauth_clients (id, kind, name, uri, redirect_uris, secret_hash, jwks_uri, public_allowed,
+         created_at, fetched_at, last_used_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET name = excluded.name, uri = excluded.uri,
-         redirect_uris = excluded.redirect_uris, fetched_at = excluded.fetched_at`,
+         redirect_uris = excluded.redirect_uris, jwks_uri = excluded.jwks_uri,
+         public_allowed = excluded.public_allowed, fetched_at = excluded.fetched_at`,
       client.id,
       client.kind,
       client.name,
       client.uri,
       JSON.stringify(client.redirectUris),
       client.secretHash,
+      client.jwksUri,
+      client.publicAllowed ? 1 : 0,
       client.createdAt,
       client.fetchedAt,
       now,
