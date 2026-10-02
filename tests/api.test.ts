@@ -44,7 +44,7 @@ describe('API (isolated mode)', () => {
   const { call, resetCookies } = setup({ ADMIN_AUTH: 'none' });
 
   it('runs the full admin → passphrase → member flow', async () => {
-    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none' });
+    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true });
     expect((await call('GET', '/session')).data).toBeNull();
 
     const ledger = (await call('POST', '/admin/ledgers', { name: '周末露营' })).data;

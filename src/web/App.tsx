@@ -9,6 +9,7 @@ import { useMediaQuery } from './lib/hooks.ts';
 import { usePathname } from './lib/router.ts';
 
 const AdminPage = lazy(() => import('./features/admin/AdminPage.tsx').then((m) => ({ default: m.AdminPage })));
+const AuthorizePage = lazy(() => import('./features/oauth/AuthorizePage.tsx').then((m) => ({ default: m.AuthorizePage })));
 
 type Boot =
   | { state: 'loading' }
@@ -16,8 +17,9 @@ type Boot =
   | { state: 'ready'; config: PublicConfig; session: SessionInfo | null; notice?: string };
 
 async function boot(): Promise<Boot> {
-  // 带着口令链接进来时，先展示加入页，由它完成加入
-  const joining = window.location.pathname === '/join';
+  // 带着口令链接进来时，先展示加入页，由它完成加入；授权页自己会查询登录状态
+  const { pathname } = window.location;
+  const joining = pathname === '/join' || pathname === '/oauth/authorize';
   const config = await call(api.config.$get());
   if (joining) return { state: 'ready', config, session: null };
   return { state: 'ready', config, session: await call(api.session.$get()) };
@@ -59,6 +61,12 @@ export function App() {
     page = (
       <Suspense fallback={<div className="flex min-h-dvh items-center justify-center text-zinc-400"><Spinner className="size-7" /></div>}>
         <AdminPage config={app.config} />
+      </Suspense>
+    );
+  } else if (pathname === '/oauth/authorize') {
+    page = (
+      <Suspense fallback={<div className="flex min-h-dvh items-center justify-center text-zinc-400"><Spinner className="size-7" /></div>}>
+        <AuthorizePage config={app.config} />
       </Suspense>
     );
   } else if (app.session) {

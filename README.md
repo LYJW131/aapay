@@ -28,6 +28,7 @@
 - **金额精确**：全程以「分」为整数存储，均摊的零头按成员加入顺序分配，合计永远等于总额
 - **实时同步**：基于 WebSocket，其他人的操作即时出现并弹出通知；断线自动重连并补齐数据
 - **管理控制台**：创建 / 重命名 / 删除账本，生成带有效期的口令（1 天、7 天、30 天、永久或自定义时间段），二维码邀请，撤销口令后用它登录的成员立即失效，管理员可直接进入任意账本
+- **连接 AI**：内置 OAuth 2.1 保护的远程 MCP 端点 `/mcp`，在 Claude、ChatGPT 等应用里添加连接器后，就能用自然语言记账、查账、算结算；修改实时同步给所有人（见下文「连接 AI（MCP）」）
 - **共享模式**：单一公共账本，打开即用（适合固定室友）
 - **体验**：移动端优先，底部抽屉式表单，自动跟随系统深色模式，可添加到主屏幕
 
@@ -117,6 +118,9 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 | `ADMIN_PASSWORD` | `password` 模式：管理员密码（≥ 8 位；Cloudflare 上请用 secret） | — |
 | `ADMIN_EMAIL_HEADER` | `proxy` 模式：上游代理传入身份的请求头 | `X-Forwarded-Email` |
 | `ADMIN_EMAILS` | 可选，管理员邮箱白名单（逗号分隔，`access` / `proxy` 模式生效） | — |
+| `MCP` | `enabled` / `disabled`：是否开放 MCP 端点与 OAuth 授权服务 | `enabled` |
+| `PUBLIC_URL` | 可选，对外访问地址（如 `https://aapay.example.com`），作为 OAuth issuer 与 MCP 资源标识；不填则按请求推断（信任 `X-Forwarded-Proto/Host`），反向代理后建议填写 | — |
+| `TIMEZONE` | 可选，AI 记账未指定日期时按此时区取「今天」 | `Asia/Shanghai` |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
 
 管理员认证方式：
@@ -125,6 +129,32 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 - **password**：内置密码登录，适合自托管且没有 SSO 的场景（带防爆破限流）
 - **proxy**：沿用 oauth2-proxy / Authelia / Traefik ForwardAuth 等上游认证，信任其传入的身份头（确保应用不直接暴露）
 - **none**：不校验，仅限本地开发
+
+## 连接 AI（MCP）
+
+AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`（账本页右上角「连接 AI」可一键复制）。
+
+| 应用 | 添加方式 |
+| --- | --- |
+| Claude（网页 / 桌面 / 手机） | 设置 → 连接器 → 添加自定义连接器，粘贴地址 |
+| ChatGPT | 设置 → 应用与连接器 → 高级设置中打开开发者模式，创建连接器并粘贴地址，认证选 OAuth |
+| Claude Code | `claude mcp add --transport http aapay https://你的域名/mcp` |
+| Cursor / VS Code 等 | 按各自的远程 MCP 配置填入地址即可 |
+
+添加后应用会打开 AAPay 的授权页：已在这个浏览器打开过账本可以一键授权，否则输入该账本的分享口令；还可以关掉「记账、修改与删除」只给只读权限。之后就可以直接说「我付了 128 的晚饭，四个人分」「这周谁花得最多」「怎么转账能结清」。AI 做的修改会实时出现在所有人的页面上，并提示是哪个应用改的。
+
+**提供的工具**：`get_ledger`（成员、余额、最少转账方案）、`list_transactions`（按日期 / 成员 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`。金额以「元」为单位，成员可以直接用名字指代。
+
+**授权模型**：一次授权只对应一个账本，权限等同于用口令加入的成员。账本成员可在「连接 AI」里查看并断开已连接的应用，控制台的账本列表会显示连接数；口令被撤销、过期或账本被删除时，对应的授权会一并失效。
+
+**协议细节**（按 [MCP Authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) 规范实现）：
+
+- 传输：Streamable HTTP 无状态模式，`POST /mcp` 直接返回 JSON；协议版本 `2025-11-25`，兼容 `2025-06-18` / `2025-03-26`
+- 发现：`/.well-known/oauth-protected-resource`（RFC 9728）与 `/.well-known/oauth-authorization-server`（RFC 8414），未授权请求返回带 `resource_metadata` 的 `WWW-Authenticate`
+- 客户端：动态注册 `POST /oauth/register`（RFC 7591，公共或机密客户端），也支持以 HTTPS URL 作为 `client_id` 的 Client ID Metadata Document
+- 授权码 + PKCE（仅 `S256`），`resource` 参数（RFC 8707）把令牌绑定到 `/mcp`，回调带 `iss`（RFC 9207）；作用域 `ledger:read` / `ledger:write`
+- 访问令牌 1 小时，刷新令牌每次使用即轮换，授权最长 180 天且不超过口令有效期；`POST /oauth/revoke` 撤销（RFC 7009）
+- 令牌只存 SHA-256 哈希；授权页禁止被嵌入（防点击劫持），输入口令与动态注册共用加入口令的限流
 
 ## 项目结构
 
@@ -135,11 +165,12 @@ src/
 │   ├── app.ts          Hono API（平台无关）
 │   ├── config.ts       环境变量解析
 │   ├── auth/           管理员认证（Access JWT / 密码 / 代理头）与 Cookie
-│   ├── core/           RegistryService、LedgerService、SQL 抽象、RPC 信封
+│   ├── core/           RegistryService（账本、口令、会话、OAuth 授权）、LedgerService、SQL 抽象、RPC 信封
+│   ├── mcp/            OAuth 2.1 授权服务器、MCP 端点（JSON-RPC）与工具定义
 │   ├── cloudflare/     Worker 入口与 Durable Objects
 │   └── node/           Node 入口、node:sqlite 驱动、WebSocket 房间
-└── web/                React 前端（features/ledger、features/admin、features/join）
-tests/                  vitest：金额、结算、账本服务、完整 API 流程
+└── web/                React 前端（features/ledger、features/admin、features/join、features/oauth）
+tests/                  vitest：金额、结算、账本服务、完整 API 流程、OAuth + MCP 流程
 ```
 
 ## API
@@ -160,6 +191,12 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `DELETE` | `/api/admin/passphrases/:id` | 撤销口令 |
 | `POST` | `/api/admin/ledgers/:id/enter` | 管理员进入账本 |
 | `GET` | `/api/admin/live` | 控制台 WebSocket |
+| `GET` `DELETE` | `/api/ledger/connections[/:id]` | 已连接到本账本的 AI 应用 |
+| `GET` `POST` | `/api/oauth/authorize` | 授权页：校验请求 / 同意授权 |
+| `POST` | `/mcp` | MCP 端点（Bearer 令牌） |
+| `GET` | `/.well-known/oauth-protected-resource[/mcp]` | 受保护资源元数据 |
+| `GET` | `/.well-known/oauth-authorization-server` | 授权服务器元数据 |
+| `POST` | `/oauth/register` · `/oauth/token` · `/oauth/revoke` | 动态注册、令牌、撤销 |
 
 ## 开发命令
 

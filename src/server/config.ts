@@ -10,6 +10,10 @@ import type { AdminAuthMode, Mode } from '../shared/types.ts';
  * ADMIN_PASSWORD      ADMIN_AUTH=password 时必填，至少 8 位
  * ADMIN_EMAIL_HEADER  ADMIN_AUTH=proxy 时读取的身份头，默认 X-Forwarded-Email
  * ADMIN_EMAILS        可选，逗号分隔的管理员邮箱白名单（access / proxy 模式下生效）
+ * MCP                 enabled（默认）| disabled：是否开放 /mcp 端点（OAuth 2.1）供 Claude、ChatGPT 等连接
+ * PUBLIC_URL          可选，对外访问地址，如 https://aapay.example.com；用作 OAuth issuer 与 MCP 资源标识。
+ *                     不填则按请求推断（会信任 X-Forwarded-Proto / X-Forwarded-Host），反向代理后建议填写
+ * TIMEZONE            可选，默认 Asia/Shanghai；AI 记账未指定日期时按此时区取「今天」
  */
 export interface Config {
   mode: Mode;
@@ -19,10 +23,14 @@ export interface Config {
   adminPassword: string;
   adminEmailHeader: string;
   adminEmails: string[];
+  mcp: boolean;
+  publicUrl: string | null;
+  timezone: string;
 }
 
 const MODES = ['isolated', 'shared'] as const;
 const ADMIN_MODES = ['access', 'password', 'proxy', 'none', 'disabled'] as const;
+const SWITCH = ['enabled', 'disabled'] as const;
 
 const cache = new WeakMap<object, Config>();
 
@@ -49,6 +57,9 @@ export function loadConfig(env: object): Config {
       .split(',')
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean),
+    mcp: pick('MCP', SWITCH, 'enabled') === 'enabled',
+    publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
+    timezone: str('TIMEZONE') || 'Asia/Shanghai',
   };
 
   if (config.mode === 'shared') config.adminAuth = 'disabled';
@@ -57,6 +68,15 @@ export function loadConfig(env: object): Config {
   }
   if (config.adminAuth === 'password' && config.adminPassword.length < 8) {
     throw new Error('ADMIN_AUTH=password 需要配置至少 8 位的 ADMIN_PASSWORD');
+  }
+
+  if (config.publicUrl && !/^https?:$/.test(URL.parse(config.publicUrl)?.protocol ?? '')) {
+    throw new Error(`配置 PUBLIC_URL=${config.publicUrl} 无效，应形如 https://aapay.example.com`);
+  }
+  try {
+    new Intl.DateTimeFormat('en', { timeZone: config.timezone });
+  } catch {
+    throw new Error(`配置 TIMEZONE=${config.timezone} 无效，应为 IANA 时区名，如 Asia/Shanghai`);
   }
 
   cache.set(env, config);

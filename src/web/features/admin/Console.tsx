@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   QrCode as QrIcon,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -146,6 +147,12 @@ export function Console() {
                       {l.stats ? `${l.stats.members} 人 · ${l.stats.expenses} 笔 · ${formatMoney(l.stats.total)}` : '—'}
                     </span>
                   </span>
+                  {l.connections > 0 && (
+                    <span title="已连接的 AI 应用" className="flex items-center gap-1 rounded-full bg-brand-500/12 px-2 py-0.5 text-[11px] font-medium text-brand-600 dark:text-brand-300">
+                      <Sparkles className="size-3" />
+                      {l.connections}
+                    </span>
+                  )}
                   {l.activePassphrases > 0 && (
                     <span className="flex items-center gap-1 rounded-full bg-emerald-500/12 px-2 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
                       <KeyRound className="size-3" />

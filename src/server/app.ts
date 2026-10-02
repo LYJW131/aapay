@@ -1,9 +1,7 @@
-import { zValidator } from '@hono/zod-validator';
 import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
-import type { z } from 'zod';
 import {
   expenseInput,
   joinInput,
@@ -13,13 +11,17 @@ import {
   passphraseInput,
   settlementInput,
 } from '../shared/schema.ts';
-import type { AdminIdentity, LedgerInfo, LedgerOverview, PublicConfig, SessionInfo, Snapshot } from '../shared/types.ts';
+import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, Snapshot } from '../shared/types.ts';
 import { authenticateAdmin, passwordMatches } from './auth/admin.ts';
 import { clearSessionCookie, CONSOLE_COOKIE, SESSION_COOKIE, setSessionCookie } from './auth/cookies.ts';
 import type { Config } from './config.ts';
 import { AppError, notFound, unauthorized } from './core/errors.ts';
 import { newToken, sha256 } from './core/ids.ts';
+import { authorizeRoutes, OAuthError, oauthRoutes, wellKnownRoutes } from './mcp/oauth.ts';
+import { mcpRoutes } from './mcp/server.ts';
 import type { Platform } from './platform.ts';
+import { clientIp, findSession } from './session.ts';
+import { body } from './validate.ts';
 
 export type AppEnv = {
   Variables: {
@@ -30,42 +32,12 @@ export type AppEnv = {
   };
 };
 
-export const SHARED_LEDGER = { id: 'shared', name: '共享账本' } as const;
-
-/** 统一的参数校验：失败时返回第一条中文错误信息 */
-const body = <T extends z.ZodType>(schema: T) =>
-  zValidator('json', schema, (result, c) => {
-    if (!result.success) return c.json({ error: result.error.issues[0]?.message ?? '参数错误' }, 400);
-  });
-
-const clientIp = (c: Context) =>
-  c.req.header('cf-connecting-ip') ??
-  c.req.header('x-real-ip') ??
-  c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
-  'local';
-
 const originOf = (c: Context) => c.req.header('x-client-id')?.slice(0, 64);
 
 function requireUpgrade(c: Context) {
   if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
     throw new HTTPException(426, { message: 'Expected WebSocket upgrade' });
   }
-}
-
-let sharedLedger: Promise<LedgerInfo> | undefined;
-
-/** 通过 Cookie 中的会话令牌确定所属账本；共享模式下所有人进入同一个账本 */
-async function findSession(c: Context<AppEnv>): Promise<SessionInfo | null> {
-  const { config, platform } = c.var;
-  if (config.mode === 'shared') {
-    sharedLedger ??= platform.registry.ensureLedger(SHARED_LEDGER.id, SHARED_LEDGER.name).catch((err: unknown) => {
-      sharedLedger = undefined;
-      throw err;
-    });
-    return { ledger: await sharedLedger, role: 'shared', passphrase: null, expiresAt: null };
-  }
-  const token = getCookie(c, SESSION_COOKIE);
-  return token ? platform.registry.resolveLedgerSession(await sha256(token)) : null;
 }
 
 const requireSession = createMiddleware<AppEnv>(async (c, next) => {
@@ -130,7 +102,13 @@ const ledgerRoutes = new Hono<AppEnv>()
     c.json(
       await c.var.platform.ledger(c.var.session.ledger.id).api.deleteSettlement(c.req.param('id'), originOf(c)),
     ),
-  );
+  )
+  // 已通过 MCP 连接到本账本的 AI 应用，成员可以随时断开
+  .get('/connections', async (c) => c.json(await c.var.platform.registry.listConnections(c.var.session.ledger.id)))
+  .delete('/connections/:id', async (c) => {
+    await c.var.platform.registry.revokeConnection(c.req.param('id'), c.var.session.ledger.id);
+    return c.json({ ok: true });
+  });
 
 const adminRoutes = new Hono<AppEnv>()
   // 密码模式的登录入口本身不需要管理员身份
@@ -205,7 +183,11 @@ const adminRoutes = new Hono<AppEnv>()
 function buildApi() {
   return new Hono<AppEnv>()
     .get('/config', (c) =>
-      c.json({ mode: c.var.config.mode, adminAuth: c.var.config.adminAuth } satisfies PublicConfig),
+      c.json({
+        mode: c.var.config.mode,
+        adminAuth: c.var.config.adminAuth,
+        mcp: c.var.config.mcp,
+      } satisfies PublicConfig),
     )
     .get('/session', async (c) => c.json(await findSession(c)))
     .post('/join', body(joinInput), async (c) => {
@@ -224,18 +206,23 @@ function buildApi() {
       return c.json({ ok: true });
     })
     .route('/ledger', ledgerRoutes)
-    .route('/admin', adminRoutes);
+    .route('/admin', adminRoutes)
+    .route('/oauth', authorizeRoutes);
 }
 
 /** 前端通过 hono/client 使用的端到端类型 */
 export type ApiType = ReturnType<typeof buildApi>;
+
+/** 由服务端处理的路径；其余都是前端静态资源（Cloudflare 上需与 wrangler.jsonc 的 run_worker_first 保持一致） */
+export const SERVER_PATHS = ['/api/*', '/mcp', '/mcp/*', '/oauth/token', '/oauth/register', '/oauth/revoke', '/.well-known/*'];
 
 /**
  * 创建与平台无关的应用。inject 中间件负责为每个请求注入 platform 与 config：
  * Cloudflare 上来自 env 绑定，Node 上则是进程内单例。
  */
 export function createApp(inject: MiddlewareHandler<AppEnv>) {
-  const app = new Hono<AppEnv>();
+  // 不区分结尾斜杠：用户粘贴 https://…/mcp/ 也能连上
+  const app = new Hono<AppEnv>({ strict: false });
   app.use('/api/*', async (c, next) => {
     // 拒绝跨站的写请求（JSON 请求本身也会触发 CORS 预检，这里再加一道保险）
     // 只比较主机名：反向代理（如 Traefik 终止 TLS）后协议可能不同
@@ -246,10 +233,21 @@ export function createApp(inject: MiddlewareHandler<AppEnv>) {
     }
     await next();
   });
-  app.use('/api/*', inject);
+  for (const path of SERVER_PATHS) app.use(path, inject);
   app.route('/api', buildApi());
   app.all('/api/*', (c) => c.json({ error: '接口不存在' }, 404));
+  // MCP 与 OAuth 端点面向 AI 应用，不走 Cookie，也不受上面的同源写保护
+  app.route('/mcp', mcpRoutes);
+  app.route('/oauth', oauthRoutes);
+  app.route('/.well-known', wellKnownRoutes);
+  // 未实现的发现文档（如 openid-configuration）明确返回 404，不能落到前端页面
+  app.all('/.well-known/*', (c) => c.json({ error: 'not_found' }, 404));
+  app.all('/mcp/*', (c) => c.json({ error: 'not_found' }, 404));
   app.onError((err, c) => {
+    if (err instanceof OAuthError) {
+      if (err.status === 401) c.header('WWW-Authenticate', 'Basic realm="aapay"');
+      return c.json({ error: err.code, error_description: err.message }, err.status, { 'Cache-Control': 'no-store' });
+    }
     if (err instanceof AppError) return c.json({ error: err.message }, err.status);
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
     console.error(err);

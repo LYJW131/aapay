@@ -5,10 +5,11 @@
   "compatibility_date": "2026-09-30",
   "observability": { "enabled": true },
 
-  // 前端静态资源；只有 /api/* 会进入 Worker，其余路径由资源服务直接返回（SPA 回退到 index.html）
+  // 前端静态资源；API、MCP 与 OAuth 端点进入 Worker（与 src/server/app.ts 的 SERVER_PATHS 一致），
+  // 其余路径由资源服务直接返回（SPA 回退到 index.html，授权页 /oauth/authorize 也在其中）
   "assets": {
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
+    "run_worker_first": ["/api/*", "/mcp", "/mcp/*", "/oauth/token", "/oauth/register", "/oauth/revoke", "/.well-known/*"]
   },
 
   // 每个账本一个 Durable Object（内置 SQLite + WebSocket 实时推送），另有一个全局注册表

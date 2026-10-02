@@ -77,7 +77,7 @@ export type LedgerEvent =
 export interface LiveMessage {
   /** 数据版本号；账目变更时递增，客户端据此判断是否漏掉消息 */
   v?: number;
-  /** 发起变更的客户端 ID，用于避免给自己弹通知 */
+  /** 发起变更的客户端 ID，用于避免给自己弹通知；来自 MCP 时形如 mcp:Claude */
   origin?: string;
   event: LedgerEvent;
   at: Timestamp;
@@ -99,6 +99,8 @@ export type AdminAuthMode = 'access' | 'password' | 'proxy' | 'none' | 'disabled
 export interface PublicConfig {
   mode: Mode;
   adminAuth: AdminAuthMode;
+  /** 是否开放 /mcp 端点供 Claude、ChatGPT 等 AI 应用连接 */
+  mcp: boolean;
 }
 
 export interface AdminIdentity {
@@ -111,6 +113,8 @@ export interface LedgerRecord {
   name: string;
   createdAt: Timestamp;
   activePassphrases: number;
+  /** 已连接的 AI 应用数 */
+  connections: number;
 }
 
 export interface LedgerOverview extends LedgerRecord {
@@ -128,4 +132,32 @@ export interface Passphrase {
 
 export type RegistryEvent =
   | { type: 'ledgers.changed' }
-  | { type: 'passphrases.changed'; ledgerId: string };
+  | { type: 'passphrases.changed'; ledgerId: string }
+  | { type: 'connections.changed'; ledgerId: string };
+
+export type McpScope = 'ledger:read' | 'ledger:write';
+
+/** 通过 OAuth 连接到某个账本的 AI 应用（一次授权） */
+export interface Connection {
+  id: string;
+  /** 客户端自报的名称（如 Claude），未经验证 */
+  clientName: string | null;
+  /** 客户端主页或回调地址的主机名，用于辨认来源 */
+  clientHost: string | null;
+  scopes: McpScope[];
+  createdAt: Timestamp;
+  lastUsedAt: Timestamp;
+  expiresAt: Timestamp;
+}
+
+/** OAuth 授权页需要展示的信息 */
+export interface AuthorizeInfo {
+  client: { name: string | null; host: string | null };
+  /** 授权完成后跳回的主机 */
+  redirectHost: string;
+  scopes: McpScope[];
+  /** 当前浏览器已登录的账本，可直接授权 */
+  session: SessionInfo | null;
+  /** 用户拒绝时跳转的地址 */
+  denyUrl: string;
+}

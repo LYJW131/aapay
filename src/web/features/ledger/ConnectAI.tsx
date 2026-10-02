@@ -1,0 +1,139 @@
+import { Check, Copy, PlugZap, Sparkles, Unplug } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import type { Connection } from '../../../shared/types.ts';
+import { Button } from '../../components/Button.tsx';
+import { Label } from '../../components/Card.tsx';
+import { Spinner } from '../../components/Spinner.tsx';
+import { api, call, errorMessage } from '../../lib/api.ts';
+import { relativeTime } from '../../lib/dates.ts';
+
+export const mcpUrl = () => `${window.location.origin}/mcp`;
+
+const STEPS = [
+  { app: 'Claude', how: '设置 → 连接器 → 添加自定义连接器，粘贴上面的地址' },
+  { app: 'ChatGPT', how: '设置 → 应用与连接器 → 高级设置中打开开发者模式，再创建连接器并粘贴地址' },
+  { app: '其他应用', how: 'Cursor、VS Code 等支持远程 MCP（OAuth）的客户端同样可用' },
+];
+
+/** 把 MCP 地址交给 AI 应用，并管理已连接到本账本的应用 */
+export function ConnectAI() {
+  const [copied, setCopied] = useState(false);
+  const [connections, setConnections] = useState<Connection[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setConnections(await call(api.ledger.connections.$get()));
+    } catch (err) {
+      toast.error(errorMessage(err));
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    // 授权通常在另一个标签页完成，回到这里时刷新列表
+    const onFocus = () => document.visibilityState === 'visible' && void load();
+    document.addEventListener('visibilitychange', onFocus);
+    return () => document.removeEventListener('visibilitychange', onFocus);
+  }, [load]);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(mcpUrl());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast.error('复制失败，请手动选择地址复制');
+    }
+  }
+
+  async function disconnect(c: Connection) {
+    setBusy(c.id);
+    try {
+      await call(api.ledger.connections[':id'].$delete({ param: { id: c.id } }));
+      setConnections((list) => list?.filter((x) => x.id !== c.id) ?? null);
+      toast.success(`已断开 ${c.clientName ?? c.clientHost ?? 'AI 应用'}`);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="space-y-6 pb-1">
+      <div>
+        <Label>MCP 服务器地址</Label>
+        <div className="flex gap-2">
+          <input readOnly value={mcpUrl()} onFocus={(e) => e.currentTarget.select()} className="field font-mono text-sm" />
+          <Button
+            variant="primary"
+            size="icon"
+            className="size-11 rounded-2xl"
+            aria-label="复制地址"
+            onClick={copy}
+            icon={copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+          />
+        </div>
+        <ol className="mt-3 space-y-2">
+          {STEPS.map((s) => (
+            <li key={s.app} className="flex gap-2.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
+              <span className="mt-0.5 h-fit shrink-0 rounded-md bg-zinc-100 px-1.5 text-[11px] font-medium text-zinc-600 dark:bg-white/8 dark:text-zinc-300">
+                {s.app}
+              </span>
+              {s.how}
+            </li>
+          ))}
+        </ol>
+        <p className="mt-3 rounded-2xl bg-brand-500/8 px-4 py-3 text-[13px] leading-relaxed text-brand-700 dark:text-brand-200">
+          连接时会打开授权页：在已打开本账本的浏览器里可一键授权，否则输入本账本的分享口令即可。之后就能直接让 AI 记账、查账和算结算了。
+        </p>
+      </div>
+
+      <div>
+        <Label aside={connections && connections.length > 0 && <span className="tabular">{connections.length}</span>}>已连接的应用</Label>
+        {connections === null ? (
+          <div className="flex justify-center py-6 text-zinc-400">
+            <Spinner className="size-5" />
+          </div>
+        ) : connections.length === 0 ? (
+          <div className="flex flex-col items-center rounded-2xl bg-zinc-50 px-4 py-6 text-center dark:bg-white/3">
+            <PlugZap className="mb-2 size-7 text-zinc-300 dark:text-zinc-600" />
+            <p className="text-sm text-zinc-500">还没有连接的 AI 应用</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-zinc-900/5 rounded-2xl bg-zinc-50 dark:divide-white/5 dark:bg-white/4">
+            {connections.map((c) => (
+              <li key={c.id} className="flex items-center gap-3 px-4 py-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-950 text-white dark:from-white/14 dark:to-white/6">
+                  <Sparkles className="size-4" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-medium">{c.clientName ?? c.clientHost ?? '未命名应用'}</span>
+                    <span className="shrink-0 rounded bg-zinc-900/5 px-1 text-[10px] text-zinc-500 dark:bg-white/8 dark:text-zinc-400">
+                      {c.scopes.includes('ledger:write') ? '可记账' : '只读'}
+                    </span>
+                  </span>
+                  <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
+                    {[c.clientHost, `${relativeTime(c.lastUsedAt)}使用`].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+                <Button
+                  size="sm"
+                  variant="danger"
+                  loading={busy === c.id}
+                  icon={<Unplug className="size-3.5" />}
+                  onClick={() => disconnect(c)}
+                >
+                  断开
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
+  );
+}

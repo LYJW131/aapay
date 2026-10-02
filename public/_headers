@@ -1,0 +1,4 @@
+# 页面不允许被嵌入，防止 OAuth 授权页被点击劫持
+/*
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'

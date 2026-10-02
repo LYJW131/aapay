@@ -1,4 +1,4 @@
-import { Check, Copy, LayoutDashboard, LogIn, LogOut, Share2, UserPlus } from 'lucide-react';
+import { Check, Copy, LayoutDashboard, LogIn, LogOut, Share2, Sparkles, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import type { PublicConfig } from '../../../shared/types.ts';
@@ -9,6 +9,7 @@ import { QrCode } from '../../components/QrCode.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
+import { ConnectAI } from './ConnectAI.tsx';
 import { useLedger } from './context.tsx';
 import type { LiveStatus } from './store.ts';
 
@@ -25,6 +26,7 @@ export function joinLink(code: string) {
 export function Header({ live, config, onLeave }: { live: LiveStatus; config: PublicConfig; onLeave: () => void }) {
   const { snapshot, session } = useLedger();
   const [shareOpen, setShareOpen] = useState(false);
+  const [aiOpen, setAiOpen] = useState(false);
   const status = LIVE[live];
 
   return (
@@ -44,12 +46,22 @@ export function Header({ live, config, onLeave }: { live: LiveStatus; config: Pu
             <span className="hidden sm:inline">控制台</span>
           </Button>
         )}
+        {config.mcp && (
+          <Button size="sm" variant="ghost" icon={<Sparkles className="size-4" />} onClick={() => setAiOpen(true)} aria-label="连接 AI">
+            <span className="hidden sm:inline">连接 AI</span>
+          </Button>
+        )}
         {session.role !== 'shared' && (
           <Button size="sm" variant="secondary" icon={<Share2 className="size-4" />} onClick={() => setShareOpen(true)}>
             邀请
           </Button>
         )}
       </div>
+      {config.mcp && (
+        <Sheet open={aiOpen} onClose={() => setAiOpen(false)} title="连接 AI 助手" description="让 Claude、ChatGPT 直接记账和查账">
+          <ConnectAI />
+        </Sheet>
+      )}
       {session.role !== 'shared' && (
         <Sheet open={shareOpen} onClose={() => setShareOpen(false)} title="邀请与切换" description={snapshot.ledger.name}>
           <ShareContent config={config} onLeave={onLeave} />

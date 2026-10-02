@@ -58,7 +58,8 @@ export function LedgerPage({ session, config, onExit }: { session: SessionInfo; 
         onRemote: (message, before) => {
           const after = store.getState().snapshot;
           const text = after && describe(message, before, after);
-          if (text) toast(text, { icon: '🔔' });
+          const via = message.origin?.startsWith('mcp:') ? message.origin.slice(4) : null;
+          if (text) toast(via ? `${via} · ${text}` : text, { icon: via ? '✨' : '🔔' });
         },
       }),
   );

@@ -19,6 +19,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: target === 'node' ? { '/api': { target: nodeServer, ws: true } } : undefined,
+    proxy:
+      target === 'node'
+        ? {
+            '/api': { target: nodeServer, ws: true },
+            '^/(mcp|oauth/(token|register|revoke)|\\.well-known)(/|$)': { target: nodeServer },
+          }
+        : undefined,
   },
 });
