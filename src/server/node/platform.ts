@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import type { Context } from 'hono';
 import type { UpgradeWebSocket, WSContext } from 'hono/ws';
 import type { LiveMessage } from '../../shared/types.ts';
+import { createSigner, type AuditSigner } from '../core/audit.ts';
 import { LedgerService } from '../core/ledger.ts';
 import { RegistryService } from '../core/registry.ts';
 import { dispatch, remote } from '../core/remote.ts';
@@ -47,11 +48,12 @@ class NodeLedger implements LedgerHost {
   constructor(
     private readonly path: string,
     upgrade: UpgradeWebSocket,
+    signer: AuditSigner | null,
     private readonly onDestroy: () => void,
   ) {
     this.db = openSqlite(path);
     this.room = new Room(upgrade);
-    this.service = new LedgerService(this.db, (message) => this.room.broadcast(message));
+    this.service = new LedgerService(this.db, (message) => this.room.broadcast(message), signer);
     this.api = remote<LedgerService>((method, args) => dispatch(this.service, method, args));
   }
 
@@ -94,7 +96,8 @@ class RateLimiter {
   }
 }
 
-export function createNodePlatform(dataDir: string, upgrade: UpgradeWebSocket): Platform {
+export function createNodePlatform(dataDir: string, upgrade: UpgradeWebSocket, auditKey: Uint8Array | null = null): Platform {
+  const signer = auditKey && createSigner(auditKey);
   const ledgerDir = join(dataDir, 'ledgers');
   mkdirSync(ledgerDir, { recursive: true });
 
@@ -114,7 +117,7 @@ export function createNodePlatform(dataDir: string, upgrade: UpgradeWebSocket): 
       if (!/^[\w-]{1,64}$/.test(id)) throw new Error(`非法账本 ID：${id}`);
       let ledger = ledgers.get(id);
       if (!ledger) {
-        ledger = new NodeLedger(join(ledgerDir, `${id}.db`), upgrade, () => ledgers.delete(id));
+        ledger = new NodeLedger(join(ledgerDir, `${id}.db`), upgrade, signer, () => ledgers.delete(id));
         ledgers.set(id, ledger);
       }
       return ledger;

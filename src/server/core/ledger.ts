@@ -10,6 +10,18 @@ import type {
   Member,
   Settlement,
 } from '../../shared/types.ts';
+import {
+  AUDIT_GENESIS,
+  auditHash,
+  type AuditAction,
+  type AuditActor,
+  type AuditExpense,
+  type AuditPage,
+  type AuditPayload,
+  type AuditRecord,
+  type AuditSettlement,
+} from '../../shared/audit.ts';
+import type { AuditSigner } from './audit.ts';
 import { badRequest, conflict, notFound } from './errors.ts';
 import { newId } from './ids.ts';
 import { first, migrate, type SqlDriver } from './sql.ts';
@@ -57,7 +69,24 @@ const MIGRATIONS = [
   );
   CREATE INDEX settlements_date ON settlements (date);
   `,
+  `
+  CREATE TABLE audit_log (
+    seq INTEGER PRIMARY KEY,
+    payload TEXT NOT NULL,
+    prev TEXT NOT NULL,
+    hash TEXT NOT NULL,
+    sig TEXT
+  );
+  -- 只能追加：哈希链之外再挡住应用自身的误改
+  CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+  CREATE TRIGGER audit_log_no_delete BEFORE DELETE ON audit_log BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END;
+  `,
 ];
+
+export interface MutationContext {
+  actor: AuditActor;
+  origin?: string;
+}
 
 export const AVATARS = ['🐱', '🐶', '🦊', '🐼', '🐨', '🐯', '🦁', '🐸', '🐵', '🐧', '🦄', '🐙'];
 
@@ -97,6 +126,7 @@ export class LedgerService {
   constructor(
     private readonly db: SqlDriver,
     private readonly emit: (message: LiveMessage) => void,
+    private readonly signer: AuditSigner | null = null,
   ) {
     migrate(db, MIGRATIONS);
   }
@@ -132,8 +162,8 @@ export class LedgerService {
     };
   }
 
-  createMember(input: MemberInput, origin?: string) {
-    return this.commit(origin, () => {
+  createMember(input: MemberInput, ctx: MutationContext) {
+    return this.commit(ctx, () => {
       if (this.count('members') >= LIMITS.members) throw badRequest(`成员最多 ${LIMITS.members} 位`);
       this.assertNameFree(input.name);
       const member: Member = {
@@ -150,23 +180,33 @@ export class LedgerService {
         member.avatar,
         member.createdAt,
       );
-      return { type: 'member.saved', member };
+      return {
+        event: { type: 'member.saved', member },
+        audit: { type: 'member.create', name: member.name, avatar: member.avatar },
+      };
     });
   }
 
-  updateMember(id: string, input: MemberInput, origin?: string) {
-    return this.commit(origin, () => {
+  updateMember(id: string, input: MemberInput, ctx: MutationContext) {
+    return this.commit(ctx, () => {
       const current = this.member(id);
       this.assertNameFree(input.name, id);
       const member: Member = { ...current, name: input.name, avatar: input.avatar || current.avatar };
       this.db.run('UPDATE members SET name = ?, avatar = ? WHERE id = ?', member.name, member.avatar, id);
-      return { type: 'member.saved', member };
+      return {
+        event: { type: 'member.saved', member },
+        audit: {
+          type: 'member.update',
+          before: { name: current.name, avatar: current.avatar },
+          after: { name: member.name, avatar: member.avatar },
+        },
+      };
     });
   }
 
-  deleteMember(id: string, origin?: string) {
-    return this.commit(origin, () => {
-      this.member(id);
+  deleteMember(id: string, ctx: MutationContext) {
+    return this.commit(ctx, () => {
+      const member = this.member(id);
       const used = first(
         this.db.all(
           `SELECT 1 FROM expenses WHERE payer_id = ?
@@ -181,12 +221,12 @@ export class LedgerService {
       );
       if (used) throw conflict('该成员已有相关账目，无法删除');
       this.db.run('DELETE FROM members WHERE id = ?', id);
-      return { type: 'member.deleted', id };
+      return { event: { type: 'member.deleted', id }, audit: { type: 'member.delete', name: member.name } };
     });
   }
 
-  createExpense(input: ExpenseInput, origin?: string) {
-    return this.commit(origin, () => {
+  createExpense(input: ExpenseInput, ctx: MutationContext) {
+    return this.commit(ctx, () => {
       const now = Date.now();
       const expense = this.buildExpense(newId(), input, now, now);
       this.db.run(
@@ -200,15 +240,14 @@ export class LedgerService {
         expense.updatedAt,
       );
       this.writeShares(expense);
-      return { type: 'expense.saved', expense };
+      return { event: { type: 'expense.saved', expense }, audit: { type: 'expense.create', expense: this.auditExpense(expense) } };
     });
   }
 
-  updateExpense(id: string, input: ExpenseInput, origin?: string) {
-    return this.commit(origin, () => {
-      const current = first(this.db.all<ExpenseRow>('SELECT * FROM expenses WHERE id = ?', id));
-      if (!current) throw notFound('这笔支出不存在或已被删除');
-      const expense = this.buildExpense(id, input, current.created_at, Date.now());
+  updateExpense(id: string, input: ExpenseInput, ctx: MutationContext) {
+    return this.commit(ctx, () => {
+      const current = this.expense(id);
+      const expense = this.buildExpense(id, input, current.createdAt, Date.now());
       this.db.run(
         'UPDATE expenses SET title = ?, amount = ?, payer_id = ?, date = ?, updated_at = ? WHERE id = ?',
         expense.title,
@@ -220,21 +259,23 @@ export class LedgerService {
       );
       this.db.run('DELETE FROM expense_shares WHERE expense_id = ?', id);
       this.writeShares(expense);
-      return { type: 'expense.saved', expense };
+      return {
+        event: { type: 'expense.saved', expense },
+        audit: { type: 'expense.update', before: this.auditExpense(current), after: this.auditExpense(expense) },
+      };
     });
   }
 
-  deleteExpense(id: string, origin?: string) {
-    return this.commit(origin, () => {
-      if (!first(this.db.all('DELETE FROM expenses WHERE id = ? RETURNING id', id))) {
-        throw notFound('这笔支出不存在或已被删除');
-      }
-      return { type: 'expense.deleted', id };
+  deleteExpense(id: string, ctx: MutationContext) {
+    return this.commit(ctx, () => {
+      const expense = this.expense(id);
+      this.db.run('DELETE FROM expenses WHERE id = ?', id);
+      return { event: { type: 'expense.deleted', id }, audit: { type: 'expense.delete', expense: this.auditExpense(expense) } };
     });
   }
 
-  createSettlement(input: SettlementInput, origin?: string) {
-    return this.commit(origin, () => {
+  createSettlement(input: SettlementInput, ctx: MutationContext) {
+    return this.commit(ctx, () => {
       this.member(input.fromId);
       this.member(input.toId);
       const settlement: Settlement = {
@@ -256,16 +297,22 @@ export class LedgerService {
         settlement.note,
         settlement.createdAt,
       );
-      return { type: 'settlement.saved', settlement };
+      return {
+        event: { type: 'settlement.saved', settlement },
+        audit: { type: 'settlement.create', settlement: this.auditSettlement(settlement) },
+      };
     });
   }
 
-  deleteSettlement(id: string, origin?: string) {
-    return this.commit(origin, () => {
-      if (!first(this.db.all('DELETE FROM settlements WHERE id = ? RETURNING id', id))) {
-        throw notFound('这笔还款不存在或已被删除');
-      }
-      return { type: 'settlement.deleted', id };
+  deleteSettlement(id: string, ctx: MutationContext) {
+    return this.commit(ctx, () => {
+      const row = first(this.db.all<SettlementRow>('SELECT * FROM settlements WHERE id = ?', id));
+      if (!row) throw notFound('这笔还款不存在或已被删除');
+      this.db.run('DELETE FROM settlements WHERE id = ?', id);
+      return {
+        event: { type: 'settlement.deleted', id },
+        audit: { type: 'settlement.delete', settlement: this.auditSettlement(toSettlement(row)) },
+      };
     });
   }
 
@@ -274,16 +321,72 @@ export class LedgerService {
     this.emit({ event, at: Date.now() });
   }
 
-  private commit(origin: string | undefined, mutate: () => LedgerEvent): LiveMessage {
+  record(actor: AuditActor, action: AuditAction): AuditRecord {
+    const audit = this.db.transaction(() => this.appendAudit(actor, action));
+    this.emit({ event: { type: 'audit.appended' }, audit, at: Date.now() });
+    return audit;
+  }
+
+  auditLog(query: { before?: number; after?: number; limit: number }): AuditPage {
+    const limit = Math.min(Math.max(query.limit, 1), 500);
+    const records =
+      query.after !== undefined
+        ? this.db.all<AuditRecord>('SELECT * FROM audit_log WHERE seq > ? ORDER BY seq LIMIT ?', query.after, limit)
+        : this.db.all<AuditRecord>('SELECT * FROM audit_log WHERE seq < ? ORDER BY seq DESC LIMIT ?', query.before ?? Number.MAX_SAFE_INTEGER, limit);
+    return { records, publicKey: this.signer?.publicKey ?? null, head: this.auditHead() };
+  }
+
+  private commit(ctx: MutationContext, mutate: () => { event: LedgerEvent; audit: AuditAction }): LiveMessage {
     const message = this.db.transaction(() => {
-      const event = mutate();
+      const { event, audit } = mutate();
       const { value } = first(
         this.db.all<{ value: number }>("UPDATE meta SET value = value + 1 WHERE key = 'version' RETURNING value"),
       )!;
-      return { v: value, origin, event, at: Date.now() } satisfies LiveMessage;
+      return { v: value, origin: ctx.origin, event, at: Date.now(), audit: this.appendAudit(ctx.actor, audit) } satisfies LiveMessage;
     });
     this.emit(message);
     return message;
+  }
+
+  private auditHead() {
+    return first(this.db.all<{ seq: number; hash: string }>('SELECT seq, hash FROM audit_log ORDER BY seq DESC LIMIT 1')) ?? null;
+  }
+
+  private appendAudit(actor: AuditActor, action: AuditAction): AuditRecord {
+    const head = this.auditHead();
+    const seq = (head?.seq ?? 0) + 1;
+    const prev = head?.hash ?? AUDIT_GENESIS;
+    const payload = JSON.stringify({ seq, at: Date.now(), actor, action } satisfies AuditPayload);
+    const hash = auditHash(prev, payload);
+    const record: AuditRecord = { seq, payload, prev, hash, sig: this.signer?.sign(hash) ?? null };
+    this.db.run('INSERT INTO audit_log (seq, payload, prev, hash, sig) VALUES (?, ?, ?, ?, ?)', seq, payload, prev, hash, record.sig);
+    return record;
+  }
+
+  private auditExpense(e: Expense): AuditExpense {
+    const name = (id: string) => this.memberName(id);
+    return {
+      id: e.id,
+      title: e.title,
+      amount: e.amount,
+      payer: name(e.payerId),
+      participants: e.shares.map((s) => name(s.memberId)),
+      date: e.date,
+    };
+  }
+
+  private auditSettlement(s: Settlement): AuditSettlement {
+    return { id: s.id, from: this.memberName(s.fromId), to: this.memberName(s.toId), amount: s.amount, date: s.date, note: s.note };
+  }
+
+  private memberName(id: string) {
+    return first(this.db.all<{ name: string }>('SELECT name FROM members WHERE id = ?', id))?.name ?? '（已删除成员）';
+  }
+
+  private expense(id: string): Expense {
+    const found = this.expenses().find((e) => e.id === id);
+    if (!found) throw notFound('这笔支出不存在或已被删除');
+    return found;
   }
 
   private version() {

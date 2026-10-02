@@ -1,7 +1,9 @@
-import { Check, Copy, LogIn, LogOut, Share2, ShieldCheck, Sparkles, UserPlus } from 'lucide-react';
-import { useState, type FormEvent } from 'react';
+import { Check, Copy, History, LogIn, LogOut, ShieldCheck, UserPlus } from 'lucide-react';
+import { motion } from 'motion/react';
+import { useState, useSyncExternalStore, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import type { PublicConfig, SessionInfo } from '../../../shared/types.ts';
+import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { LogoMark } from '../../components/Logo.tsx';
@@ -9,6 +11,7 @@ import { QrCode } from '../../components/QrCode.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
+import { ActivityPanel } from './Activity.tsx';
 import { ConnectAI } from './ConnectAI.tsx';
 import { useLedger } from './context.tsx';
 import type { LiveStatus } from './store.ts';
@@ -23,6 +26,8 @@ export function joinLink(code: string) {
   return `${window.location.origin}/join#${encodeURIComponent(code)}`;
 }
 
+type Tab = 'activity' | 'share' | 'ai';
+
 export function Header({
   live,
   config,
@@ -36,10 +41,21 @@ export function Header({
   onSwitch: (session: SessionInfo) => Promise<void>;
   onLeave: () => void;
 }) {
-  const { snapshot, session } = useLedger();
-  const [shareOpen, setShareOpen] = useState(false);
-  const [aiOpen, setAiOpen] = useState(false);
+  const { snapshot, session, activity } = useLedger();
+  const { unread } = useSyncExternalStore(activity.subscribe, activity.getState);
+  const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>('activity');
   const status = LIVE[live];
+
+  const tabs: { key: Tab; label: string }[] = [{ key: 'activity', label: '动态' }];
+  if (session.role !== 'shared') tabs.push({ key: 'share', label: '邀请' });
+  if (config.mcp) tabs.push({ key: 'ai', label: '连接 AI' });
+
+  function show() {
+    setTab('activity');
+    setOpen(true);
+    void activity.sync();
+  }
 
   return (
     <header className="sticky top-0 z-30 border-b border-zinc-900/5 bg-canvas/80 backdrop-blur-xl dark:border-white/5">
@@ -53,27 +69,45 @@ export function Header({
             {session.role === 'admin' && <span className="rounded bg-brand-500/12 px-1 text-brand-600 dark:text-brand-300">管理员</span>}
           </p>
         </div>
-        {config.mcp && (
-          <Button size="sm" variant="ghost" icon={<Sparkles className="size-4" />} onClick={() => setAiOpen(true)} aria-label="连接 AI">
-            <span className="hidden sm:inline">连接 AI</span>
-          </Button>
-        )}
-        {session.role !== 'shared' && (
-          <Button size="sm" variant="secondary" icon={<Share2 className="size-4" />} onClick={() => setShareOpen(true)}>
-            邀请
-          </Button>
-        )}
+        <Button size="sm" variant="secondary" className="relative" icon={<History className="size-4" />} onClick={show} aria-label="动态、邀请与连接 AI">
+          动态
+          {unread && <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-rose-500 ring-2 ring-canvas" />}
+        </Button>
       </div>
-      {config.mcp && (
-        <Sheet open={aiOpen} onClose={() => setAiOpen(false)} title="连接 AI 助手" description="让 Claude、ChatGPT 直接记账和查账">
-          <ConnectAI admin={admin} />
-        </Sheet>
-      )}
-      {session.role !== 'shared' && (
-        <Sheet open={shareOpen} onClose={() => setShareOpen(false)} title="邀请与切换" description={snapshot.ledger.name}>
-          <ShareContent config={config} onSwitch={onSwitch} onLeave={onLeave} />
-        </Sheet>
-      )}
+      <Sheet open={open} onClose={() => setOpen(false)} title={snapshot.ledger.name}>
+        {tabs.length > 1 && (
+          <div className="sticky top-0 z-10 -mx-5 bg-surface px-5 pb-4">
+            <div role="tablist" className="flex rounded-2xl bg-zinc-100 p-1 dark:bg-white/6">
+              {tabs.map((t) => (
+                <button
+                  key={t.key}
+                  role="tab"
+                  aria-selected={tab === t.key}
+                  onClick={() => setTab(t.key)}
+                  className={cn(
+                    'relative h-8 flex-1 rounded-xl text-[13px] font-medium transition-colors',
+                    tab === t.key ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200',
+                  )}
+                >
+                  {tab === t.key && (
+                    <motion.span
+                      layoutId="header-tab"
+                      className="absolute inset-0 rounded-xl bg-white shadow-sm ring-1 ring-zinc-900/5 dark:bg-white/12 dark:ring-white/5"
+                      transition={{ type: 'spring', damping: 32, stiffness: 420 }}
+                    />
+                  )}
+                  <span className="relative">{t.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <AutoHeight>
+          {tab === 'activity' && <ActivityPanel />}
+          {tab === 'share' && <ShareContent config={config} onSwitch={onSwitch} onLeave={onLeave} />}
+          {tab === 'ai' && <ConnectAI admin={admin} />}
+        </AutoHeight>
+      </Sheet>
     </header>
   );
 }

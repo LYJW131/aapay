@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
 import { getCookie } from 'hono/cookie';
+import type { AuditActor } from '../shared/audit.ts';
 import type { LedgerInfo, SessionInfo } from '../shared/types.ts';
 import type { AppEnv } from './app.ts';
 import { SESSION_COOKIE } from './auth/cookies.ts';
@@ -16,7 +17,7 @@ export async function findSession(c: Context<AppEnv>): Promise<SessionInfo | nul
       sharedLedger = undefined;
       throw err;
     });
-    return { ledger: await sharedLedger, role: 'shared', passphrase: null, expiresAt: null };
+    return { ledger: await sharedLedger, role: 'shared', passphrase: null, subject: null, expiresAt: null };
   }
   const token = getCookie(c, SESSION_COOKIE);
   return token ? platform.registry.resolveLedgerSession(await sha256(token)) : null;
@@ -27,3 +28,9 @@ export const clientIp = (c: Context) =>
   c.req.header('x-real-ip') ??
   c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
   'local';
+
+export function actorOf(session: SessionInfo): AuditActor {
+  if (session.role === 'shared') return { kind: 'shared' };
+  if (session.role === 'admin') return { kind: 'admin', name: session.subject ?? 'admin' };
+  return { kind: 'member', passphrase: session.passphrase };
+}

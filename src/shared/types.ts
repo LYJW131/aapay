@@ -1,3 +1,4 @@
+import type { AuditRecord } from './audit.ts';
 import type { Cents } from './money.ts';
 
 // 记账日期由客户端按本地时区决定
@@ -69,6 +70,7 @@ export type LedgerEvent =
   | { type: 'settlement.saved'; settlement: Settlement }
   | { type: 'settlement.deleted'; id: string }
   | { type: 'ledger.renamed'; name: string }
+  | { type: 'audit.appended' }
   | { type: 'ledger.closed'; reason: 'deleted' | 'revoked' };
 
 export interface LiveMessage {
@@ -76,6 +78,7 @@ export interface LiveMessage {
   origin?: string;
   event: LedgerEvent;
   at: Timestamp;
+  audit?: AuditRecord;
 }
 
 export type SessionRole = 'member' | 'admin' | 'shared';
@@ -84,6 +87,7 @@ export interface SessionInfo {
   ledger: LedgerInfo;
   role: SessionRole;
   passphrase: string | null;
+  subject: string | null;
   expiresAt: Timestamp | null;
 }
 

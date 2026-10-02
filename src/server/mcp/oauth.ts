@@ -10,7 +10,7 @@ import type { AppEnv } from '../app.ts';
 import { SESSION_COOKIE } from '../auth/cookies.ts';
 import { AppError, notFound } from '../core/errors.ts';
 import { newId, newToken, sha256 } from '../core/ids.ts';
-import { OAUTH_TTL, type GrantSource, type OAuthClient } from '../core/registry.ts';
+import { OAUTH_TTL, type GrantSource, type IssuedGrant, type NewConnection, type OAuthClient } from '../core/registry.ts';
 import { clientIp, findSession } from '../session.ts';
 import { body } from '../validate.ts';
 
@@ -428,7 +428,8 @@ export const oauthRoutes = new Hono<AppEnv>()
     const refresh = newToken();
     const tokens = { accessHash: await sha256(access), refreshHash: await sha256(refresh) };
 
-    let issued;
+    let issued: IssuedGrant | null;
+    let connection: NewConnection | null = null;
     switch (form.get('grant_type')) {
       case 'authorization_code': {
         const code = form.get('code');
@@ -436,7 +437,7 @@ export const oauthRoutes = new Hono<AppEnv>()
         if (!code || !verifier) throw new OAuthError('invalid_request', 'code and code_verifier are required');
         if (!/^[A-Za-z0-9._~-]{43,128}$/.test(verifier)) throw new OAuthError('invalid_grant', 'malformed code_verifier');
         const resource = form.get('resource');
-        issued = await registry.exchangeCode(
+        const exchanged = await registry.exchangeCode(
           {
             codeHash: await sha256(code),
             clientId: client.id,
@@ -446,6 +447,8 @@ export const oauthRoutes = new Hono<AppEnv>()
           },
           tokens,
         );
+        issued = exchanged;
+        connection = exchanged?.connection ?? null;
         break;
       }
       case 'refresh_token': {
@@ -458,6 +461,10 @@ export const oauthRoutes = new Hono<AppEnv>()
         throw new OAuthError('unsupported_grant_type', 'supported: authorization_code, refresh_token');
     }
     if (!issued) throw new OAuthError('invalid_grant', 'the grant is invalid, expired or revoked');
+    if (connection) {
+      const { ledgerId, authorizer, client, host, scopes } = connection;
+      await c.var.platform.ledger(ledgerId).api.record(authorizer, { type: 'connection.create', client, host, scopes });
+    }
 
     return c.json(
       {
@@ -473,7 +480,11 @@ export const oauthRoutes = new Hono<AppEnv>()
   })
   .post('/revoke', async (c) => {
     const token = (await readForm(c)).get('token');
-    if (token) await c.var.platform.registry.revokeToken(await sha256(token));
+    const revoked = token ? await c.var.platform.registry.revokeToken(await sha256(token)) : null;
+    if (revoked) {
+      const { ledgerId, client, host, verified } = revoked;
+      await c.var.platform.ledger(ledgerId).api.record({ kind: 'ai', client, host, verified }, { type: 'connection.revoke', client, host });
+    }
     // RFC 7009：无论令牌是否存在都返回 200
     return c.body(null, 200);
   });

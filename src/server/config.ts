@@ -11,6 +11,7 @@ export interface Config {
   mcp: boolean;
   publicUrl: string | null;
   timezone: string;
+  auditKey: Uint8Array | null;
 }
 
 const MODES = ['isolated', 'shared'] as const;
@@ -18,6 +19,18 @@ const ADMIN_MODES = ['access', 'password', 'proxy', 'none', 'disabled'] as const
 const SWITCH = ['enabled', 'disabled'] as const;
 
 const cache = new WeakMap<object, Config>();
+
+function decodeKey(value: string) {
+  if (!value) return null;
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+  } catch {
+    bytes = new Uint8Array();
+  }
+  if (bytes.length !== 32) throw new Error('配置 AUDIT_SIGNING_KEY 无效，应为 32 字节的 base64url 字符串');
+  return bytes;
+}
 
 export function loadConfig(env: object): Config {
   const cached = cache.get(env);
@@ -45,6 +58,7 @@ export function loadConfig(env: object): Config {
     mcp: pick('MCP', SWITCH, 'enabled') === 'enabled',
     publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
     timezone: str('TIMEZONE') || 'Asia/Shanghai',
+    auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
   };
 
   if (config.mode === 'shared') config.adminAuth = 'disabled';

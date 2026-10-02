@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { byNewest } from '../../shared/ledger.ts';
 import { MAX_AMOUNT, type Cents } from '../../shared/money.ts';
+import { actorLabel, describeAudit } from '../../shared/audit-text.ts';
+import { parseAudit, type AuditActor } from '../../shared/audit.ts';
 import { randomPassphrase } from '../../shared/passphrase.ts';
 import {
   expenseInput,
@@ -25,7 +27,7 @@ import type {
 } from '../../shared/types.ts';
 import { adminActions } from '../admin.ts';
 import { AppError, badRequest, notFound } from '../core/errors.ts';
-import type { LedgerService } from '../core/ledger.ts';
+import type { LedgerService, MutationContext } from '../core/ledger.ts';
 import type { GrantRole } from '../core/registry.ts';
 import type { Remote } from '../core/remote.ts';
 import type { Platform } from '../platform.ts';
@@ -34,8 +36,7 @@ export interface ToolContext {
   ledger: Remote<LedgerService>;
   info: LedgerInfo;
   scopes: ReadonlySet<McpScope>;
-  // 网页端按 mcp: 前缀识别并提示是哪个 AI 应用改的
-  origin: string;
+  mutation: MutationContext;
   today: string;
 }
 
@@ -193,6 +194,29 @@ const listTransactions = tool({
   },
 });
 
+const listActivity = tool({
+  name: 'list_activity',
+  title: '查看操作记录',
+  description: '按时间倒序查看账本的操作审计日志：谁在什么时候记账、修改、删除、还款，以及口令和 AI 连接的变化。日志只能追加、带哈希链与签名，不可篡改。',
+  input: z.object({
+    limit: z.number().int().min(1).max(100).default(30).describe('最多返回条数'),
+    before: z.number().int().positive().optional().describe('只看序号小于此值的记录，用于向前翻页'),
+  }),
+  write: false,
+  async run(args, ctx) {
+    const page = await ctx.ledger.auditLog({ before: args.before, limit: args.limit });
+    return {
+      total: page.head?.seq ?? 0,
+      signed: page.publicKey !== null,
+      entries: page.records.map((r) => {
+        const { seq, at, actor, action } = parseAudit(r);
+        const { summary, details } = describeAudit(action);
+        return { seq, at: new Date(at).toISOString(), actor: actorLabel(actor), summary, details };
+      }),
+    };
+  },
+});
+
 const addExpense = tool({
   name: 'add_expense',
   title: '记一笔支出',
@@ -218,7 +242,7 @@ const addExpense = tool({
         : data.members.map((m) => m.id),
       date: args.date ?? ctx.today,
     } satisfies ExpenseInput);
-    const message = await ctx.ledger.createExpense(input, ctx.origin);
+    const message = await ctx.ledger.createExpense(input, ctx.mutation);
     return { created: viewer(data).expense(saved(message, 'expense')) };
   },
 });
@@ -250,7 +274,7 @@ const updateExpense = tool({
         : current.shares.map((s) => s.memberId),
       date: args.date ?? current.date,
     } satisfies ExpenseInput);
-    const message = await ctx.ledger.updateExpense(args.id, input, ctx.origin);
+    const message = await ctx.ledger.updateExpense(args.id, input, ctx.mutation);
     const v = viewer(data);
     return { before: v.expense(current), after: v.expense(saved(message, 'expense')) };
   },
@@ -268,7 +292,7 @@ const deleteExpense = tool({
     const data = await ctx.ledger.snapshot();
     const current = data.expenses.find((e) => e.id === args.id);
     if (!current) throw notFound('这笔支出不存在或已被删除');
-    await ctx.ledger.deleteExpense(args.id, ctx.origin);
+    await ctx.ledger.deleteExpense(args.id, ctx.mutation);
     return { deleted: viewer(data).expense(current) };
   },
 });
@@ -283,7 +307,7 @@ const addMember = tool({
   }),
   write: true,
   async run(args, ctx) {
-    const message = await ctx.ledger.createMember(validate(memberInput, args), ctx.origin);
+    const message = await ctx.ledger.createMember(validate(memberInput, args), ctx.mutation);
     const m = saved(message, 'member');
     return { created: { id: m.id, name: m.name, avatar: m.avatar } };
   },
@@ -304,7 +328,7 @@ const updateMember = tool({
     const data = await ctx.ledger.snapshot();
     const current = resolveMember(data.members, args.member);
     const input = validate(memberInput, { name: args.name ?? current.name, avatar: args.avatar ?? current.avatar });
-    const m = saved(await ctx.ledger.updateMember(current.id, input, ctx.origin), 'member');
+    const m = saved(await ctx.ledger.updateMember(current.id, input, ctx.mutation), 'member');
     return { updated: { id: m.id, name: m.name, avatar: m.avatar } };
   },
 });
@@ -331,7 +355,7 @@ const recordSettlement = tool({
       date: args.date ?? ctx.today,
       note: args.note ?? null,
     });
-    const message = await ctx.ledger.createSettlement(input, ctx.origin);
+    const message = await ctx.ledger.createSettlement(input, ctx.mutation);
     return { created: viewer(data).settlement(saved(message, 'settlement')) };
   },
 });
@@ -348,7 +372,7 @@ const deleteSettlement = tool({
     const data = await ctx.ledger.snapshot();
     const current = data.settlements.find((s) => s.id === args.id);
     if (!current) throw notFound('这笔还款不存在或已被删除');
-    await ctx.ledger.deleteSettlement(args.id, ctx.origin);
+    await ctx.ledger.deleteSettlement(args.id, ctx.mutation);
     return { deleted: viewer(data).settlement(current) };
   },
 });
@@ -356,6 +380,7 @@ const deleteSettlement = tool({
 const LEDGER_TOOLS = [
   getLedger,
   listTransactions,
+  listActivity,
   addExpense,
   updateExpense,
   deleteExpense,
@@ -369,6 +394,8 @@ export interface McpSession {
   role: GrantRole;
   ledger: LedgerInfo | null;
   scopes: ReadonlySet<McpScope>;
+  actor: AuditActor;
+  // 网页端按 mcp: 前缀识别并提示是哪个 AI 应用改的
   origin: string;
   today: string;
   baseUrl: string;
@@ -420,7 +447,7 @@ async function createPassphrase(ctx: AdminContext, ledgerId: string, code: strin
     validFrom: now,
     validUntil: days === undefined ? null : now + days * 86_400_000,
   });
-  return passphraseView(await ctx.session.platform.registry.createPassphrase(ledgerId, input), ctx.session.baseUrl);
+  return passphraseView(await ctx.actions.createPassphrase(ledgerId, input), ctx.session.baseUrl);
 }
 
 const listLedgers = adminTool({
@@ -460,7 +487,7 @@ const createLedger = adminTool({
   write: true,
   async run(args, ctx) {
     const { name } = validate(ledgerInput, { name: args.name });
-    const ledger = await ctx.session.platform.registry.createLedger(name);
+    const ledger = await ctx.actions.createLedger(name);
     const passphrase = args.create_passphrase ? await createPassphrase(ctx, ledger.id, args.passphrase, args.valid_days) : null;
     return { created: { id: ledger.id, name: ledger.name }, passphrase };
   },
@@ -602,14 +629,14 @@ export async function callTool(name: string, args: unknown, session: McpSession)
   try {
     let result: object;
     if (entry.kind === 'admin') {
-      result = await entry.tool.run(parsed.data, { session, actions: adminActions(session.platform) });
+      result = await entry.tool.run(parsed.data, { session, actions: adminActions(session.platform, session.actor) });
     } else {
       const info = session.role === 'admin' ? await resolveLedger(session.platform, (parsed.data as { ledger: string }).ledger) : session.ledger!;
       result = await entry.tool.run(parsed.data, {
         ledger: session.platform.ledger(info.id).api,
         info,
         scopes: session.scopes,
-        origin: session.origin,
+        mutation: { actor: session.actor, origin: session.origin },
         today: session.today,
       });
     }

@@ -21,7 +21,7 @@ const app = createApp(async (c, next) => {
   await next();
 });
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
-platform = createNodePlatform(dataDir, upgradeWebSocket);
+platform = createNodePlatform(dataDir, upgradeWebSocket, config.auditKey);
 
 // npm run dev:node 时前端由 Vite 提供，这里没有构建产物
 if (existsSync(clientDir)) {

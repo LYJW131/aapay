@@ -3,6 +3,7 @@ import type { Context } from 'hono';
 import type { LiveMessage, RegistryEvent } from '../../shared/types.ts';
 import { createApp } from '../app.ts';
 import { loadConfig } from '../config.ts';
+import { createSigner } from '../core/audit.ts';
 import { LedgerService } from '../core/ledger.ts';
 import { RegistryService } from '../core/registry.ts';
 import { dispatch, remote } from '../core/remote.ts';
@@ -63,7 +64,12 @@ export class LedgerRoom extends LiveRoom {
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
-    this.service = new LedgerService(durableSql(ctx.storage), (message: LiveMessage) => this.broadcast(message));
+    const { auditKey } = loadConfig(env);
+    this.service = new LedgerService(
+      durableSql(ctx.storage),
+      (message: LiveMessage) => this.broadcast(message),
+      auditKey && createSigner(auditKey),
+    );
   }
 
   invoke(method: string, args: unknown[]) {

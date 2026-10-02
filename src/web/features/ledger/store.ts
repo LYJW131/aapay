@@ -1,5 +1,6 @@
 import type { ClientResponse } from 'hono/client';
 import { applyEvent } from '../../../shared/ledger.ts';
+import type { AuditRecord } from '../../../shared/audit.ts';
 import type { LiveMessage, Snapshot } from '../../../shared/types.ts';
 import { api, ApiError, call, CLIENT_ID, liveUrl } from '../../lib/api.ts';
 
@@ -15,6 +16,7 @@ export interface LedgerState {
 interface Hooks {
   onClosed(reason: CloseReason): void;
   onRemote(message: LiveMessage, before: Snapshot): void;
+  onAudit(record: AuditRecord, own: boolean): void;
 }
 
 export class LedgerStore {
@@ -90,6 +92,7 @@ export class LedgerStore {
   private receive(message: LiveMessage) {
     const snapshot = this.state.snapshot;
     const { event } = message;
+    if (message.audit) this.hooks.onAudit(message.audit, message.origin === CLIENT_ID);
     if (event.type === 'ledger.closed') return this.close(event.reason);
     if (!snapshot) return;
     if (event.type === 'ledger.renamed') {

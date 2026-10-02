@@ -234,11 +234,11 @@ describe('OAuth + MCP flow', () => {
 
     const tools = (await s.rpc(conn.access_token, 'tools/list')).data.result.tools;
     expect(tools.map((t: { name: string }) => t.name)).toEqual([
-      'get_ledger', 'list_transactions', 'add_expense', 'update_expense', 'delete_expense',
+      'get_ledger', 'list_transactions', 'list_activity', 'add_expense', 'update_expense', 'delete_expense',
       'add_member', 'update_member', 'record_settlement', 'delete_settlement',
     ]);
-    expect(tools[2].inputSchema).toMatchObject({ type: 'object', required: ['title', 'amount', 'payer'] });
-    expect(tools[4].annotations).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+    expect(tools.find((t: { name: string }) => t.name === 'add_expense').inputSchema).toMatchObject({ type: 'object', required: ['title', 'amount', 'payer'] });
+    expect(tools.find((t: { name: string }) => t.name === 'delete_expense').annotations).toMatchObject({ destructiveHint: true, readOnlyHint: false });
 
     await s.tool(conn.access_token, 'add_member', { name: '阿杰' });
     await s.tool(conn.access_token, 'add_member', { name: '小雨' });
@@ -320,7 +320,7 @@ describe('OAuth + MCP flow', () => {
     expect(list.map((c: { scopes: string[] }) => c.scopes.length).sort()).toEqual([1, 2]);
 
     const readOnly = (await s.rpc(b.access_token, 'tools/list')).data.result.tools;
-    expect(readOnly.map((t: { name: string }) => t.name)).toEqual(['get_ledger', 'list_transactions']);
+    expect(readOnly.map((t: { name: string }) => t.name)).toEqual(['get_ledger', 'list_transactions', 'list_activity']);
     expect((await s.tool(b.access_token, 'add_member', { name: '某人' })).isError).toBe(true);
 
     const target = list.find((c: { scopes: string[] }) => c.scopes.length === 1);
@@ -574,7 +574,7 @@ describe('admin connections', () => {
     const readOnly = await s.connectAdmin({}, false);
     const token = readOnly.token;
     const tools = (await s.rpc(token, 'tools/list')).data.result.tools.map((t: { name: string }) => t.name);
-    expect(tools).toEqual(['list_ledgers', 'list_passphrases', 'get_ledger', 'list_transactions']);
+    expect(tools).toEqual(['list_ledgers', 'list_passphrases', 'get_ledger', 'list_transactions', 'list_activity']);
     expect((await s.tool(token, 'create_ledger', { name: 'x' })).isError).toBe(true);
   });
 

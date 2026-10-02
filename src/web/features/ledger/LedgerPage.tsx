@@ -9,6 +9,7 @@ import { Sheet } from '../../components/Sheet.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { useMediaQuery, useMinuteTick, usePersistentState } from '../../lib/hooks.ts';
 import { adminModules } from '../admin/preload.ts';
+import { ActivityLog } from './activity.ts';
 import { LedgerContext, type LedgerContextValue } from './context.tsx';
 import { ExpenseForm } from './ExpenseForm.tsx';
 import { Header } from './Header.tsx';
@@ -67,9 +68,12 @@ export function LedgerPage({
   onSwitch: (session: SessionInfo) => Promise<void>;
   onExit: (message?: string) => void;
 }) {
+  const prefix = `aapay:${session.ledger.id}:`;
+  const [activity] = useState(() => new ActivityLog(prefix));
   const [store] = useState(
     () =>
       new LedgerStore({
+        onAudit: (record, own) => activity.receive(record, own),
         onClosed: (reason) => onExit(CLOSE_MESSAGES[reason]),
         onRemote: (message, before) => {
           const after = store.getState().snapshot;
@@ -87,10 +91,13 @@ export function LedgerPage({
 
   useEffect(() => {
     store.start();
-    return () => store.stop();
-  }, [store]);
+    const prefetch = setTimeout(() => void activity.sync(), 800);
+    return () => {
+      clearTimeout(prefetch);
+      store.stop();
+    };
+  }, [store, activity]);
 
-  const prefix = `aapay:${session.ledger.id}:`;
   const [range, setRange] = usePersistentState<RangeFilter>(`${prefix}range`, { key: 'all' });
   const [memberId, setMemberId] = usePersistentState<string | null>(`${prefix}member`, null);
 
@@ -101,10 +108,11 @@ export function LedgerPage({
         snapshot,
         session,
         store,
+        activity,
         memberById: new Map(snapshot.members.map((m) => [m.id, m])),
         key: (name) => prefix + name,
       },
-    [snapshot, session, store, prefix],
+    [snapshot, session, store, activity, prefix],
   );
 
   const filtered = useMemo(() => {

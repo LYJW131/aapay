@@ -2,6 +2,7 @@ import { Hono, type Context, type MiddlewareHandler } from 'hono';
 import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
+import { z } from 'zod';
 import {
   expenseInput,
   joinInput,
@@ -29,8 +30,11 @@ import {
 } from './mcp/oauth.ts';
 import { mcpRoutes } from './mcp/server.ts';
 import type { Platform } from './platform.ts';
-import { clientIp, findSession } from './session.ts';
-import { body } from './validate.ts';
+import { actorOf, clientIp, findSession } from './session.ts';
+import { body, query } from './validate.ts';
+
+const cursor = z.coerce.number().int().nonnegative().optional();
+const auditQuery = z.object({ before: cursor, after: cursor, limit: z.coerce.number().int().min(1).max(500).default(50) });
 
 export type AppEnv = {
   Variables: {
@@ -41,7 +45,7 @@ export type AppEnv = {
   };
 };
 
-const originOf = (c: Context) => c.req.header('x-client-id')?.slice(0, 64);
+const mutation = (c: Context<AppEnv>) => ({ actor: actorOf(c.var.session), origin: c.req.header('x-client-id')?.slice(0, 64) });
 
 function requireUpgrade(c: Context) {
   if (c.req.header('upgrade')?.toLowerCase() !== 'websocket') {
@@ -55,6 +59,8 @@ const requireSession = createMiddleware<AppEnv>(async (c, next) => {
   c.set('session', session);
   await next();
 });
+
+const admin = (c: Context<AppEnv>) => adminActions(c.var.platform, { kind: 'admin', name: c.var.admin.name });
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   const admin = await authenticateAdmin(c, c.var.config, c.var.platform);
@@ -77,44 +83,49 @@ const ledgerRoutes = new Hono<AppEnv>()
     return c.var.platform.ledger(ledger.id).connect(c, tag);
   })
   .post('/members', body(memberInput), async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.createMember(c.req.valid('json'), originOf(c))),
+    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.createMember(c.req.valid('json'), mutation(c))),
   )
   .patch('/members/:id', body(memberInput), async (c) =>
     c.json(
       await c.var.platform
         .ledger(c.var.session.ledger.id)
-        .api.updateMember(c.req.param('id'), c.req.valid('json'), originOf(c)),
+        .api.updateMember(c.req.param('id'), c.req.valid('json'), mutation(c)),
     ),
   )
   .delete('/members/:id', async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.deleteMember(c.req.param('id'), originOf(c))),
+    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.deleteMember(c.req.param('id'), mutation(c))),
   )
   .post('/expenses', body(expenseInput), async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.createExpense(c.req.valid('json'), originOf(c))),
+    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.createExpense(c.req.valid('json'), mutation(c))),
   )
   .patch('/expenses/:id', body(expenseInput), async (c) =>
     c.json(
       await c.var.platform
         .ledger(c.var.session.ledger.id)
-        .api.updateExpense(c.req.param('id'), c.req.valid('json'), originOf(c)),
+        .api.updateExpense(c.req.param('id'), c.req.valid('json'), mutation(c)),
     ),
   )
   .delete('/expenses/:id', async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.deleteExpense(c.req.param('id'), originOf(c))),
+    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.deleteExpense(c.req.param('id'), mutation(c))),
   )
   .post('/settlements', body(settlementInput), async (c) =>
     c.json(
-      await c.var.platform.ledger(c.var.session.ledger.id).api.createSettlement(c.req.valid('json'), originOf(c)),
+      await c.var.platform.ledger(c.var.session.ledger.id).api.createSettlement(c.req.valid('json'), mutation(c)),
     ),
   )
   .delete('/settlements/:id', async (c) =>
     c.json(
-      await c.var.platform.ledger(c.var.session.ledger.id).api.deleteSettlement(c.req.param('id'), originOf(c)),
+      await c.var.platform.ledger(c.var.session.ledger.id).api.deleteSettlement(c.req.param('id'), mutation(c)),
     ),
+  )
+  .get('/audit', query(auditQuery), async (c) =>
+    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.auditLog(c.req.valid('query'))),
   )
   .get('/connections', async (c) => c.json(await c.var.platform.registry.listConnections(c.var.session.ledger.id)))
   .delete('/connections/:id', async (c) => {
-    await c.var.platform.registry.revokeConnection(c.req.param('id'), c.var.session.ledger.id);
+    const { platform, session } = c.var;
+    const revoked = await platform.registry.revokeConnection(c.req.param('id'), session.ledger.id);
+    await platform.ledger(session.ledger.id).api.record(actorOf(session), { type: 'connection.revoke', client: revoked.client, host: revoked.host });
     return c.json({ ok: true });
   });
 
@@ -146,21 +157,21 @@ const adminRoutes = new Hono<AppEnv>()
     requireUpgrade(c);
     return c.var.platform.connectConsole(c);
   })
-  .get('/ledgers', async (c) => c.json((await adminActions(c.var.platform).listLedgers()) satisfies LedgerOverview[]))
+  .get('/ledgers', async (c) => c.json((await admin(c).listLedgers()) satisfies LedgerOverview[]))
   .post('/ledgers', body(ledgerInput), async (c) =>
-    c.json(await c.var.platform.registry.createLedger(c.req.valid('json').name)),
+    c.json(await admin(c).createLedger(c.req.valid('json').name)),
   )
   .patch('/ledgers/:id', body(ledgerInput), async (c) =>
-    c.json(await adminActions(c.var.platform).renameLedger(c.req.param('id'), c.req.valid('json').name)),
+    c.json(await admin(c).renameLedger(c.req.param('id'), c.req.valid('json').name)),
   )
-  .delete('/ledgers/:id', async (c) => c.json(await adminActions(c.var.platform).deleteLedger(c.req.param('id'))))
+  .delete('/ledgers/:id', async (c) => c.json(await admin(c).deleteLedger(c.req.param('id'))))
   .get('/ledgers/:id/passphrases', async (c) =>
     c.json(await c.var.platform.registry.listPassphrases(c.req.param('id'))),
   )
   .post('/ledgers/:id/passphrases', body(passphraseInput), async (c) =>
-    c.json(await c.var.platform.registry.createPassphrase(c.req.param('id'), c.req.valid('json'))),
+    c.json(await admin(c).createPassphrase(c.req.param('id'), c.req.valid('json'))),
   )
-  .delete('/passphrases/:id', async (c) => c.json(await adminActions(c.var.platform).revokePassphrase(c.req.param('id'))))
+  .delete('/passphrases/:id', async (c) => c.json(await admin(c).revokePassphrase(c.req.param('id'))))
   .get('/connections', async (c) => c.json(await c.var.platform.registry.listAdminConnections()))
   .delete('/connections/:id', async (c) => {
     await c.var.platform.registry.revokeAdminConnection(c.req.param('id'));

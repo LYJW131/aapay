@@ -56,6 +56,7 @@ node scripts/seed.mjs http://127.0.0.1:5173                     # 写入演示�
 - 业务逻辑在 `src/server/core/` 的同步服务里：`RegistryService`（账本、口令、会话、OAuth 客户端与授权）和 `LedgerService`（单个账本的成员、支出、还款）。它们只依赖同步的 `SqlDriver`，因此 DO 的 SQLite 与 node:sqlite 共用同一份代码。
 - Cloudflare 上每个账本一个 `LedgerRoom` DO，全局一个 `RegistryRoom` DO；Node 上对应 `data/ledgers/<id>.db` 与 `data/registry.db`。服务通过 `remote()` / `dispatch()`（`core/remote.ts`）调用：`AppError` 不能原样穿过 DO RPC，先装进信封再在调用方还原，所以服务方法里只抛 `AppError`。
 - 账目变更走 `LedgerService.commit()`：递增版本号并通过 WebSocket 广播 `LiveMessage`。前端 `LedgerStore` 按版本号应用增量，发现缺口就重新拉快照。`origin` 为发起方的客户端 ID；MCP 写入时为 `mcp:<客户端名>`，网页据此提示是哪个 AI 应用改的。
+- 操作动态（审计日志）：每个变更方法都带 `MutationContext`（操作者 + origin），`commit()` 在同一个事务里递增版本号并追加 `audit_log`；不经过 `commit` 的操作（管理端重命名、口令、AI 连接）用 `LedgerService.record()` 补记。操作者只能来自服务端验证过的身份（`actorOf(session)`、管理员、OAuth 授权），不能取自请求内容。记录是 `{seq, at, actor, action}` 的 JSON 原文，`hash = sha256(prev + "\n" + payload)`，有 `AUDIT_SIGNING_KEY` 时对哈希做 Ed25519 签名；SQLite 触发器禁止 UPDATE / DELETE。前端 `features/ledger/activity.ts` 从 localStorage 的检查点继续校验整条链，展示的旧记录必须能沿 `prev` 接到已校验的最新记录。
 - `src/shared/` 前后端共用：zod 校验（`schema.ts`）、金额（以「分」为整数，`money.ts`）、结算算法、事件 reducer。MCP 工具复用同一套 zod 校验以保证错误信息一致。`limits.ts` 不依赖 zod，前端只从这里取限制，避免把 zod 打进前端包。
 - 前端用 `hono/client` 拿到 `ApiType` 的端到端类型；新增接口时把路由链在 `buildApi()` 里，前端就能类型安全地调用。
 - 管理功能是账本页顶部的「管理员卡片」（`src/web/features/admin/AdminCard.tsx`，按需加载）；`/admin` 只是登录入口（Cloudflare Access 拦截该路径），认证后回首页。前端只在本地有管理员标记（`identity.ts`）或会话角色为 admin 时才请求 `/api/admin/me`。

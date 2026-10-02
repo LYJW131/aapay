@@ -152,6 +152,7 @@ export const mcpRoutes = new Hono<AppEnv>()
       role: grant.role,
       ledger: grant.ledger,
       scopes: new Set(grant.scope.split(' ') as McpScope[]),
+      actor: { kind: 'ai', client: grant.clientName, host: grant.clientHost, verified: grant.clientVerified },
       origin: `mcp:${grant.clientName ?? 'AI'}`.slice(0, 64),
       today: today(config.timezone),
       baseUrl: baseUrl(c),

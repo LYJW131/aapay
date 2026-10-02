@@ -1,3 +1,4 @@
+import type { AuditActor } from '../../shared/audit.ts';
 import type { PassphraseInput } from '../../shared/schema.ts';
 import type {
   Connection,
@@ -214,10 +215,25 @@ export interface IssuedGrant {
   accessExpiresAt: number;
 }
 
+export interface ConnectionInfo {
+  client: string | null;
+  host: string | null;
+  verified: boolean;
+}
+
+export interface NewConnection extends ConnectionInfo {
+  ledgerId: string;
+  authorizer: AuditActor;
+  scopes: string[];
+}
+
 export interface AccessGrant {
   grantId: string;
   clientId: string;
   clientName: string | null;
+  clientHost: string | null;
+  // CIMD 客户端的名称来自其域名上托管的元数据，动态注册的名称是自报的
+  clientVerified: boolean;
   role: GrantRole;
   ledger: LedgerInfo | null;
   subject: string | null;
@@ -408,14 +424,14 @@ export class RegistryService {
     const p = this.activePassphrase(code, now);
     const expiresAt = Math.min(p.valid_until ?? Infinity, now + SESSION_TTL.member);
     this.insertSession(tokenHash, 'ledger', 'member', p.ledger_id, p.id, null, expiresAt);
-    return { ledger: { id: p.ledger_id, name: p.name }, role: 'member', passphrase: p.code, expiresAt };
+    return { ledger: { id: p.ledger_id, name: p.name }, role: 'member', passphrase: p.code, subject: null, expiresAt };
   }
 
   openLedgerSession(tokenHash: string, ledgerId: string, subject: string): SessionInfo {
     const ledger = this.getLedger(ledgerId);
     const expiresAt = Date.now() + SESSION_TTL.admin;
     this.insertSession(tokenHash, 'ledger', 'admin', ledgerId, null, subject, expiresAt);
-    return { ledger, role: 'admin', passphrase: null, expiresAt };
+    return { ledger, role: 'admin', passphrase: null, subject, expiresAt };
   }
 
   openConsoleSession(tokenHash: string, subject: string): number {
@@ -426,8 +442,8 @@ export class RegistryService {
 
   resolveLedgerSession(tokenHash: string): SessionInfo | null {
     const row = first(
-      this.db.all<{ role: SessionRole; ledger_id: string; name: string; code: string | null; expires_at: number }>(
-        `SELECT s.role, s.ledger_id, l.name, p.code, s.expires_at
+      this.db.all<{ role: SessionRole; ledger_id: string; name: string; code: string | null; subject: string | null; expires_at: number }>(
+        `SELECT s.role, s.ledger_id, l.name, p.code, s.subject, s.expires_at
          FROM sessions s
          JOIN ledgers l ON l.id = s.ledger_id
          LEFT JOIN passphrases p ON p.id = s.passphrase_id
@@ -441,6 +457,7 @@ export class RegistryService {
       ledger: { id: row.ledger_id, name: row.name },
       role: row.role,
       passphrase: row.code,
+      subject: row.subject,
       expiresAt: row.expires_at,
     };
   }
@@ -523,7 +540,7 @@ export class RegistryService {
   exchangeCode(
     check: { codeHash: string; clientId: string; redirectUri: string | null; challenge: string; resource: string | null },
     tokens: TokenInput,
-  ): IssuedGrant | null {
+  ): (IssuedGrant & { connection: NewConnection | null }) | null {
     return this.db.transaction(() => {
       const now = Date.now();
       const code = first(this.db.all<CodeRow>('DELETE FROM oauth_codes WHERE code_hash = ? RETURNING *', check.codeHash));
@@ -557,7 +574,16 @@ export class RegistryService {
         code.grant_expires_at,
       );
       this.emit({ type: 'connections.changed', ledgerId: code.ledger_id });
-      return this.insertAccessToken(grantId, tokens.accessHash, code.scope, now);
+      const connection: NewConnection | null =
+        code.role === 'member' && code.ledger_id
+          ? {
+              ledgerId: code.ledger_id,
+              authorizer: this.authorizer(code.passphrase_id, code.subject),
+              scopes: code.scope.split(' '),
+              ...this.clientInfo(code.client_id),
+            }
+          : null;
+      return { ...this.insertAccessToken(grantId, tokens.accessHash, code.scope, now), connection };
     });
   }
 
@@ -590,6 +616,9 @@ export class RegistryService {
         grant_id: string;
         client_id: string;
         client_name: string | null;
+        client_kind: 'dcr' | 'cimd';
+        client_uri: string | null;
+        redirect_uris: string;
         role: GrantRole;
         ledger_id: string | null;
         ledger_name: string | null;
@@ -598,7 +627,8 @@ export class RegistryService {
         resource: string;
         last_used_at: number;
       }>(
-        `SELECT g.id AS grant_id, g.client_id, c.name AS client_name, g.role, g.ledger_id, l.name AS ledger_name,
+        `SELECT g.id AS grant_id, g.client_id, c.name AS client_name, c.kind AS client_kind, c.uri AS client_uri, c.redirect_uris,
+                g.role, g.ledger_id, l.name AS ledger_name,
                 g.subject, g.scope, g.resource, g.last_used_at
          FROM oauth_tokens t
          JOIN oauth_grants g ON g.id = t.grant_id
@@ -619,6 +649,8 @@ export class RegistryService {
       grantId: row.grant_id,
       clientId: row.client_id,
       clientName: row.client_name,
+      clientHost: clientHost(row.client_uri, JSON.parse(row.redirect_uris) as string[], row.client_id),
+      clientVerified: row.client_kind === 'cimd',
       role: row.role,
       ledger: row.ledger_id ? { id: row.ledger_id, name: row.ledger_name! } : null,
       subject: row.role === 'admin' ? row.subject : null,
@@ -628,23 +660,32 @@ export class RegistryService {
   }
 
   // RFC 7009：撤销刷新令牌结束整个授权，撤销访问令牌只作废它本身
-  revokeToken(tokenHash: string): void {
+  revokeToken(tokenHash: string): (ConnectionInfo & { ledgerId: string }) | null {
     const grant = first(
-      this.db.all<{ ledger_id: string | null }>('DELETE FROM oauth_grants WHERE refresh_hash = ? RETURNING ledger_id', tokenHash),
+      this.db.all<{ ledger_id: string | null; client_id: string }>(
+        'DELETE FROM oauth_grants WHERE refresh_hash = ? RETURNING ledger_id, client_id',
+        tokenHash,
+      ),
     );
-    if (grant) this.emit({ type: 'connections.changed', ledgerId: grant.ledger_id });
-    else this.db.run('DELETE FROM oauth_tokens WHERE token_hash = ?', tokenHash);
+    if (!grant) {
+      this.db.run('DELETE FROM oauth_tokens WHERE token_hash = ?', tokenHash);
+      return null;
+    }
+    this.emit({ type: 'connections.changed', ledgerId: grant.ledger_id });
+    return grant.ledger_id ? { ledgerId: grant.ledger_id, ...this.clientInfo(grant.client_id) } : null;
   }
 
   listConnections(ledgerId: string): Connection[] {
     return this.connections('g.ledger_id = ?', ledgerId);
   }
 
-  revokeConnection(id: string, ledgerId: string): void {
-    if (!first(this.db.all('DELETE FROM oauth_grants WHERE id = ? AND ledger_id = ? RETURNING id', id, ledgerId))) {
-      throw notFound('该连接不存在或已断开');
-    }
+  revokeConnection(id: string, ledgerId: string): ConnectionInfo {
+    const grant = first(
+      this.db.all<{ client_id: string }>('DELETE FROM oauth_grants WHERE id = ? AND ledger_id = ? RETURNING client_id', id, ledgerId),
+    );
+    if (!grant) throw notFound('该连接不存在或已断开');
     this.emit({ type: 'connections.changed', ledgerId });
+    return this.clientInfo(grant.client_id);
   }
 
   listAdminConnections(): Connection[] {
@@ -656,6 +697,24 @@ export class RegistryService {
       throw notFound('该连接不存在或已断开');
     }
     this.emit({ type: 'connections.changed', ledgerId: null });
+  }
+
+  private clientInfo(clientId: string): ConnectionInfo {
+    const client = this.getClient(clientId);
+    return {
+      client: client?.name ?? null,
+      host: client ? clientHost(client.uri, client.redirectUris, client.id) : null,
+      verified: client?.kind === 'cimd',
+    };
+  }
+
+  private authorizer(passphraseId: string | null, subject: string | null): AuditActor {
+    if (passphraseId) {
+      const row = first(this.db.all<{ code: string }>('SELECT code FROM passphrases WHERE id = ?', passphraseId));
+      return { kind: 'member', passphrase: row?.code ?? null };
+    }
+    if (subject === 'shared') return { kind: 'shared' };
+    return { kind: 'admin', name: subject ?? 'admin' };
   }
 
   private connections(where: string, ...params: SqlValue[]): Connection[] {

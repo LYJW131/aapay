@@ -29,6 +29,7 @@
 - **实时同步**：基于 WebSocket，其他人的操作即时出现并弹出通知；断线自动重连并补齐数据
 - **管理员卡片**：管理员登录后，账本页顶部多一张可折叠的管理卡片——切换 / 新建 / 重命名 / 删除账本，为当前账本生成带有效期的口令（1 天、7 天、30 天、永久或自定义时间段）、二维码邀请；撤销口令后用它登录的成员立即失效。`/admin` 是管理员登录入口
 - **连接 AI**：内置 OAuth 2.1 保护的远程 MCP 端点 `/mcp`，在 Claude、ChatGPT 等应用里添加连接器后，就能用自然语言记账、查账、算结算；修改实时同步给所有人（见下文「连接 AI（MCP）」）
+- **操作动态**：每一次记账、改账、加成员、生成口令、连接 AI 都会留下记录，所有成员都能在顶栏「动态」里查看谁在什么时候改了什么（改账会列出前后差异）。记录与变更在同一个事务里写入，操作者身份只取自服务端验证过的会话；记录串成哈希链并由服务器用 Ed25519 签名，数据库层禁止修改和删除，浏览器会逐条核对并记住上次校验到的位置，事后任何删改都会被发现
 - **共享模式**：单一公共账本，打开即用（适合固定室友）
 - **体验**：移动端优先，底部抽屉式表单，自动跟随系统深色模式，可添加到主屏幕
 
@@ -123,6 +124,7 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 | `MCP` | `enabled` / `disabled`：是否开放 MCP 端点与 OAuth 授权服务 | `enabled` |
 | `PUBLIC_URL` | 可选，对外访问地址（如 `https://aapay.example.com`），作为 OAuth issuer 与 MCP 资源标识；不填则按请求推断（信任 `X-Forwarded-Proto/Host`），反向代理后建议填写 | — |
 | `TIMEZONE` | 可选，AI 记账未指定日期时按此时区取「今天」 | `Asia/Shanghai` |
+| `AUDIT_SIGNING_KEY` | 可选，操作动态的 Ed25519 签名私钥（32 字节随机数的 base64url，可用 `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"` 生成；Cloudflare 上请用 secret）。不填则只有哈希链没有签名；设置后不要更换，否则成员的浏览器会提示签名公钥变化 | — |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
 
 管理员认证方式：
@@ -145,7 +147,7 @@ AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`
 
 添加后应用会打开 AAPay 的授权页：已在这个浏览器打开过账本可以一键授权，否则输入该账本的分享口令；还可以关掉「记账、修改与删除」只给只读权限。之后就可以直接说「我付了 128 的晚饭，四个人分」「这周谁花得最多」「怎么转账能结清」。AI 做的修改会实时出现在所有人的页面上，并提示是哪个应用改的。
 
-**提供的工具**：`get_ledger`（成员、余额、最少转账方案）、`list_transactions`（按日期 / 成员 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`。金额以「元」为单位，成员可以直接用名字指代。
+**提供的工具**：`get_ledger`（成员、余额、最少转账方案）、`list_transactions`（按日期 / 成员 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`、`list_activity`（操作动态）。金额以「元」为单位，成员可以直接用名字指代。
 
 **管理员连接**：已登录的管理员在授权页可以选择「全部账本」，AI 就能管理所有账本：`list_ledgers`、`create_ledger`（默认同时生成口令并返回邀请链接）、`rename_ledger`、`delete_ledger`（需再次输入名称确认）、`list_passphrases` / `create_passphrase` / `revoke_passphrase`；账本内的工具多一个 `ledger` 参数（名称或 ID）。管理员授权 30 天有效，在账本页的「连接 AI」中可查看与断开；关闭管理后台或把此人移出 `ADMIN_EMAILS` 后立即失效。还没登录时，授权页有「以管理员身份登录」入口，登录后自动回到授权页。
 
@@ -190,6 +192,7 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `POST` `PATCH` `DELETE` | `/api/ledger/members[/:id]` | 成员 |
 | `POST` `PATCH` `DELETE` | `/api/ledger/expenses[/:id]` | 支出 |
 | `POST` `DELETE` | `/api/ledger/settlements[/:id]` | 还款记录 |
+| `GET` | `/api/ledger/audit?before=&after=&limit=` | 操作动态（签名哈希链，附公钥与最新一条） |
 | `GET` `POST` `PATCH` `DELETE` | `/api/admin/ledgers[/:id]` | 账本管理（含统计） |
 | `GET` `POST` | `/api/admin/ledgers/:id/passphrases` | 分享口令 |
 | `DELETE` | `/api/admin/passphrases/:id` | 撤销口令 |
