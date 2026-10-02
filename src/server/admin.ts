@@ -19,6 +19,7 @@ export function adminActions(platform: Platform, actor: AuditActor) {
 
     async updateLedger(id: string, input: LedgerInput): Promise<LedgerInfo> {
       const before = await platform.registry.getLedger(id);
+      if (before.name === input.name && (!input.emoji || before.emoji === input.emoji)) return before;
       const ledger = await platform.registry.updateLedger(id, input);
       const api = platform.ledger(ledger.id).api;
       await api.record(actor, {

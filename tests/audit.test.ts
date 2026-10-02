@@ -68,6 +68,20 @@ describe('audit log (service)', () => {
     expect(allRecords(svc)).toHaveLength(5);
   });
 
+  it('skips unchanged updates without bumping the version or writing the log', () => {
+    const { svc, messages } = service();
+    const { a, b, id } = seedLedger(svc);
+    const version = svc.snapshot().version;
+    const sent = messages.length;
+    const expense = svc.updateExpense(id, { title: '晚饭', amount: 15000, payerId: b, date: '2026-10-01', participantIds: [b, a] }, member);
+    const person = svc.updateMember(a, { name: '阿杰' }, member);
+    expect(expense.v).toBeUndefined();
+    expect(person.v).toBeUndefined();
+    expect(svc.snapshot().version).toBe(version);
+    expect(messages).toHaveLength(sent);
+    expect(allRecords(svc)).toHaveLength(5);
+  });
+
   it('refuses to update or delete log rows', () => {
     const { db, svc } = service();
     seedLedger(svc);

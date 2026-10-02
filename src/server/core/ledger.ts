@@ -192,6 +192,7 @@ export class LedgerService {
       const current = this.member(id);
       this.assertNameFree(input.name, id);
       const member: Member = { ...current, name: input.name, avatar: input.avatar || current.avatar };
+      if (member.name === current.name && member.avatar === current.avatar) return { event: { type: 'member.saved', member }, audit: null };
       this.db.run('UPDATE members SET name = ?, avatar = ? WHERE id = ?', member.name, member.avatar, id);
       return {
         event: { type: 'member.saved', member },
@@ -248,6 +249,7 @@ export class LedgerService {
     return this.commit(ctx, () => {
       const current = this.expense(id);
       const expense = this.buildExpense(id, input, current.createdAt, Date.now());
+      if (sameExpense(current, expense)) return { event: { type: 'expense.saved', expense: current }, audit: null };
       this.db.run(
         'UPDATE expenses SET title = ?, amount = ?, payer_id = ?, date = ?, updated_at = ? WHERE id = ?',
         expense.title,
@@ -336,15 +338,16 @@ export class LedgerService {
     return { records, publicKey: this.signer?.publicKey ?? null, head: this.auditHead() };
   }
 
-  private commit(ctx: MutationContext, mutate: () => { event: LedgerEvent; audit: AuditAction }): LiveMessage {
-    const message = this.db.transaction(() => {
+  private commit(ctx: MutationContext, mutate: () => { event: LedgerEvent; audit: AuditAction | null }): LiveMessage {
+    const message = this.db.transaction((): LiveMessage => {
       const { event, audit } = mutate();
+      if (!audit) return { origin: ctx.origin, event, at: Date.now() };
       const { value } = first(
         this.db.all<{ value: number }>("UPDATE meta SET value = value + 1 WHERE key = 'version' RETURNING value"),
       )!;
       return { v: value, origin: ctx.origin, event, at: Date.now(), audit: this.appendAudit(ctx.actor, audit) } satisfies LiveMessage;
     });
-    this.emit(message);
+    if (message.v !== undefined) this.emit(message);
     return message;
   }
 
@@ -465,4 +468,9 @@ export class LedgerService {
       ),
     );
   }
+}
+
+function sameExpense(a: Expense, b: Expense) {
+  const shares = (e: Expense) => JSON.stringify(e.shares.map((s) => [s.memberId, s.amount]).sort());
+  return a.title === b.title && a.amount === b.amount && a.payerId === b.payerId && a.date === b.date && shares(a) === shares(b);
 }

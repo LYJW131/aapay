@@ -3,6 +3,7 @@ import { useMemo, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { centsToInput, formatMoney, parseAmount, splitEvenly } from '../../../shared/money.ts';
 import { LIMITS } from '../../../shared/limits.ts';
+import type { ExpenseInput } from '../../../shared/schema.ts';
 import type { Expense } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
 import { AutoHeight } from '../../components/AutoHeight.tsx';
@@ -95,6 +96,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     setSaving(true);
     try {
       if (expense) {
+        if (unchanged(expense, input)) return onDone?.();
         await store.mutate(api.ledger.expenses[':id'].$patch({ param: { id: expense.id }, json: input }));
         toast.success('已保存修改');
       } else {
@@ -263,6 +265,17 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         </Button>
       </div>
     </form>
+  );
+}
+
+function unchanged(expense: Expense, input: ExpenseInput) {
+  const before = expense.shares.map((s) => s.memberId).sort().join();
+  return (
+    expense.title === input.title &&
+    expense.amount === input.amount &&
+    expense.payerId === input.payerId &&
+    expense.date === input.date &&
+    before === [...input.participantIds].sort().join()
   );
 }
 
