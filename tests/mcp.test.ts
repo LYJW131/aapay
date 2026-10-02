@@ -125,7 +125,23 @@ function setup(env: Record<string, string> = { ADMIN_AUTH: 'none' }) {
     return res.data.result as { isError?: boolean; structuredContent?: any; content: { text: string }[] };
   }
 
-  return { request, connect, rpc, tool, resetCookies: () => (cookies = new Map()) };
+  /** 以管理员身份授权（需要当前请求能通过管理员认证） */
+  async function connectAdmin(headers: Record<string, string> = {}, write = true) {
+    const clientId = (await request('POST', '/oauth/register', {
+      json: { client_name: 'Claude', redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' },
+    })).data.client_id;
+    const { verifier, challenge } = await pkce();
+    const query = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: REDIRECT, code_challenge: challenge, code_challenge_method: 'S256', resource: `${ORIGIN}/mcp` }).toString();
+    const approved = await request('POST', '/api/admin/oauth/authorize', { json: { query, write }, headers });
+    if (approved.status !== 200) return { status: approved.status, token: '', ledger: undefined };
+    const code = new URL(approved.data.redirect).searchParams.get('code')!;
+    const token = await request('POST', '/oauth/token', {
+      form: { grant_type: 'authorization_code', code, redirect_uri: REDIRECT, client_id: clientId, code_verifier: verifier },
+    });
+    return { status: 200, token: token.data.access_token as string, ledger: approved.data.ledger };
+  }
+
+  return { request, connect, connectAdmin, rpc, tool, config, resetCookies: () => (cookies = new Map()) };
 }
 
 async function seedLedger(s: ReturnType<typeof setup>, name = '周末露营', code = 'Camp2026') {
@@ -511,6 +527,119 @@ describe('private_key_jwt (ChatGPT-style client)', () => {
     expect((await exchange(grant, { client_id: clientId })).data.error).toBe('invalid_client');
     const ok = await exchange(grant, { client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer', client_assertion: await assertion() });
     expect(ok.status).toBe(200);
+  });
+});
+
+describe('admin connections', () => {
+  it('manages every ledger with admin tools', async () => {
+    const s = setup();
+    await seedLedger(s, '周末露营', 'Camp2026');
+    const admin = await s.connectAdmin();
+    expect(admin).toMatchObject({ status: 200, ledger: null });
+    const token = admin.token;
+
+    const init = (await s.rpc(token, 'initialize', { protocolVersion: '2025-11-25' })).data.result;
+    expect(init.instructions).toContain('管理员');
+    const tools = (await s.rpc(token, 'tools/list')).data.result.tools as { name: string; inputSchema: { required?: string[] } }[];
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['list_ledgers', 'create_ledger', 'delete_ledger', 'create_passphrase', 'revoke_passphrase', 'get_ledger', 'add_expense']));
+    expect(tools.find((t) => t.name === 'add_expense')!.inputSchema.required).toContain('ledger');
+
+    const created = (await s.tool(token, 'create_ledger', { name: '公司团建', valid_days: 7 })).structuredContent;
+    expect(created.created.name).toBe('公司团建');
+    expect(created.passphrase).toMatchObject({ status: 'active', joinLink: expect.stringMatching(new RegExp(`^${ORIGIN}/join#`)) });
+
+    // 账本工具需要指定 ledger，可以用名称
+    expect((await s.tool(token, 'get_ledger')).isError).toBe(true);
+    await s.tool(token, 'add_member', { ledger: '公司团建', name: '小李' });
+    await s.tool(token, 'add_member', { ledger: '公司团建', name: '小王' });
+    const expense = await s.tool(token, 'add_expense', { ledger: '公司团建', title: '聚餐', amount: 300, payer: '小李' });
+    expect(expense.structuredContent.created.participants).toHaveLength(2);
+    const missing = await s.tool(token, 'get_ledger', { ledger: '不存在' });
+    expect(missing.content[0]!.text).toContain('现有账本');
+
+    const listed = (await s.tool(token, 'list_ledgers')).structuredContent.ledgers;
+    expect(listed.find((l: { name: string }) => l.name === '公司团建')).toMatchObject({ members: 2, expenses: 1, totalSpent: 300, activePassphrases: 1 });
+
+    const phrase = (await s.tool(token, 'create_passphrase', { ledger: '周末露营', code: 'camp2027' })).structuredContent.created;
+    expect(phrase.code).toBe('camp2027');
+    expect((await s.tool(token, 'list_passphrases', { ledger: '周末露营' })).structuredContent.passphrases).toHaveLength(2);
+    expect((await s.tool(token, 'revoke_passphrase', { ledger: '周末露营', code: 'CAMP2027' })).structuredContent.revoked).toBe('camp2027');
+    expect((await s.request('POST', '/api/join', { json: { code: 'camp2027' } })).status).toBe(401);
+
+    expect((await s.tool(token, 'rename_ledger', { ledger: '公司团建', name: '团建 2026' })).structuredContent.renamed.name).toBe('团建 2026');
+    const wrong = await s.tool(token, 'delete_ledger', { ledger: '团建 2026', confirm_name: '团建' });
+    expect(wrong.isError).toBe(true);
+    expect((await s.tool(token, 'delete_ledger', { ledger: '团建 2026', confirm_name: '团建 2026' })).structuredContent.deleted.name).toBe('团建 2026');
+
+    // 控制台能看到并断开管理员连接
+    const connections = (await s.request('GET', '/api/admin/connections')).data;
+    expect(connections).toHaveLength(1);
+    expect(connections[0]).toMatchObject({ clientName: 'Claude', subject: 'developer' });
+    await s.request('DELETE', `/api/admin/connections/${connections[0].id}`);
+    expect((await s.rpc(token, 'ping')).status).toBe(401);
+  });
+
+  it('keeps admin tools away from members and read-only admins', async () => {
+    const s = setup();
+    await seedLedger(s);
+    const member = await s.connect({ code: 'Camp2026' });
+    const names = (await s.rpc(member.access_token, 'tools/list')).data.result.tools.map((t: { name: string }) => t.name);
+    expect(names).not.toContain('list_ledgers');
+    expect((await s.rpc(member.access_token, 'tools/call', { name: 'delete_ledger', arguments: {} })).data.error.code).toBe(-32602);
+
+    const readOnly = await s.connectAdmin({}, false);
+    const token = readOnly.token;
+    const tools = (await s.rpc(token, 'tools/list')).data.result.tools.map((t: { name: string }) => t.name);
+    expect(tools).toEqual(['list_ledgers', 'list_passphrases', 'get_ledger', 'list_transactions']);
+    expect((await s.tool(token, 'create_ledger', { name: 'x' })).isError).toBe(true);
+  });
+
+  it('requires a verified admin and revokes tokens when the admin loses access', async () => {
+    const s = setup({ ADMIN_AUTH: 'proxy', ADMIN_EMAILS: 'me@example.com' });
+    expect((await s.connectAdmin()).status).toBe(401);
+    expect((await s.connectAdmin({ 'x-forwarded-email': 'evil@example.com' })).status).toBe(401);
+    const ok = await s.connectAdmin({ 'x-forwarded-email': 'me@example.com' });
+    const token = ok.token;
+    expect((await s.rpc(token, 'ping')).status).toBe(200);
+    // 从 ADMIN_EMAILS 移除后，已签发的管理员令牌立即失效
+    s.config.adminEmails = ['someone-else@example.com'];
+    expect((await s.rpc(token, 'ping')).status).toBe(401);
+  });
+
+  it('ignores the email allowlist where the console does (none / password)', async () => {
+    const s = setup({ ADMIN_AUTH: 'none', ADMIN_EMAILS: 'me@example.com' });
+    const admin = await s.connectAdmin();
+    expect((await s.rpc(admin.token, 'ping')).status).toBe(200);
+    // 关闭管理后台后立即失效
+    s.config.adminAuth = 'disabled';
+    expect((await s.rpc(admin.token, 'ping')).status).toBe(401);
+  });
+});
+
+describe('registry migration', () => {
+  it('keeps existing member connections when admin grants are introduced', async () => {
+    const { openSqlite } = await import('../src/server/node/sqlite.ts');
+    const { migrate } = await import('../src/server/core/sql.ts');
+    const { MIGRATIONS, RegistryService } = await import('../src/server/core/registry.ts');
+    const { sha256 } = await import('../src/server/core/ids.ts');
+    const db = openSqlite(join(dir, `${crypto.randomUUID()}.db`));
+    migrate(db, MIGRATIONS.slice(0, 3));
+    const now = Date.now();
+    db.run('INSERT INTO ledgers (id, name, created_at) VALUES (?, ?, ?)', 'L1', '老账本', now);
+    db.run("INSERT INTO oauth_clients (id, kind, name, redirect_uris, created_at, last_used_at) VALUES ('c1', 'dcr', 'Claude', '[]', ?, ?)", now, now);
+    db.run(
+      `INSERT INTO oauth_grants (id, client_id, ledger_id, scope, resource, refresh_hash, created_at, last_used_at, expires_at)
+       VALUES ('g1', 'c1', 'L1', 'ledger:read ledger:write', 'http://aapay.test/mcp', 'r1', ?, ?, ?)`,
+      now, now, now + 86_400_000,
+    );
+    db.run('INSERT INTO oauth_tokens (token_hash, grant_id, expires_at) VALUES (?, ?, ?)', await sha256('tok'), 'g1', now + 3_600_000);
+
+    const registry = new RegistryService(db, () => undefined);
+    expect(registry.resolveAccessToken(await sha256('tok'))).toMatchObject({ role: 'member', ledger: { id: 'L1', name: '老账本' }, clientName: 'Claude' });
+    // 外键在重命名后仍然生效：删除账本会级联删除授权和令牌
+    registry.deleteLedger('L1');
+    expect(registry.resolveAccessToken(await sha256('tok'))).toBeNull();
+    expect(db.all('SELECT * FROM oauth_tokens')).toHaveLength(0);
   });
 });
 

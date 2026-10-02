@@ -147,13 +147,15 @@ AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`
 
 **提供的工具**：`get_ledger`（成员、余额、最少转账方案）、`list_transactions`（按日期 / 成员 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`。金额以「元」为单位，成员可以直接用名字指代。
 
-**授权模型**：一次授权只对应一个账本，权限等同于用口令加入的成员。账本成员可在「连接 AI」里查看并断开已连接的应用，控制台的账本列表会显示连接数；口令被撤销、过期或账本被删除时，对应的授权会一并失效。
+**管理员连接**：已登录控制台的管理员在授权页可以选择「全部账本」，AI 就能管理所有账本：`list_ledgers`、`create_ledger`（默认同时生成口令并返回邀请链接）、`rename_ledger`、`delete_ledger`（需再次输入名称确认）、`list_passphrases` / `create_passphrase` / `revoke_passphrase`；账本内的工具多一个 `ledger` 参数（名称或 ID）。管理员授权 30 天有效，在控制台「AI 助手（管理员）」中可查看与断开；关闭管理后台或把此人移出 `ADMIN_EMAILS` 后立即失效。还没登录时，授权页有「以管理员身份登录」入口，登录后自动回到授权页。
+
+**授权模型**：成员授权只对应一个账本，权限等同于用口令加入的成员。账本成员可在「连接 AI」里查看并断开已连接的应用，控制台的账本列表会显示连接数；口令被撤销、过期或账本被删除时，对应的授权会一并失效。
 
 **协议细节**（按 [MCP Authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) 规范实现）：
 
 - 传输：Streamable HTTP 无状态模式，`POST /mcp` 直接返回 JSON；协议版本 `2025-11-25`，兼容 `2025-06-18` / `2025-03-26`
 - 发现：`/.well-known/oauth-protected-resource`（RFC 9728）与 `/.well-known/oauth-authorization-server`（RFC 8414），未授权请求返回带 `resource_metadata` 的 `WWW-Authenticate`
-- 客户端：动态注册 `POST /oauth/register`（RFC 7591，公共或机密客户端），也支持以 HTTPS URL 作为 `client_id` 的 Client ID Metadata Document
+- 客户端：动态注册 `POST /oauth/register`（RFC 7591），也支持以 HTTPS URL 作为 `client_id` 的 Client ID Metadata Document（Claude、ChatGPT 均使用这种方式）；令牌端点认证支持 `none`（PKCE）、`client_secret_*` 与 `private_key_jwt`（RFC 7523，按客户端公布的 JWKS 验签）
 - 授权码 + PKCE（仅 `S256`），`resource` 参数（RFC 8707）把令牌绑定到 `/mcp`，回调带 `iss`（RFC 9207）；作用域 `ledger:read` / `ledger:write`
 - 访问令牌 1 小时，刷新令牌每次使用即轮换，授权最长 180 天且不超过口令有效期；`POST /oauth/revoke` 撤销（RFC 7009）
 - 令牌只存 SHA-256 哈希；授权页禁止被嵌入（防点击劫持），输入口令与动态注册共用加入口令的限流
@@ -195,6 +197,8 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `GET` | `/api/admin/live` | 控制台 WebSocket |
 | `GET` `DELETE` | `/api/ledger/connections[/:id]` | 已连接到本账本的 AI 应用 |
 | `GET` `POST` | `/api/oauth/authorize` | 授权页：校验请求 / 同意授权 |
+| `POST` | `/api/admin/oauth/authorize` | 授权页：以管理员身份授权 |
+| `GET` `DELETE` | `/api/admin/connections[/:id]` | 以管理员身份连接的 AI 应用 |
 | `POST` | `/mcp` | MCP 端点（Bearer 令牌） |
 | `GET` | `/.well-known/oauth-protected-resource[/mcp]` | 受保护资源元数据 |
 | `GET` | `/.well-known/oauth-authorization-server` | 授权服务器元数据 |

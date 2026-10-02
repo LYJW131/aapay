@@ -1,12 +1,11 @@
-import { Check, Copy, PlugZap, Sparkles, Unplug } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import type { Connection } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
-import { Spinner } from '../../components/Spinner.tsx';
+import { ConnectionList } from '../../components/ConnectionList.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
-import { relativeTime } from '../../lib/dates.ts';
 
 export const mcpUrl = () => `${window.location.origin}/mcp`;
 
@@ -93,46 +92,7 @@ export function ConnectAI() {
 
       <div>
         <Label aside={connections && connections.length > 0 && <span className="tabular">{connections.length}</span>}>已连接的应用</Label>
-        {connections === null ? (
-          <div className="flex justify-center py-6 text-zinc-400">
-            <Spinner className="size-5" />
-          </div>
-        ) : connections.length === 0 ? (
-          <div className="flex flex-col items-center rounded-2xl bg-zinc-50 px-4 py-6 text-center dark:bg-white/3">
-            <PlugZap className="mb-2 size-7 text-zinc-300 dark:text-zinc-600" />
-            <p className="text-sm text-zinc-500">还没有连接的 AI 应用</p>
-          </div>
-        ) : (
-          <ul className="divide-y divide-zinc-900/5 rounded-2xl bg-zinc-50 dark:divide-white/5 dark:bg-white/4">
-            {connections.map((c) => (
-              <li key={c.id} className="flex items-center gap-3 px-4 py-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-zinc-800 to-zinc-950 text-white dark:from-white/14 dark:to-white/6">
-                  <Sparkles className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="truncate text-sm font-medium">{c.clientName ?? c.clientHost ?? '未命名应用'}</span>
-                    <span className="shrink-0 rounded bg-zinc-900/5 px-1 text-[10px] text-zinc-500 dark:bg-white/8 dark:text-zinc-400">
-                      {c.scopes.includes('ledger:write') ? '可记账' : '只读'}
-                    </span>
-                  </span>
-                  <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
-                    {[c.clientHost, `${relativeTime(c.lastUsedAt)}使用`].filter(Boolean).join(' · ')}
-                  </span>
-                </span>
-                <Button
-                  size="sm"
-                  variant="danger"
-                  loading={busy === c.id}
-                  icon={<Unplug className="size-3.5" />}
-                  onClick={() => disconnect(c)}
-                >
-                  断开
-                </Button>
-              </li>
-            ))}
-          </ul>
-        )}
+        <ConnectionList connections={connections} busy={busy} onDisconnect={disconnect} />
       </div>
     </div>
   );

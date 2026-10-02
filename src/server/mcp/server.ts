@@ -1,10 +1,11 @@
 import { Hono, type Context } from 'hono';
 import type { McpScope } from '../../shared/types.ts';
 import type { AppEnv } from '../app.ts';
+import type { Config } from '../config.ts';
 import { sha256 } from '../core/ids.ts';
 import type { AccessGrant } from '../core/registry.ts';
-import { openCors, requireMcp, resourceMetadataUrl, resourceUrl, SCOPES } from './oauth.ts';
-import { callTool, listTools, UnknownToolError, type ToolContext } from './tools.ts';
+import { baseUrl, openCors, requireMcp, resourceMetadataUrl, resourceUrl, SCOPES } from './oauth.ts';
+import { callTool, listTools, UnknownToolError, type McpSession } from './tools.ts';
 
 /**
  * MCP Streamable HTTP 端点（无状态模式）：每个 POST 携带一条或一批 JSON-RPC 消息，
@@ -33,8 +34,10 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 async function authenticate(c: Context<AppEnv>): Promise<AccessGrant | Response> {
   const token = /^Bearer\s+(\S+)$/i.exec(c.req.header('authorization') ?? '')?.[1];
   const grant = token ? await c.var.platform.registry.resolveAccessToken(await sha256(token)) : null;
-  // 令牌必须是签发给本资源的（RFC 8707 audience）
-  if (grant && grant.resource === resourceUrl(c)) return grant;
+  // 令牌必须是签发给本资源的（RFC 8707 audience）；管理员授权还要确认此人现在仍是管理员
+  if (grant && grant.resource === resourceUrl(c) && (grant.role !== 'admin' || stillAdmin(c.var.config, grant.subject))) {
+    return grant;
+  }
 
   const params = [`resource_metadata="${resourceMetadataUrl(c)}"`, `scope="${SCOPES.join(' ')}"`];
   if (token) params.unshift('error="invalid_token"', 'error_description="The access token is invalid or expired"');
@@ -52,18 +55,37 @@ function today(timezone: string) {
   );
 }
 
-function instructions(ctx: ToolContext, timezone: string) {
-  const lines = [
-    `你已连接到 AAPay 多人记账账本「${ctx.info.name}」。金额单位为人民币元。`,
-    '建议先调用 get_ledger 查看成员、余额与结清方案；记账时付款人和参与者直接使用成员名字。',
+/**
+ * 关闭管理后台或把此人移出 ADMIN_EMAILS 后，已签发的管理员令牌立即失效。
+ * 与控制台认证保持一致：白名单只在 access / proxy 模式下生效。
+ */
+function stillAdmin(config: Config, subject: string | null) {
+  if (config.adminAuth === 'disabled' || !subject) return false;
+  if (config.adminAuth !== 'access' && config.adminAuth !== 'proxy') return true;
+  return config.adminEmails.length === 0 || config.adminEmails.includes(subject.toLowerCase());
+}
+
+function instructions(session: McpSession, timezone: string) {
+  const lines =
+    session.role === 'admin'
+      ? [
+          '你以管理员身份连接到 AAPay 多人记账，可以管理全部账本。金额单位为人民币元。',
+          '先调用 list_ledgers 查看有哪些账本；账本内的工具（get_ledger、add_expense 等）都需要用 ledger 参数指定账本名称或 ID。',
+          '管理工具可以创建 / 重命名 / 删除账本，生成或撤销分享口令（返回的邀请链接可直接发给朋友）。删除账本不可恢复，执行前务必向用户确认。',
+        ]
+      : [
+          `你已连接到 AAPay 多人记账账本「${session.ledger!.name}」。金额单位为人民币元。`,
+          '建议先调用 get_ledger 查看成员、余额与结清方案；记账时付款人和参与者直接使用成员名字。',
+        ];
+  lines.push(
     '支出由一人垫付、参与者平均分摊；还款（record_settlement）表示某人已把钱转给另一人。',
-    `今天是 ${ctx.today}（${timezone}）。修改会实时同步到所有打开账本的人。`,
-  ];
-  if (!ctx.scopes.has('ledger:write')) lines.push('当前授权为只读，只能查询，不能修改账目。');
+    `今天是 ${session.today}（${timezone}）。修改会实时同步到所有打开账本的人。`,
+  );
+  if (!session.scopes.has('ledger:write')) lines.push('当前授权为只读，只能查询，不能修改。');
   return lines.join('\n');
 }
 
-async function dispatch(method: string, params: Record<string, unknown>, ctx: ToolContext, timezone: string) {
+async function dispatch(method: string, params: Record<string, unknown>, ctx: McpSession, timezone: string) {
   switch (method) {
     case 'initialize': {
       const requested = typeof params.protocolVersion === 'string' ? params.protocolVersion : '';
@@ -77,7 +99,7 @@ async function dispatch(method: string, params: Record<string, unknown>, ctx: To
     case 'ping':
       return {};
     case 'tools/list':
-      return { tools: listTools(ctx.scopes) };
+      return { tools: listTools(ctx) };
     case 'tools/call': {
       if (typeof params.name !== 'string') throw new RpcError(-32602, 'Missing tool name');
       try {
@@ -99,7 +121,7 @@ async function dispatch(method: string, params: Record<string, unknown>, ctx: To
   }
 }
 
-async function handle(message: unknown, ctx: ToolContext, timezone: string) {
+async function handle(message: unknown, ctx: McpSession, timezone: string) {
   if (!isObject(message) || message.jsonrpc !== '2.0') return rpcError(null, -32600, 'Invalid Request');
   const id = (message.id ?? null) as JsonRpcId;
   // 客户端发来的响应或通知不需要回复
@@ -136,12 +158,14 @@ export const mcpRoutes = new Hono<AppEnv>()
     }
 
     const { config, platform } = c.var;
-    const ctx: ToolContext = {
-      ledger: platform.ledger(grant.ledger.id).api,
-      info: grant.ledger,
+    const ctx: McpSession = {
+      role: grant.role,
+      ledger: grant.ledger,
       scopes: new Set(grant.scope.split(' ') as McpScope[]),
       origin: `mcp:${grant.clientName ?? 'AI'}`.slice(0, 64),
       today: today(config.timezone),
+      baseUrl: baseUrl(c),
+      platform,
     };
     const batch = Array.isArray(payload);
     const messages: unknown[] = batch ? (payload as unknown[]) : [payload];

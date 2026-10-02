@@ -1,20 +1,36 @@
 import { z } from 'zod';
 import { byNewest } from '../../shared/ledger.ts';
 import { MAX_AMOUNT, type Cents } from '../../shared/money.ts';
+import { randomPassphrase } from '../../shared/passphrase.ts';
 import {
   expenseInput,
   isoDate,
+  ledgerInput,
   LIMITS,
   memberInput,
+  passphraseInput,
   settlementInput,
   type ExpenseInput,
 } from '../../shared/schema.ts';
 import { computeBalances, suggestTransfers } from '../../shared/settle.ts';
-import type { Expense, LedgerData, LedgerInfo, LiveMessage, McpScope, Member, Settlement } from '../../shared/types.ts';
+import type {
+  Expense,
+  LedgerData,
+  LedgerInfo,
+  LiveMessage,
+  McpScope,
+  Member,
+  Passphrase,
+  Settlement,
+} from '../../shared/types.ts';
+import { adminActions } from '../admin.ts';
 import { AppError, badRequest, notFound } from '../core/errors.ts';
 import type { LedgerService } from '../core/ledger.ts';
+import type { GrantRole } from '../core/registry.ts';
 import type { Remote } from '../core/remote.ts';
+import type { Platform } from '../platform.ts';
 
+/** 账本工具执行时的上下文：作用于哪个账本由授权（或管理员的 ledger 参数）决定 */
 export interface ToolContext {
   ledger: Remote<LedgerService>;
   info: LedgerInfo;
@@ -346,7 +362,7 @@ const deleteSettlement = tool({
   },
 });
 
-const TOOLS = [
+const LEDGER_TOOLS = [
   getLedger,
   listTransactions,
   addExpense,
@@ -358,46 +374,265 @@ const TOOLS = [
   deleteSettlement,
 ];
 
-const allowed = (t: Tool, scopes: ReadonlySet<McpScope>) => scopes.has(t.write ? 'ledger:write' : 'ledger:read');
+// ---------- 管理员工具 ----------
 
-function inputSchema(t: Tool) {
-  const { $schema: _, ...schema } = z.toJSONSchema(t.input, { io: 'input', unrepresentable: 'any' });
-  return schema;
+/** 一次 MCP 请求所代表的授权 */
+export interface McpSession {
+  role: GrantRole;
+  /** 成员授权绑定的账本；管理员授权为 null，账本工具需要显式传 ledger */
+  ledger: LedgerInfo | null;
+  scopes: ReadonlySet<McpScope>;
+  origin: string;
+  today: string;
+  /** 站点对外地址，用于生成邀请链接 */
+  baseUrl: string;
+  platform: Platform;
+}
+
+interface AdminContext {
+  session: McpSession;
+  actions: ReturnType<typeof adminActions>;
+}
+
+interface AdminTool<S extends z.ZodObject = z.ZodObject> extends Omit<Tool<S>, 'run'> {
+  run(args: z.infer<S>, ctx: AdminContext): Promise<object>;
+}
+
+const adminTool = <S extends z.ZodObject>(t: AdminTool<S>) => t as unknown as AdminTool;
+
+const ledgerRef = z.string().trim().min(1).max(64).describe('账本名称或 ID（可用 list_ledgers 查看）');
+
+/** 账本可以用 ID 或名称（不区分大小写）指代 */
+async function resolveLedger(platform: Platform, ref: string): Promise<LedgerInfo> {
+  const ledgers = await platform.registry.listLedgers();
+  const key = ref.trim();
+  const found = ledgers.find((l) => l.id === key) ?? ledgers.find((l) => l.name.toLowerCase() === key.toLowerCase());
+  if (found) return { id: found.id, name: found.name };
+  const names = ledgers.map((l) => `「${l.name}」`).join('');
+  throw notFound(`找不到账本「${ref}」。${names ? `现有账本：${names}` : '还没有任何账本，可以用 create_ledger 创建'}`);
+}
+
+const isoDay = (ts: number | null) => (ts === null ? null : new Date(ts).toISOString().slice(0, 10));
+
+function passphraseView(p: Passphrase, baseUrl: string) {
+  const now = Date.now();
+  const status = p.validFrom > now ? 'pending' : p.validUntil !== null && p.validUntil <= now ? 'expired' : 'active';
+  return {
+    code: p.code,
+    status,
+    validFrom: new Date(p.validFrom).toISOString(),
+    validUntil: p.validUntil === null ? null : new Date(p.validUntil).toISOString(),
+    joinLink: `${baseUrl}/join#${encodeURIComponent(p.code)}`,
+  };
+}
+
+const validDays = z.number().int().min(1).max(3650).optional().describe('有效天数；不填为永久有效');
+
+async function createPassphrase(ctx: AdminContext, ledgerId: string, code: string | undefined, days: number | undefined) {
+  const now = Date.now();
+  const input = validate(passphraseInput, {
+    code: code ?? randomPassphrase(),
+    validFrom: now,
+    validUntil: days === undefined ? null : now + days * 86_400_000,
+  });
+  return passphraseView(await ctx.session.platform.registry.createPassphrase(ledgerId, input), ctx.session.baseUrl);
+}
+
+const listLedgers = adminTool({
+  name: 'list_ledgers',
+  title: '列出全部账本',
+  description: '列出所有账本及其成员数、支出笔数、总支出（元）、生效中的口令数和已连接的 AI 应用数。',
+  input: z.object({}),
+  write: false,
+  async run(_, ctx) {
+    const ledgers = await ctx.actions.listLedgers();
+    return {
+      ledgers: ledgers.map((l) => ({
+        id: l.id,
+        name: l.name,
+        createdAt: isoDay(l.createdAt),
+        members: l.stats?.members ?? null,
+        expenses: l.stats?.expenses ?? null,
+        totalSpent: l.stats ? yuan(l.stats.total) : null,
+        lastActivity: isoDay(l.stats?.lastActivityAt ?? null),
+        activePassphrases: l.activePassphrases,
+        aiConnections: l.connections,
+      })),
+    };
+  },
+});
+
+const createLedger = adminTool({
+  name: 'create_ledger',
+  title: '创建账本',
+  description: '创建一个新账本，默认同时生成一个分享口令并返回邀请链接，发给朋友即可加入。',
+  input: z.object({
+    name: z.string().describe(`账本名称，最多 ${LIMITS.ledgerName} 个字，不能与已有账本重名`),
+    create_passphrase: z.boolean().default(true).describe('是否同时生成分享口令'),
+    passphrase: z.string().optional().describe(`自定义口令（${LIMITS.codeMin}-${LIMITS.codeMax} 位字母或数字）；不填随机生成`),
+    valid_days: validDays,
+  }),
+  write: true,
+  async run(args, ctx) {
+    const { name } = validate(ledgerInput, { name: args.name });
+    const ledger = await ctx.session.platform.registry.createLedger(name);
+    const passphrase = args.create_passphrase ? await createPassphrase(ctx, ledger.id, args.passphrase, args.valid_days) : null;
+    return { created: { id: ledger.id, name: ledger.name }, passphrase };
+  },
+});
+
+const renameLedger = adminTool({
+  name: 'rename_ledger',
+  title: '重命名账本',
+  description: '修改账本名称，正在查看该账本的成员会立即看到新名称。',
+  input: z.object({ ledger: ledgerRef, name: z.string().describe('新名称') }),
+  write: true,
+  idempotent: true,
+  async run(args, ctx) {
+    const target = await resolveLedger(ctx.session.platform, args.ledger);
+    const { name } = validate(ledgerInput, { name: args.name });
+    return { renamed: await ctx.actions.renameLedger(target.id, name), before: target.name };
+  },
+});
+
+const deleteLedger = adminTool({
+  name: 'delete_ledger',
+  title: '删除账本',
+  description: '永久删除一个账本及其全部账目、口令和 AI 连接，不可恢复。为防误删，confirm_name 必须与账本名称完全一致。',
+  input: z.object({ ledger: ledgerRef, confirm_name: z.string().describe('再次输入要删除的账本名称以确认') }),
+  write: true,
+  destructive: true,
+  async run(args, ctx) {
+    const target = await resolveLedger(ctx.session.platform, args.ledger);
+    if (args.confirm_name.trim() !== target.name) {
+      throw badRequest(`确认名称不一致：要删除的账本叫「${target.name}」。请向用户确认后，把 confirm_name 设为该名称`);
+    }
+    return { deleted: await ctx.actions.deleteLedger(target.id) };
+  },
+});
+
+const listPassphrases = adminTool({
+  name: 'list_passphrases',
+  title: '查看分享口令',
+  description: '查看某个账本的全部分享口令、有效期状态（active / pending / expired）与邀请链接。',
+  input: z.object({ ledger: ledgerRef }),
+  write: false,
+  async run(args, ctx) {
+    const target = await resolveLedger(ctx.session.platform, args.ledger);
+    const list = await ctx.session.platform.registry.listPassphrases(target.id);
+    return { ledger: target.name, passphrases: list.map((p) => passphraseView(p, ctx.session.baseUrl)) };
+  },
+});
+
+const createPassphraseTool = adminTool({
+  name: 'create_passphrase',
+  title: '生成分享口令',
+  description: '为账本生成一个分享口令，返回口令与邀请链接（打开链接即可加入账本）。',
+  input: z.object({
+    ledger: ledgerRef,
+    code: z.string().optional().describe(`自定义口令（${LIMITS.codeMin}-${LIMITS.codeMax} 位字母或数字）；不填随机生成`),
+    valid_days: validDays,
+  }),
+  write: true,
+  async run(args, ctx) {
+    const target = await resolveLedger(ctx.session.platform, args.ledger);
+    return { ledger: target.name, created: await createPassphrase(ctx, target.id, args.code, args.valid_days) };
+  },
+});
+
+const revokePassphrase = adminTool({
+  name: 'revoke_passphrase',
+  title: '撤销分享口令',
+  description: '撤销一个分享口令：用它加入的成员会话和 AI 连接会立即失效。',
+  input: z.object({ ledger: ledgerRef, code: z.string().trim().min(1).describe('要撤销的口令') }),
+  write: true,
+  destructive: true,
+  idempotent: true,
+  async run(args, ctx) {
+    const target = await resolveLedger(ctx.session.platform, args.ledger);
+    const list = await ctx.session.platform.registry.listPassphrases(target.id);
+    const found = list.find((p) => p.code.toLowerCase() === args.code.toLowerCase());
+    if (!found) throw notFound(`账本「${target.name}」没有口令「${args.code}」`);
+    await ctx.actions.revokePassphrase(found.id);
+    return { revoked: found.code, ledger: target.name };
+  },
+});
+
+const ADMIN_TOOLS = [listLedgers, createLedger, renameLedger, deleteLedger, listPassphrases, createPassphraseTool, revokePassphrase];
+
+// ---------- 列表与调用 ----------
+
+type AnyTool = { kind: 'ledger'; tool: Tool } | { kind: 'admin'; tool: AdminTool };
+
+/** 当前授权可见的工具：管理员看到管理工具，以及需要指定 ledger 的账本工具 */
+function available(session: McpSession): AnyTool[] {
+  const canWrite = session.scopes.has('ledger:write');
+  const tools: AnyTool[] = [];
+  if (session.role === 'admin') tools.push(...ADMIN_TOOLS.map((tool) => ({ kind: 'admin' as const, tool })));
+  tools.push(...LEDGER_TOOLS.map((tool) => ({ kind: 'ledger' as const, tool })));
+  return tools.filter(({ tool }) => canWrite || !tool.write);
+}
+
+/** 管理员调用账本工具时多一个必填的 ledger 参数 */
+function schemaOf(entry: AnyTool, session: McpSession): z.ZodObject {
+  return entry.kind === 'ledger' && session.role === 'admin' ? entry.tool.input.extend({ ledger: ledgerRef }) : entry.tool.input;
+}
+
+function inputSchema(schema: z.ZodObject) {
+  const { $schema: _, ...json } = z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' });
+  return json;
 }
 
 /** tools/list：只列出当前授权可用的工具 */
-export function listTools(scopes: ReadonlySet<McpScope>) {
-  return TOOLS.filter((t) => allowed(t, scopes)).map((t) => ({
-    name: t.name,
-    title: t.title,
-    description: t.description,
-    inputSchema: inputSchema(t),
-    annotations: {
+export function listTools(session: McpSession) {
+  return available(session).map((entry) => {
+    const t = entry.tool;
+    return {
+      name: t.name,
       title: t.title,
-      readOnlyHint: !t.write,
-      destructiveHint: !!t.destructive,
-      idempotentHint: !t.write || !!t.idempotent,
-      openWorldHint: false,
-    },
-  }));
+      description: entry.kind === 'ledger' && session.role === 'admin' ? `${t.description}（管理员需用 ledger 参数指定账本）` : t.description,
+      inputSchema: inputSchema(schemaOf(entry, session)),
+      annotations: {
+        title: t.title,
+        readOnlyHint: !t.write,
+        destructiveHint: !!t.destructive,
+        idempotentHint: !t.write || !!t.idempotent,
+        openWorldHint: false,
+      },
+    };
+  });
 }
 
 export class UnknownToolError extends Error {}
 
 /** tools/call：业务错误作为工具结果（isError）返回，模型可据此自行修正 */
-export async function callTool(name: string, args: unknown, ctx: ToolContext) {
-  const t = TOOLS.find((x) => x.name === name);
-  if (!t) throw new UnknownToolError(`未知工具 ${name}`);
+export async function callTool(name: string, args: unknown, session: McpSession) {
   const fail = (text: string) => ({ content: [{ type: 'text', text }], isError: true });
-  if (!allowed(t, ctx.scopes)) return fail('当前授权为只读，无法修改账目。请在 AI 应用中重新连接并允许修改。');
+  const entry = available({ ...session, scopes: new Set(['ledger:read', 'ledger:write']) }).find((e) => e.tool.name === name);
+  if (!entry) throw new UnknownToolError(`未知工具 ${name}`);
+  if (entry.tool.write && !session.scopes.has('ledger:write')) {
+    return fail('当前授权为只读，无法修改。请在 AI 应用中重新连接并允许修改。');
+  }
 
-  const parsed = t.input.safeParse(args ?? {});
+  const parsed = schemaOf(entry, session).safeParse(args ?? {});
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return fail(`参数错误：${issue?.path.join('.') || '参数'} ${issue?.message ?? ''}`.trim());
   }
   try {
-    const result = await t.run(parsed.data, ctx);
+    let result: object;
+    if (entry.kind === 'admin') {
+      result = await entry.tool.run(parsed.data, { session, actions: adminActions(session.platform) });
+    } else {
+      const info = session.role === 'admin' ? await resolveLedger(session.platform, (parsed.data as { ledger: string }).ledger) : session.ledger!;
+      result = await entry.tool.run(parsed.data, {
+        ledger: session.platform.ledger(info.id).api,
+        info,
+        scopes: session.scopes,
+        origin: session.origin,
+        today: session.today,
+      });
+    }
     return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result };
   } catch (err) {
     if (err instanceof AppError) return fail(err.message);

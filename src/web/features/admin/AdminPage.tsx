@@ -15,7 +15,11 @@ export function AdminPage({ config }: { config: PublicConfig }) {
 
   const check = useCallback(async () => {
     try {
-      setGate({ state: 'ok', me: await call(api.admin.me.$get()) });
+      const me = await call(api.admin.me.$get());
+      // 从 AI 授权页过来登录的，登录后回到授权页（只允许站内的授权页地址，避免开放跳转）
+      const returnTo = new URLSearchParams(window.location.search).get('return_to');
+      if (returnTo?.startsWith('/oauth/authorize?')) return window.location.replace(returnTo);
+      setGate({ state: 'ok', me });
     } catch (err) {
       setGate({ state: err instanceof ApiError && err.status === 404 ? 'disabled' : 'denied' });
     }
@@ -57,7 +61,7 @@ export function AdminPage({ config }: { config: PublicConfig }) {
             )}
           </div>
         </header>
-        <Console />
+        <Console config={config} />
       </div>
     );
   }

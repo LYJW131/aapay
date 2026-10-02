@@ -520,7 +520,7 @@ export const oauthRoutes = new Hono<AppEnv>()
     return c.body(null, 200);
   });
 
-const approveInput = z.object({
+export const approveInput = z.object({
   /** 授权页地址上的原始查询串，服务端重新校验，不信任前端解析结果 */
   query: z.string().max(8192),
   /** 输入的分享口令；不填则使用当前浏览器已登录的账本 */
@@ -529,6 +529,48 @@ const approveInput = z.object({
   write: z.boolean(),
 });
 
+export type ApproveInput = z.infer<typeof approveInput>;
+
+/**
+ * 同意授权：校验请求、签发授权码并返回带 code 的回调地址。
+ * 成员授权走 /api/oauth/authorize；管理员授权走 /api/admin/oauth/authorize，
+ * 由控制台同样的管理员认证（Cloudflare 上 Access 会在边缘拦截该路径）把关。
+ */
+export async function approveAuthorization(c: Context<AppEnv>, input: ApproveInput, admin: string | null) {
+  const { platform, config } = c.var;
+  const parsed = await parseAuthorize(c, new URLSearchParams(input.query));
+  if ('redirect' in parsed) return { redirect: parsed.redirect, ledger: null };
+  const request = parsed.request;
+
+  let source: GrantSource;
+  if (admin !== null) {
+    source = { kind: 'admin', subject: admin };
+  } else if (config.mode === 'shared') {
+    const session = (await findSession(c))!;
+    source = { kind: 'ledger', ledgerId: session.ledger.id, subject: 'shared' };
+  } else if (input.code) {
+    if (!(await platform.rateLimit('join', clientIp(c)))) throw new AppError(429, '尝试过于频繁，请稍后再试');
+    source = { kind: 'passphrase', code: input.code };
+  } else {
+    const token = getCookie(c, SESSION_COOKIE);
+    if (!token) throw new AppError(401, '请输入账本口令');
+    source = { kind: 'session', tokenHash: await sha256(token) };
+  }
+
+  const scopes = input.write ? request.scopes : request.scopes.filter((s) => s === 'ledger:read');
+  if (!scopes.length) throw new AppError(400, '至少需要查看权限');
+  const code = newToken();
+  const ledger = await platform.registry.createAuthCode(source, {
+    codeHash: await sha256(code),
+    clientId: request.client.id,
+    redirectUri: request.redirectUri,
+    challenge: request.challenge,
+    scope: scopes.join(' '),
+    resource: request.resource,
+  });
+  return { redirect: redirectWith(c, request.redirectUri, { code, state: request.state }), ledger };
+}
+
 /** /api/oauth/*：授权页使用的接口（同源、带 Cookie，受全局跨站写保护） */
 export const authorizeRoutes = new Hono<AppEnv>()
   .use(requireMcp)
@@ -536,44 +578,17 @@ export const authorizeRoutes = new Hono<AppEnv>()
     const parsed = await parseAuthorize(c, new URL(c.req.url).searchParams);
     if ('redirect' in parsed) return c.json({ redirect: parsed.redirect });
     const { client, redirectUri, scopes, state } = parsed.request;
+    const { config } = c.var;
+    const url = new URL(c.req.url);
+    // 管理员可以先去控制台完成认证（Access 会拦截 /admin），再回到这个授权页
+    const canLogin = config.mode !== 'shared' && (config.adminAuth === 'access' || config.adminAuth === 'password');
     return c.json({
       client: { name: client.name, host: hostOf(client.uri) ?? (client.kind === 'cimd' ? hostOf(client.id) : null) },
       redirectHost: hostOf(redirectUri) ?? redirectUri,
       scopes,
       session: await findSession(c),
+      adminLoginUrl: canLogin ? `/admin?return_to=${encodeURIComponent(`/oauth/authorize${url.search}`)}` : null,
       denyUrl: redirectWith(c, redirectUri, { error: 'access_denied', error_description: 'the user denied access', state }),
     } satisfies AuthorizeInfo);
   })
-  .post('/authorize', body(approveInput), async (c) => {
-    const { platform, config } = c.var;
-    const input = c.req.valid('json');
-    const parsed = await parseAuthorize(c, new URLSearchParams(input.query));
-    if ('redirect' in parsed) return c.json({ redirect: parsed.redirect, ledger: null });
-    const request = parsed.request;
-
-    let source: GrantSource;
-    if (config.mode === 'shared') {
-      const session = (await findSession(c))!;
-      source = { kind: 'ledger', ledgerId: session.ledger.id, subject: 'shared' };
-    } else if (input.code) {
-      if (!(await platform.rateLimit('join', clientIp(c)))) throw new AppError(429, '尝试过于频繁，请稍后再试');
-      source = { kind: 'passphrase', code: input.code };
-    } else {
-      const token = getCookie(c, SESSION_COOKIE);
-      if (!token) throw new AppError(401, '请输入账本口令');
-      source = { kind: 'session', tokenHash: await sha256(token) };
-    }
-
-    const scopes = input.write ? request.scopes : request.scopes.filter((s) => s === 'ledger:read');
-    if (!scopes.length) throw new AppError(400, '至少需要查看权限');
-    const code = newToken();
-    const ledger = await platform.registry.createAuthCode(source, {
-      codeHash: await sha256(code),
-      clientId: request.client.id,
-      redirectUri: request.redirectUri,
-      challenge: request.challenge,
-      scope: scopes.join(' '),
-      resource: request.resource,
-    });
-    return c.json({ redirect: redirectWith(c, request.redirectUri, { code, state: request.state }), ledger });
-  });
+  .post('/authorize', body(approveInput), async (c) => c.json(await approveAuthorization(c, c.req.valid('json'), null)));

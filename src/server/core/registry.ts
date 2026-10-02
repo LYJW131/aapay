@@ -11,7 +11,7 @@ import type {
 } from '../../shared/types.ts';
 import { AppError, conflict, notFound } from './errors.ts';
 import { newId } from './ids.ts';
-import { first, migrate, type SqlDriver } from './sql.ts';
+import { first, migrate, type SqlDriver, type SqlValue } from './sql.ts';
 
 const DAY = 86_400_000;
 export const SESSION_TTL = {
@@ -30,13 +30,15 @@ export const OAUTH_TTL = {
   access: 60 * 60_000,
   /** 一次授权（刷新令牌）的最长有效期，同时不会超过口令本身的有效期 */
   grant: 180 * DAY,
+  /** 管理员授权权限大，有效期更短，到期需重新登录授权 */
+  adminGrant: 30 * DAY,
   /** 长期无授权的动态注册客户端会被清理 */
   idleClient: 30 * DAY,
   /** 客户端元数据文档（CIMD）的缓存时间 */
   metadata: DAY,
 } as const;
 
-const MIGRATIONS = [
+export const MIGRATIONS = [
   `
   CREATE TABLE ledgers (
     id TEXT PRIMARY KEY,
@@ -126,7 +128,65 @@ const MIGRATIONS = [
   ALTER TABLE oauth_clients ADD COLUMN jwks_uri TEXT;
   ALTER TABLE oauth_clients ADD COLUMN public_allowed INTEGER NOT NULL DEFAULT 1;
   `,
+  `
+  -- 管理员授权：不绑定账本（ledger_id 为空），可以管理全部账本。保留已有的成员授权与令牌
+  CREATE TABLE oauth_grants_v2 (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL REFERENCES oauth_clients (id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('member', 'admin')),
+    ledger_id TEXT REFERENCES ledgers (id) ON DELETE CASCADE,
+    passphrase_id TEXT REFERENCES passphrases (id) ON DELETE CASCADE,
+    subject TEXT,
+    scope TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    refresh_hash TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    CHECK ((role = 'admin') = (ledger_id IS NULL))
+  );
+  INSERT INTO oauth_grants_v2 (id, client_id, role, ledger_id, passphrase_id, subject, scope, resource, refresh_hash,
+      created_at, last_used_at, expires_at)
+    SELECT id, client_id, 'member', ledger_id, passphrase_id, subject, scope, resource, refresh_hash,
+      created_at, last_used_at, expires_at
+    FROM oauth_grants;
+
+  CREATE TABLE oauth_tokens_v2 (
+    token_hash TEXT PRIMARY KEY,
+    grant_id TEXT NOT NULL REFERENCES oauth_grants_v2 (id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL
+  );
+  INSERT INTO oauth_tokens_v2 (token_hash, grant_id, expires_at) SELECT token_hash, grant_id, expires_at FROM oauth_tokens;
+
+  DROP TABLE oauth_tokens;
+  DROP TABLE oauth_grants;
+  DROP TABLE oauth_codes;
+  -- 重命名时，oauth_tokens 中指向 oauth_grants_v2 的外键会自动改写为 oauth_grants
+  ALTER TABLE oauth_grants_v2 RENAME TO oauth_grants;
+  ALTER TABLE oauth_tokens_v2 RENAME TO oauth_tokens;
+  CREATE INDEX oauth_grants_ledger ON oauth_grants (ledger_id);
+  CREATE INDEX oauth_grants_client ON oauth_grants (client_id);
+  CREATE INDEX oauth_tokens_grant ON oauth_tokens (grant_id);
+  CREATE INDEX oauth_tokens_expires ON oauth_tokens (expires_at);
+
+  CREATE TABLE oauth_codes (
+    code_hash TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL REFERENCES oauth_clients (id) ON DELETE CASCADE,
+    role TEXT NOT NULL CHECK (role IN ('member', 'admin')),
+    ledger_id TEXT REFERENCES ledgers (id) ON DELETE CASCADE,
+    passphrase_id TEXT REFERENCES passphrases (id) ON DELETE CASCADE,
+    subject TEXT,
+    redirect_uri TEXT NOT NULL,
+    challenge TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    grant_expires_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  );
+  `,
 ];
+
+export type GrantRole = 'member' | 'admin';
 
 export interface OAuthClient {
   /** 动态注册时生成的随机 ID，或 CIMD 客户端的元数据文档 URL */
@@ -149,7 +209,9 @@ export interface OAuthClient {
 export type GrantSource =
   | { kind: 'passphrase'; code: string }
   | { kind: 'session'; tokenHash: string }
-  | { kind: 'ledger'; ledgerId: string; subject: string };
+  | { kind: 'ledger'; ledgerId: string; subject: string }
+  /** 已通过管理员认证（Access / 密码 / 代理）的用户，授权管理全部账本 */
+  | { kind: 'admin'; subject: string };
 
 export interface AuthCodeInput {
   codeHash: string;
@@ -176,7 +238,11 @@ export interface AccessGrant {
   grantId: string;
   clientId: string;
   clientName: string | null;
-  ledger: LedgerInfo;
+  role: GrantRole;
+  /** 成员授权绑定的账本；管理员授权为 null */
+  ledger: LedgerInfo | null;
+  /** 管理员授权时为管理员身份（邮箱等） */
+  subject: string | null;
   scope: string;
   resource: string;
 }
@@ -196,7 +262,8 @@ type ClientRow = {
 
 type CodeRow = {
   client_id: string;
-  ledger_id: string;
+  role: GrantRole;
+  ledger_id: string | null;
   passphrase_id: string | null;
   subject: string | null;
   redirect_uri: string;
@@ -462,18 +529,19 @@ export class RegistryService {
     );
   }
 
-  /** 用户同意授权后签发授权码，返回被授权的账本 */
-  createAuthCode(source: GrantSource, input: AuthCodeInput): LedgerInfo {
+  /** 用户同意授权后签发授权码，返回被授权的账本（管理员授权返回 null） */
+  createAuthCode(source: GrantSource, input: AuthCodeInput): LedgerInfo | null {
     const now = Date.now();
     const grant = this.resolveGrantSource(source, now);
     this.db.run('DELETE FROM oauth_codes WHERE expires_at <= ?', now);
     this.db.run(
-      `INSERT INTO oauth_codes (code_hash, client_id, ledger_id, passphrase_id, subject, redirect_uri, challenge,
+      `INSERT INTO oauth_codes (code_hash, client_id, role, ledger_id, passphrase_id, subject, redirect_uri, challenge,
          scope, resource, grant_expires_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       input.codeHash,
       input.clientId,
-      grant.ledger.id,
+      grant.role,
+      grant.ledger?.id ?? null,
       grant.passphraseId,
       grant.subject,
       input.redirectUri,
@@ -512,11 +580,12 @@ export class RegistryService {
       const grantId = newId();
       this.db.run('DELETE FROM oauth_grants WHERE expires_at <= ?', now);
       this.db.run(
-        `INSERT INTO oauth_grants (id, client_id, ledger_id, passphrase_id, subject, scope, resource, refresh_hash,
+        `INSERT INTO oauth_grants (id, client_id, role, ledger_id, passphrase_id, subject, scope, resource, refresh_hash,
            created_at, last_used_at, expires_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         grantId,
         code.client_id,
+        code.role,
         code.ledger_id,
         code.passphrase_id,
         code.subject,
@@ -562,18 +631,20 @@ export class RegistryService {
         grant_id: string;
         client_id: string;
         client_name: string | null;
-        ledger_id: string;
-        ledger_name: string;
+        role: GrantRole;
+        ledger_id: string | null;
+        ledger_name: string | null;
+        subject: string | null;
         scope: string;
         resource: string;
         last_used_at: number;
       }>(
-        `SELECT g.id AS grant_id, g.client_id, c.name AS client_name, g.ledger_id, l.name AS ledger_name,
-                g.scope, g.resource, g.last_used_at
+        `SELECT g.id AS grant_id, g.client_id, c.name AS client_name, g.role, g.ledger_id, l.name AS ledger_name,
+                g.subject, g.scope, g.resource, g.last_used_at
          FROM oauth_tokens t
          JOIN oauth_grants g ON g.id = t.grant_id
          JOIN oauth_clients c ON c.id = g.client_id
-         JOIN ledgers l ON l.id = g.ledger_id
+         LEFT JOIN ledgers l ON l.id = g.ledger_id
          WHERE t.token_hash = ? AND t.expires_at > ? AND g.expires_at > ?`,
         tokenHash,
         now,
@@ -589,7 +660,9 @@ export class RegistryService {
       grantId: row.grant_id,
       clientId: row.client_id,
       clientName: row.client_name,
-      ledger: { id: row.ledger_id, name: row.ledger_name },
+      role: row.role,
+      ledger: row.ledger_id ? { id: row.ledger_id, name: row.ledger_name! } : null,
+      subject: row.role === 'admin' ? row.subject : null,
       scope: row.scope,
       resource: row.resource,
     };
@@ -598,35 +671,15 @@ export class RegistryService {
   /** RFC 7009：撤销刷新令牌会结束整个授权，撤销访问令牌只作废它本身 */
   revokeToken(tokenHash: string): void {
     const grant = first(
-      this.db.all<{ ledger_id: string }>('DELETE FROM oauth_grants WHERE refresh_hash = ? RETURNING ledger_id', tokenHash),
+      this.db.all<{ ledger_id: string | null }>('DELETE FROM oauth_grants WHERE refresh_hash = ? RETURNING ledger_id', tokenHash),
     );
     if (grant) this.emit({ type: 'connections.changed', ledgerId: grant.ledger_id });
     else this.db.run('DELETE FROM oauth_tokens WHERE token_hash = ?', tokenHash);
   }
 
+  /** 连接到某个账本的成员授权 */
   listConnections(ledgerId: string): Connection[] {
-    return this.db
-      .all<ClientRow & { grant_id: string; scope: string; grant_created_at: number; grant_last_used_at: number; expires_at: number }>(
-        `SELECT c.*, g.id AS grant_id, g.scope, g.created_at AS grant_created_at,
-                g.last_used_at AS grant_last_used_at, g.expires_at
-         FROM oauth_grants g JOIN oauth_clients c ON c.id = g.client_id
-         WHERE g.ledger_id = ? AND g.expires_at > ?
-         ORDER BY g.last_used_at DESC`,
-        ledgerId,
-        Date.now(),
-      )
-      .map((r) => {
-        const client = toClient(r);
-        return {
-          id: r.grant_id,
-          clientName: client.name,
-          clientHost: clientHost(client.uri, client.redirectUris, client.id),
-          scopes: r.scope.split(' ').filter(Boolean) as McpScope[],
-          createdAt: r.grant_created_at,
-          lastUsedAt: r.grant_last_used_at,
-          expiresAt: r.expires_at,
-        };
-      });
+    return this.connections('g.ledger_id = ?', ledgerId);
   }
 
   revokeConnection(id: string, ledgerId: string): void {
@@ -636,14 +689,57 @@ export class RegistryService {
     this.emit({ type: 'connections.changed', ledgerId });
   }
 
+  /** 以管理员身份连接、可管理全部账本的授权 */
+  listAdminConnections(): Connection[] {
+    return this.connections("g.role = 'admin'");
+  }
+
+  revokeAdminConnection(id: string): void {
+    if (!first(this.db.all("DELETE FROM oauth_grants WHERE id = ? AND role = 'admin' RETURNING id", id))) {
+      throw notFound('该连接不存在或已断开');
+    }
+    this.emit({ type: 'connections.changed', ledgerId: null });
+  }
+
   // ---------- 内部工具 ----------
 
-  private resolveGrantSource(source: GrantSource, now: number) {
+  private connections(where: string, ...params: SqlValue[]): Connection[] {
+    return this.db
+      .all<ClientRow & { grant_id: string; subject: string | null; scope: string; grant_created_at: number; grant_last_used_at: number; expires_at: number }>(
+        `SELECT c.*, g.id AS grant_id, g.subject, g.scope, g.created_at AS grant_created_at,
+                g.last_used_at AS grant_last_used_at, g.expires_at
+         FROM oauth_grants g JOIN oauth_clients c ON c.id = g.client_id
+         WHERE ${where} AND g.expires_at > ?
+         ORDER BY g.last_used_at DESC`,
+        ...params,
+        Date.now(),
+      )
+      .map((r) => {
+        const client = toClient(r);
+        return {
+          id: r.grant_id,
+          clientName: client.name,
+          clientHost: clientHost(client.uri, client.redirectUris, client.id),
+          subject: r.subject,
+          scopes: r.scope.split(' ').filter(Boolean) as McpScope[],
+          createdAt: r.grant_created_at,
+          lastUsedAt: r.grant_last_used_at,
+          expiresAt: r.expires_at,
+        };
+      });
+  }
+
+  private resolveGrantSource(
+    source: GrantSource,
+    now: number,
+  ): { role: GrantRole; ledger: LedgerInfo | null; passphraseId: string | null; subject: string | null; expiresAt: number } {
     const cap = (validUntil: number | null) => Math.min(validUntil ?? Infinity, now + OAUTH_TTL.grant);
     switch (source.kind) {
+      case 'admin':
+        return { role: 'admin', ledger: null, passphraseId: null, subject: source.subject, expiresAt: now + OAUTH_TTL.adminGrant };
       case 'passphrase': {
         const p = this.activePassphrase(source.code, now);
-        return { ledger: { id: p.ledger_id, name: p.name }, passphraseId: p.id, subject: null, expiresAt: cap(p.valid_until) };
+        return { role: 'member', ledger: { id: p.ledger_id, name: p.name }, passphraseId: p.id, subject: null, expiresAt: cap(p.valid_until) };
       }
       case 'session': {
         const row = first(
@@ -659,6 +755,7 @@ export class RegistryService {
         );
         if (!row) throw new AppError(401, '当前浏览器的账本登录已过期，请输入口令');
         return {
+          role: 'member',
           ledger: { id: row.ledger_id, name: row.name },
           passphraseId: row.passphrase_id,
           subject: row.subject,
@@ -666,7 +763,7 @@ export class RegistryService {
         };
       }
       case 'ledger':
-        return { ledger: this.getLedger(source.ledgerId), passphraseId: null, subject: source.subject, expiresAt: cap(null) };
+        return { role: 'member', ledger: this.getLedger(source.ledgerId), passphraseId: null, subject: source.subject, expiresAt: cap(null) };
     }
   }
 

@@ -12,12 +12,21 @@ import {
   settlementInput,
 } from '../shared/schema.ts';
 import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, Snapshot } from '../shared/types.ts';
+import { adminActions } from './admin.ts';
 import { authenticateAdmin, passwordMatches } from './auth/admin.ts';
 import { clearSessionCookie, CONSOLE_COOKIE, SESSION_COOKIE, setSessionCookie } from './auth/cookies.ts';
 import type { Config } from './config.ts';
 import { AppError, notFound, unauthorized } from './core/errors.ts';
 import { newToken, sha256 } from './core/ids.ts';
-import { authorizeRoutes, OAuthError, oauthRoutes, wellKnownRoutes } from './mcp/oauth.ts';
+import {
+  approveAuthorization,
+  approveInput,
+  authorizeRoutes,
+  OAuthError,
+  oauthRoutes,
+  requireMcp,
+  wellKnownRoutes,
+} from './mcp/oauth.ts';
 import { mcpRoutes } from './mcp/server.ts';
 import type { Platform } from './platform.ts';
 import { clientIp, findSession } from './session.ts';
@@ -132,42 +141,34 @@ const adminRoutes = new Hono<AppEnv>()
   })
   .use(requireAdmin)
   .get('/me', (c) => c.json(c.var.admin))
+  // 以管理员身份授权 AI 应用管理全部账本（授权页调用）
+  .post('/oauth/authorize', requireMcp, body(approveInput), async (c) =>
+    c.json(await approveAuthorization(c, c.req.valid('json'), c.var.admin.name)),
+  )
   .get('/live', (c) => {
     requireUpgrade(c);
     return c.var.platform.connectConsole(c);
   })
-  .get('/ledgers', async (c) => {
-    const { platform } = c.var;
-    const ledgers = await platform.registry.listLedgers();
-    const stats = await Promise.all(ledgers.map((l) => platform.ledger(l.id).api.stats().catch(() => null)));
-    return c.json(ledgers.map((l, i) => ({ ...l, stats: stats[i] ?? null }) satisfies LedgerOverview));
-  })
+  .get('/ledgers', async (c) => c.json((await adminActions(c.var.platform).listLedgers()) satisfies LedgerOverview[]))
   .post('/ledgers', body(ledgerInput), async (c) =>
     c.json(await c.var.platform.registry.createLedger(c.req.valid('json').name)),
   )
-  .patch('/ledgers/:id', body(ledgerInput), async (c) => {
-    const { platform } = c.var;
-    const ledger = await platform.registry.renameLedger(c.req.param('id'), c.req.valid('json').name);
-    await platform.ledger(ledger.id).api.notify({ type: 'ledger.renamed', name: ledger.name });
-    return c.json(ledger);
-  })
-  .delete('/ledgers/:id', async (c) => {
-    const { platform } = c.var;
-    const ledger = await platform.registry.deleteLedger(c.req.param('id'));
-    await platform.ledger(ledger.id).destroy();
-    return c.json(ledger);
-  })
+  .patch('/ledgers/:id', body(ledgerInput), async (c) =>
+    c.json(await adminActions(c.var.platform).renameLedger(c.req.param('id'), c.req.valid('json').name)),
+  )
+  .delete('/ledgers/:id', async (c) => c.json(await adminActions(c.var.platform).deleteLedger(c.req.param('id'))))
   .get('/ledgers/:id/passphrases', async (c) =>
     c.json(await c.var.platform.registry.listPassphrases(c.req.param('id'))),
   )
   .post('/ledgers/:id/passphrases', body(passphraseInput), async (c) =>
     c.json(await c.var.platform.registry.createPassphrase(c.req.param('id'), c.req.valid('json'))),
   )
-  .delete('/passphrases/:id', async (c) => {
-    const { platform } = c.var;
-    const passphrase = await platform.registry.revokePassphrase(c.req.param('id'));
-    await platform.ledger(passphrase.ledgerId).disconnect(`p:${passphrase.code.toLowerCase()}`);
-    return c.json(passphrase);
+  .delete('/passphrases/:id', async (c) => c.json(await adminActions(c.var.platform).revokePassphrase(c.req.param('id'))))
+  // 以管理员身份连接的 AI 应用
+  .get('/connections', async (c) => c.json(await c.var.platform.registry.listAdminConnections()))
+  .delete('/connections/:id', async (c) => {
+    await c.var.platform.registry.revokeAdminConnection(c.req.param('id'));
+    return c.json({ ok: true });
   })
   .post('/ledgers/:id/enter', async (c) => {
     const token = newToken();

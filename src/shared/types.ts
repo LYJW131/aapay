@@ -133,7 +133,8 @@ export interface Passphrase {
 export type RegistryEvent =
   | { type: 'ledgers.changed' }
   | { type: 'passphrases.changed'; ledgerId: string }
-  | { type: 'connections.changed'; ledgerId: string };
+  /** ledgerId 为 null 表示管理员授权 */
+  | { type: 'connections.changed'; ledgerId: string | null };
 
 export type McpScope = 'ledger:read' | 'ledger:write';
 
@@ -144,6 +145,8 @@ export interface Connection {
   clientName: string | null;
   /** 客户端主页或回调地址的主机名，用于辨认来源 */
   clientHost: string | null;
+  /** 管理员授权时为授权人的身份（邮箱等） */
+  subject: string | null;
   scopes: McpScope[];
   createdAt: Timestamp;
   lastUsedAt: Timestamp;
@@ -158,6 +161,8 @@ export interface AuthorizeInfo {
   scopes: McpScope[];
   /** 当前浏览器已登录的账本，可直接授权 */
   session: SessionInfo | null;
+  /** 管理员登录入口（登录后回到授权页）；已登录的管理员可以授权管理全部账本 */
+  adminLoginUrl: string | null;
   /** 用户拒绝时跳转的地址 */
   denyUrl: string;
 }

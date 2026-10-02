@@ -1,8 +1,8 @@
-import { ArrowLeftRight, Check, CircleCheck, Eye, KeyRound, PenLine, Sparkles, TriangleAlert } from 'lucide-react';
+import { ArrowLeftRight, Check, CircleCheck, Eye, KeyRound, PenLine, ShieldCheck, Sparkles, TriangleAlert } from 'lucide-react';
 import { motion } from 'motion/react';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { LIMITS } from '../../../shared/limits.ts';
-import type { AuthorizeInfo, PublicConfig } from '../../../shared/types.ts';
+import type { AdminIdentity, AuthorizeInfo, PublicConfig } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { AppIcon } from '../../components/Logo.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
@@ -120,16 +120,31 @@ export function AuthorizePage({ config }: { config: PublicConfig }) {
   );
 }
 
+type Target = 'admin' | 'session' | 'code';
+
 function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: PublicConfig; onDone: (redirect: string, message: string) => void }) {
   const shared = config.mode === 'shared';
   const canWrite = info.scopes.includes('ledger:write');
-  const [useSession, setUseSession] = useState(!!info.session && !shared);
+  const [admin, setAdmin] = useState<AdminIdentity | null>(null);
+  const [target, setTarget] = useState<Target>(info.session && !shared ? 'session' : 'code');
   const [write, setWrite] = useState(canWrite);
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const name = info.client.name || info.client.host || '未知应用';
-  const needCode = !shared && !useSession;
+  const needCode = !shared && target === 'code';
+
+  // 已登录控制台的管理员可以授权管理全部账本（与控制台使用同一套管理员认证）
+  useEffect(() => {
+    if (shared || config.adminAuth === 'disabled') return;
+    call(api.admin.me.$get()).then(
+      (me) => {
+        setAdmin(me);
+        setTarget('admin');
+      },
+      () => undefined,
+    );
+  }, [shared, config.adminAuth]);
 
   async function approve(e: FormEvent) {
     e.preventDefault();
@@ -140,16 +155,26 @@ function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: Public
     }
     setLoading(true);
     setError('');
+    const query = window.location.search.slice(1);
     try {
-      const result = await call(
-        api.oauth.authorize.$post({ json: { query: window.location.search.slice(1), code: needCode ? value : undefined, write } }),
-      );
-      onDone(result.redirect, result.ledger ? `已连接「${result.ledger.name}」` : '授权请求有误');
+      if (target === 'admin') {
+        const result = await call(api.admin.oauth.authorize.$post({ json: { query, write } }));
+        onDone(result.redirect, '已以管理员身份连接');
+      } else {
+        const result = await call(api.oauth.authorize.$post({ json: { query, code: needCode ? value : undefined, write } }));
+        onDone(result.redirect, result.ledger ? `已连接「${result.ledger.name}」` : '授权请求有误');
+      }
     } catch (err) {
       setError(errorMessage(err));
       setLoading(false);
     }
   }
+
+  const targets = [
+    admin && { value: 'admin' as const, label: '全部账本' },
+    info.session && !shared && { value: 'session' as const, label: `「${info.session.ledger.name}」` },
+    (admin || info.session) && !shared && { value: 'code' as const, label: '用口令' },
+  ].filter((o): o is { value: Target; label: string } => !!o);
 
   return (
     <Shell>
@@ -171,51 +196,38 @@ function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: Public
 
       <form onSubmit={approve} className="card space-y-5 p-5">
         <section>
-          <h2 className="mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">将获得的权限</h2>
-          <ul className="divide-y divide-zinc-900/5 rounded-2xl bg-zinc-50 dark:divide-white/5 dark:bg-white/4">
-            <li className="flex items-center gap-3 px-4 py-3">
-              <Eye className="size-4 shrink-0 text-brand-500" />
-              <span className="flex-1 text-sm">查看成员、支出、余额与结算</span>
-              <Check className="size-4 text-emerald-500" />
-            </li>
-            {canWrite && (
-              <li className="flex items-center gap-3 px-4 py-3">
-                <PenLine className={cn('size-4 shrink-0', write ? 'text-brand-500' : 'text-zinc-400')} />
-                <span className={cn('flex-1 text-sm', !write && 'text-zinc-400')}>记账、修改与删除账目</span>
-                <Switch checked={write} onChange={setWrite} label="允许修改账目" />
-              </li>
-            )}
-          </ul>
-        </section>
-
-        <section>
           <h2 className="mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">授权的账本</h2>
           {shared ? (
             <p className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm dark:bg-white/4">共享账本</p>
           ) : (
             <div className="space-y-2">
-              {info.session && (
-                <div className="grid grid-cols-2 gap-1 rounded-2xl bg-zinc-100/80 p-1 dark:bg-white/6">
-                  {[
-                    { value: true, label: `「${info.session.ledger.name}」` },
-                    { value: false, label: '其他账本' },
-                  ].map((o) => (
+              {targets.length > 1 && (
+                <div className="grid gap-1 rounded-2xl bg-zinc-100/80 p-1 dark:bg-white/6" style={{ gridTemplateColumns: `repeat(${targets.length}, minmax(0, 1fr))` }}>
+                  {targets.map((o) => (
                     <button
-                      key={String(o.value)}
+                      key={o.value}
                       type="button"
                       onClick={() => {
-                        setUseSession(o.value);
+                        setTarget(o.value);
                         setError('');
                       }}
                       className={cn(
-                        'truncate rounded-xl px-3 py-2 text-sm transition',
-                        useSession === o.value ? 'bg-white font-medium shadow-sm dark:bg-white/12' : 'text-zinc-500',
+                        'truncate rounded-xl px-2 py-2 text-sm transition',
+                        target === o.value ? 'bg-white font-medium shadow-sm dark:bg-white/12' : 'text-zinc-500',
                       )}
                     >
                       {o.label}
                     </button>
                   ))}
                 </div>
+              )}
+              {target === 'admin' && admin && (
+                <p className="flex items-center gap-2 rounded-2xl bg-brand-500/8 px-4 py-3 text-[13px] text-brand-700 dark:text-brand-200">
+                  <ShieldCheck className="size-4 shrink-0" />
+                  <span className="min-w-0">
+                    以管理员 <span className="font-medium break-all">{admin.name}</span> 的身份授权，可管理全部账本
+                  </span>
+                </p>
               )}
               {needCode && (
                 <div className="relative">
@@ -241,6 +253,26 @@ function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: Public
           )}
         </section>
 
+        <section>
+          <h2 className="mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">将获得的权限</h2>
+          <ul className="divide-y divide-zinc-900/5 rounded-2xl bg-zinc-50 dark:divide-white/5 dark:bg-white/4">
+            <li className="flex items-center gap-3 px-4 py-3">
+              <Eye className="size-4 shrink-0 text-brand-500" />
+              <span className="flex-1 text-sm">{target === 'admin' ? '查看全部账本、口令与账目' : '查看成员、支出、余额与结算'}</span>
+              <Check className="size-4 text-emerald-500" />
+            </li>
+            {canWrite && (
+              <li className="flex items-center gap-3 px-4 py-3">
+                <PenLine className={cn('size-4 shrink-0', write ? 'text-brand-500' : 'text-zinc-400')} />
+                <span className={cn('flex-1 text-sm', !write && 'text-zinc-400')}>
+                  {target === 'admin' ? '记账，以及创建 / 删除账本、管理口令' : '记账、修改与删除账目'}
+                </span>
+                <Switch checked={write} onChange={setWrite} label="允许修改" />
+              </li>
+            )}
+          </ul>
+        </section>
+
         {error && <p className="text-center text-sm text-rose-500">{error}</p>}
 
         <div className="space-y-2">
@@ -253,8 +285,21 @@ function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: Public
         </div>
       </form>
 
+      {!admin && info.adminLoginUrl && (
+        <button
+          type="button"
+          onClick={() => window.location.assign(info.adminLoginUrl!)}
+          className="mx-auto mt-5 flex items-center gap-1.5 text-sm text-zinc-500 transition hover:text-brand-600 dark:text-zinc-400"
+        >
+          <ShieldCheck className="size-4" />
+          以管理员身份登录，授权管理全部账本
+        </button>
+      )}
+
       <p className="mt-5 px-2 text-center text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
-        应用名称由对方自行声明，请确认跳转地址是你信任的应用。授权只对这一个账本有效，可随时在账本的「连接 AI」中断开；口令被撤销时也会自动失效。
+        {target === 'admin'
+          ? '应用名称由对方自行声明，请确认跳转地址是你信任的应用。管理员授权 30 天内有效，可随时在控制台断开；关闭管理后台或移出管理员名单后立即失效。'
+          : '应用名称由对方自行声明，请确认跳转地址是你信任的应用。授权只对这一个账本有效，可随时在账本的「连接 AI」中断开；口令被撤销时也会自动失效。'}
       </p>
     </Shell>
   );

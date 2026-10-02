@@ -14,9 +14,10 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
-import { formatMoney } from '../../../shared/money.ts';
 import { LIMITS } from '../../../shared/limits.ts';
-import type { LedgerOverview, Passphrase, RegistryEvent } from '../../../shared/types.ts';
+import { formatMoney } from '../../../shared/money.ts';
+import { randomPassphrase } from '../../../shared/passphrase.ts';
+import type { LedgerOverview, Passphrase, PublicConfig, RegistryEvent } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Card, Empty, Label } from '../../components/Card.tsx';
 import { QrCode } from '../../components/QrCode.tsx';
@@ -27,6 +28,7 @@ import { cn } from '../../lib/cn.ts';
 import { formatDateTime, relativeTime } from '../../lib/dates.ts';
 import { usePersistentState } from '../../lib/hooks.ts';
 import { joinLink } from '../ledger/Header.tsx';
+import { AiConnections } from './AiConnections.tsx';
 
 /** 订阅管理端实时事件：其他设备上的操作会即时同步过来 */
 function useConsoleLive(onEvent: (event: RegistryEvent) => void) {
@@ -54,12 +56,13 @@ function useConsoleLive(onEvent: (event: RegistryEvent) => void) {
   }, [onEvent]);
 }
 
-export function Console() {
+export function Console({ config }: { config: PublicConfig }) {
   const [ledgers, setLedgers] = useState<LedgerOverview[] | null>(null);
   const [selectedId, setSelectedId] = usePersistentState<string | null>('aapay:console:selected', null);
   const [passphrases, setPassphrases] = useState<Passphrase[] | null>(null);
   const [name, setName] = useState('');
   const [creating, setCreating] = useState(false);
+  const [aiVersion, setAiVersion] = useState(0);
 
   const selected = ledgers?.find((l) => l.id === selectedId) ?? ledgers?.[0] ?? null;
 
@@ -89,6 +92,7 @@ export function Console() {
     useCallback(
       (event: RegistryEvent) => {
         void loadLedgers();
+        if (event.type === 'connections.changed' && event.ledgerId === null) setAiVersion((v) => v + 1);
         if (event.type === 'passphrases.changed' && event.ledgerId === selected?.id) void loadPassphrases(event.ledgerId);
       },
       [loadLedgers, loadPassphrases, selected?.id],
@@ -178,6 +182,7 @@ export function Console() {
             }}
           />
         )}
+        {config.mcp && <AiConnections version={aiVersion} />}
       </div>
     </main>
   );
@@ -357,13 +362,8 @@ const toLocalInput = (ts: number) => {
   return d.toISOString().slice(0, 16);
 };
 
-function randomCode(length = 6) {
-  const alphabet = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  return [...crypto.getRandomValues(new Uint8Array(length))].map((b) => alphabet[b % alphabet.length]).join('');
-}
-
 function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: (p: Passphrase) => void }) {
-  const [code, setCode] = useState(randomCode);
+  const [code, setCode] = useState(randomPassphrase);
   const [validity, setValidity] = useState<Validity>('7d');
   const [from, setFrom] = useState(() => toLocalInput(Date.now()));
   const [until, setUntil] = useState(() => toLocalInput(Date.now() + 7 * 86_400_000));
@@ -380,7 +380,7 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
     setSaving(true);
     try {
       const p = await call(api.admin.ledgers[':id'].passphrases.$post({ param: { id: ledgerId }, json: { code: code.trim(), ...range } }));
-      setCode(randomCode());
+      setCode(randomPassphrase());
       onCreated(p);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -404,7 +404,7 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
           />
           <button
             type="button"
-            onClick={() => setCode(randomCode())}
+            onClick={() => setCode(randomPassphrase())}
             className="absolute top-1/2 right-2 -translate-y-1/2 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-900/5 hover:text-brand-600"
             aria-label="随机生成"
             title="随机生成"
