@@ -1,20 +1,19 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { createApp } from '../src/server/app.ts';
 import { loadConfig } from '../src/server/config.ts';
 import { createNodePlatform } from '../src/server/node/platform.ts';
-import type { AiRunner } from '../src/server/platform.ts';
 import { RECOGNIZE_MODEL } from '../src/server/recognize.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'aapay-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function setup(env: Record<string, string>, ai: AiRunner | null = null) {
+function setup(env: Record<string, string>) {
   const config = loadConfig(env);
-  const platform = createNodePlatform(join(dir, crypto.randomUUID()), (() => undefined) as unknown as UpgradeWebSocket, null, ai);
+  const platform = createNodePlatform(join(dir, crypto.randomUUID()), (() => undefined) as unknown as UpgradeWebSocket);
   const app = createApp(async (c, next) => {
     c.set('config', config);
     c.set('platform', platform);
@@ -143,10 +142,15 @@ describe('API (shared mode)', () => {
 
 describe('API (bill recognition)', () => {
   const image = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
-  const completion = (content: unknown) => ({ choices: [{ message: { content: JSON.stringify(content) } }] });
+  const completion = (content: unknown) => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(content) }] } }] });
+  afterEach(() => vi.unstubAllGlobals());
 
-  async function joined(ai: AiRunner | null) {
-    const api = setup({ ADMIN_AUTH: 'none' }, ai);
+  function gemini(reply: (url: string, body: any) => unknown) {
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => Response.json(await reply(url, JSON.parse(init.body as string))));
+  }
+
+  async function joined(env: Record<string, string> = { GEMINI_API_KEY: 'test-key' }) {
+    const api = setup({ ADMIN_AUTH: 'none', ...env });
     const ledger = (await api.call('POST', '/admin/ledgers', { name: '识别测试' })).data;
     await api.call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: 'scan2026', validUntil: null });
     api.resetCookies();
@@ -156,9 +160,9 @@ describe('API (bill recognition)', () => {
   }
 
   it('turns the model reply into drafts in cents', async () => {
-    const seen: { model: string; input: any }[] = [];
-    const { call } = await joined(async (model, input) => {
-      seen.push({ model, input });
+    const seen: { url: string; body: any }[] = [];
+    gemini((url, body) => {
+      seen.push({ url, body });
       return completion({
         items: [
           { title: ' 鑫震源山塘街店 ', amount: -147, date: '2026-10-01' },
@@ -166,6 +170,7 @@ describe('API (bill recognition)', () => {
         ],
       });
     });
+    const { call } = await joined();
     expect((await call('GET', '/config')).data.recognize).toBe(true);
     const res = await call('POST', '/ledger/recognize', { image });
     expect(res).toEqual({
@@ -177,8 +182,8 @@ describe('API (bill recognition)', () => {
         ],
       },
     });
-    expect(seen[0]!.model).toBe(RECOGNIZE_MODEL);
-    expect(seen[0]!.input.messages[1].content[0].image_url.url).toBe(image);
+    expect(seen[0]!.url).toContain(`/models/${RECOGNIZE_MODEL}:generateContent`);
+    expect(seen[0]!.body.contents[0].parts[0].inlineData).toEqual({ mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' });
   });
 
   it('drops fields the model got wrong and rejects non-bills', async () => {
@@ -188,7 +193,8 @@ describe('API (bill recognition)', () => {
         { title: null, amount: null, date: '2026-10-04' },
       ],
     });
-    const { call } = await joined(async () => reply);
+    gemini(() => reply);
+    const { call } = await joined();
     expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
       items: [{ title: '外卖', amount: null, date: null }],
     });
@@ -196,14 +202,13 @@ describe('API (bill recognition)', () => {
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(422);
     reply = completion({ title: '旧格式', amount: 1, date: null });
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
-    reply = { choices: [{ message: { content: '我看不清' } }] };
+    reply = { candidates: [{ content: { parts: [{ text: '我看不清' }] } }] };
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
   });
 
   it('validates the image, reports model failures and limits the rate', async () => {
-    const { call } = await joined(async () => {
-      throw new Error('upstream down');
-    });
+    vi.stubGlobal('fetch', async () => Response.json({ error: { message: 'User location is not supported' } }, { status: 400 }));
+    const { call } = await joined();
     expect((await call('POST', '/ledger/recognize', { image: 'https://example.com/a.jpg' })).status).toBe(400);
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
     const statuses = [];
@@ -211,8 +216,8 @@ describe('API (bill recognition)', () => {
     expect(statuses.at(-1)).toBe(429);
   });
 
-  it('is unavailable without an AI backend', async () => {
-    const { call } = await joined(null);
+  it('is unavailable without a Gemini API key', async () => {
+    const { call } = await joined({});
     expect((await call('GET', '/config')).data.recognize).toBe(false);
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(404);
   });

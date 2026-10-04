@@ -12,7 +12,7 @@ export interface Config {
   publicUrl: string | null;
   timezone: string;
   auditKey: Uint8Array | null;
-  workersAi: { accountId: string; token: string } | null;
+  geminiApiKey: string | null;
 }
 
 const MODES = ['isolated', 'shared'] as const;
@@ -60,10 +60,7 @@ export function loadConfig(env: object): Config {
     publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
     timezone: str('TIMEZONE') || 'Asia/Shanghai',
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
-    workersAi:
-      str('WORKERS_AI_ACCOUNT_ID') && str('WORKERS_AI_TOKEN')
-        ? { accountId: str('WORKERS_AI_ACCOUNT_ID'), token: str('WORKERS_AI_TOKEN') }
-        : null,
+    geminiApiKey: str('GEMINI_API_KEY') || null,
   };
 
   if (config.mode === 'shared') config.adminAuth = 'disabled';

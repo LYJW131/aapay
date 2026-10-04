@@ -7,7 +7,7 @@ import { createSigner, type AuditSigner } from '../core/audit.ts';
 import { LedgerService } from '../core/ledger.ts';
 import { RegistryService } from '../core/registry.ts';
 import { dispatch, remote } from '../core/remote.ts';
-import type { AiRunner, LedgerHost, Platform, RateLimitBucket } from '../platform.ts';
+import type { LedgerHost, Platform, RateLimitBucket } from '../platform.ts';
 import { openSqlite } from './sqlite.ts';
 
 class Room {
@@ -100,7 +100,6 @@ export function createNodePlatform(
   dataDir: string,
   upgrade: UpgradeWebSocket,
   auditKey: Uint8Array | null = null,
-  ai: AiRunner | null = null,
 ): Platform {
   const signer = auditKey && createSigner(auditKey);
   const ledgerDir = join(dataDir, 'ledgers');
@@ -130,19 +129,5 @@ export function createNodePlatform(
     },
     connectConsole: (c) => consoleRoom.connect(c, 'console'),
     rateLimit: async (bucket, key) => limiters[bucket].take(key),
-    ai,
-  };
-}
-
-export function workersAiRest({ accountId, token }: { accountId: string; token: string }): AiRunner {
-  return async (model, input) => {
-    const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(input),
-    });
-    const data = (await res.json().catch(() => null)) as { result?: unknown; errors?: unknown } | null;
-    if (!res.ok || !data) throw new Error(`Workers AI ${res.status}: ${JSON.stringify(data?.errors ?? null)}`);
-    return data.result;
   };
 }

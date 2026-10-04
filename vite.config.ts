@@ -7,16 +7,8 @@ import { defineConfig } from 'vite';
 const target = process.env.AAPAY_TARGET === 'node' ? 'node' : 'cloudflare';
 const nodeServer = `http://localhost:${process.env.PORT || 8787}`;
 
-// Workers AI 只有远程绑定，本地开发默认去掉，避免未登录 Cloudflare 时起不来；AAPAY_DEV_AI=1 时保留
-const devWorker = (command: string) =>
-  cloudflare({
-    config: (worker) => {
-      if (command === 'serve' && !process.env.AAPAY_DEV_AI) delete worker.ai;
-    },
-  });
-
-export default defineConfig(({ command }) => ({
-  plugins: [react(), tailwindcss(), ...(target === 'cloudflare' ? [devWorker(command)] : [])],
+export default defineConfig({
+  plugins: [react(), tailwindcss(), ...(target === 'cloudflare' ? [cloudflare()] : [])],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src/web', import.meta.url)) },
   },
@@ -34,4 +26,4 @@ export default defineConfig(({ command }) => ({
           }
         : undefined,
   },
-}));
+});

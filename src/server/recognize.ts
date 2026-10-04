@@ -4,9 +4,8 @@ import { MAX_AMOUNT } from '../shared/money.ts';
 import { isoDate } from '../shared/schema.ts';
 import type { BillDraft } from '../shared/types.ts';
 import { AppError } from './core/errors.ts';
-import type { AiRunner } from './platform.ts';
 
-export const RECOGNIZE_MODEL = '@cf/google/gemma-4-26b-a4b-it';
+export const RECOGNIZE_MODEL = 'gemini-flash-lite-latest';
 
 export const MAX_BILLS = 30;
 
@@ -37,51 +36,51 @@ const replySchema = {
       items: {
         type: 'object',
         properties: {
-          title: { type: ['string', 'null'] },
-          amount: { type: ['number', 'null'] },
-          date: { type: ['string', 'null'] },
+          title: { type: 'string', nullable: true },
+          amount: { type: 'number', nullable: true },
+          date: { type: 'string', nullable: true },
         },
         required: ['title', 'amount', 'date'],
-        additionalProperties: false,
       },
     },
   },
   required: ['items'],
-  additionalProperties: false,
 };
 
-type Completion = { choices?: { message?: { content?: unknown } }[]; response?: unknown };
+type Reply = { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
 
-function contentOf(output: unknown): unknown {
-  const completion = output as Completion;
-  const content = completion?.choices?.[0]?.message?.content ?? completion?.response;
-  if (typeof content !== 'string') return content;
+function contentOf(output: Reply): unknown {
+  const text = output.candidates?.[0]?.content?.parts
+    ?.filter((part) => !part.thought)
+    .map((part) => part.text ?? '')
+    .join('');
   try {
-    return JSON.parse(content.match(/\{[\s\S]*\}/)?.[0] ?? '');
+    return JSON.parse(text ?? '');
   } catch {
     return null;
   }
 }
 
-export async function recognizeBills(ai: AiRunner, image: string, today: string): Promise<{ items: BillDraft[] }> {
-  let output: unknown;
+export async function recognizeBills(apiKey: string, image: string, today: string): Promise<{ items: BillDraft[] }> {
+  const [, mimeType, data] = image.match(/^data:(image\/\w+);base64,(.*)$/)!;
+  let output: Reply;
   try {
-    output = await ai(RECOGNIZE_MODEL, {
-      messages: [
-        { role: 'system', content: instructions(today) },
-        {
-          role: 'user',
-          content: [
-            { type: 'image_url', image_url: { url: image } },
-            { type: 'text', text: '识别这张图片里的支出' },
-          ],
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${RECOGNIZE_MODEL}:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: instructions(today) }] },
+        contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data } }, { text: '识别这张图片里的支出' }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: replySchema,
+          temperature: 0,
+          maxOutputTokens: 2000,
         },
-      ],
-      response_format: { type: 'json_schema', json_schema: { name: 'bills', schema: replySchema, strict: true } },
-      chat_template_kwargs: { enable_thinking: false },
-      temperature: 0,
-      max_completion_tokens: 2000,
+      }),
     });
+    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    output = (await res.json()) as Reply;
   } catch (err) {
     console.error('recognize failed', err);
     throw new AppError(502, '识别服务暂时不可用，请稍后再试');
