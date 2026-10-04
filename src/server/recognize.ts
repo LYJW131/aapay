@@ -6,7 +6,7 @@ import type { BillDraft } from '../shared/types.ts';
 import { AppError } from './core/errors.ts';
 import type { AiRunner } from './platform.ts';
 
-export const RECOGNIZE_MODEL = '@cf/qwen/qwen3.8-27b';
+export const RECOGNIZE_MODEL = '@cf/google/gemma-4-26b-a4b-it';
 
 export const MAX_BILLS = 30;
 

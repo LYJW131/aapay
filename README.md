@@ -91,7 +91,7 @@ node scripts/seed.mjs            # 可选：生成演示账本（口令 demo2026
 
 也可以用 **Workers Builds** 自动部署：在 Worker 的 Settings → Builds 关联 GitHub 仓库，构建命令 `npm run typecheck && npm test && npm run build`，部署命令 `npx wrangler deploy`，环境变量 `NODE_VERSION=24`。之后推送到监听的分支就会自动测试并上线（本项目监听 `v2`，只改 `*.md` / `docs/` 不触发）。
 
-Durable Objects、限流与 Workers AI 绑定由 `wrangler.jsonc` 自动创建，无需手动建数据库。「识别账单」调用 Workers AI 的 `@cf/qwen/qwen3.8-27b`，费用计入你的 Cloudflare 账号，每个账本每分钟最多 10 次。Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），即使绕过 Access 直连 Worker 也无法访问管理接口。
+Durable Objects、限流与 Workers AI 绑定由 `wrangler.jsonc` 自动创建，无需手动建数据库。「识别账单」调用 Workers AI 的 `@cf/google/gemma-4-26b-a4b-it`，费用计入你的 Cloudflare 账号，每个账本每分钟最多 10 次。Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），即使绕过 Access 直连 Worker 也无法访问管理接口。
 
 ## 部署到 Docker
 
