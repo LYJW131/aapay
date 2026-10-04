@@ -224,7 +224,6 @@ describe('OAuth + MCP flow', () => {
 
     const init = await s.rpc(conn.access_token, 'initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '1' } });
     expect(init.data.result).toMatchObject({ protocolVersion: '2025-06-18', serverInfo: { name: 'aapay' }, capabilities: { tools: {} } });
-    expect(init.data.result.instructions).toContain('周末露营');
 
     const notified = await s.request('POST', '/mcp', {
       json: { jsonrpc: '2.0', method: 'notifications/initialized' },
@@ -236,9 +235,16 @@ describe('OAuth + MCP flow', () => {
     expect(tools.map((t: { name: string }) => t.name)).toEqual([
       'get_ledger', 'list_transactions', 'list_activity', 'add_expense', 'update_expense', 'delete_expense',
       'add_member', 'update_member', 'record_settlement', 'delete_settlement',
+      'list_ledgers', 'create_ledger', 'update_ledger', 'delete_ledger', 'list_passphrases', 'create_passphrase', 'revoke_passphrase',
     ]);
     expect(tools.find((t: { name: string }) => t.name === 'add_expense').inputSchema).toMatchObject({ type: 'object', required: ['title', 'amount', 'payer'] });
     expect(tools.find((t: { name: string }) => t.name === 'delete_expense').annotations).toMatchObject({ destructiveHint: true, readOnlyHint: false });
+
+    expect((await s.tool(conn.access_token, 'get_ledger', { ledger: '周末露营' })).structuredContent.ledger).toBe('周末露营');
+    const elsewhere = await s.tool(conn.access_token, 'get_ledger', { ledger: '别人的账本' });
+    expect(elsewhere).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('只授权了账本「周末露营」') }] });
+    const adminOnly = await s.tool(conn.access_token, 'delete_ledger', { ledger: '周末露营', confirm_name: '周末露营' });
+    expect(adminOnly).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('管理员工具') }] });
 
     await s.tool(conn.access_token, 'add_member', { name: '阿杰' });
     await s.tool(conn.access_token, 'add_member', { name: '小雨' });
@@ -319,9 +325,20 @@ describe('OAuth + MCP flow', () => {
     expect(list[0]).toMatchObject({ clientName: 'Claude', clientHost: 'claude.ai' });
     expect(list.map((c: { scopes: string[] }) => c.scopes.length).sort()).toEqual([1, 2]);
 
-    const readOnly = (await s.rpc(b.access_token, 'tools/list')).data.result.tools;
-    expect(readOnly.map((t: { name: string }) => t.name)).toEqual(['get_ledger', 'list_transactions', 'list_activity']);
-    expect((await s.tool(b.access_token, 'add_member', { name: '某人' })).isError).toBe(true);
+    const write = await s.rpc(b.access_token, 'tools/call', { name: 'add_member', arguments: { name: '某人' } });
+    expect(write.status).toBe(403);
+    expect(write.headers.get('www-authenticate')).toContain('error="insufficient_scope"');
+    expect(write.headers.get('www-authenticate')).toContain('scope="ledger:read ledger:write"');
+    expect(write.headers.get('www-authenticate')).toContain(`resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/mcp"`);
+    const batch = await s.request('POST', '/mcp', {
+      json: [
+        { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'get_ledger', arguments: {} } },
+        { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'add_member', arguments: { name: '某人' } } },
+      ],
+      headers: { authorization: `Bearer ${b.access_token}` },
+    });
+    expect(batch.status).toBe(403);
+    expect((await s.tool(b.access_token, 'get_ledger')).structuredContent.members).toEqual([]);
 
     const target = list.find((c: { scopes: string[] }) => c.scopes.length === 1);
     expect((await s.request('DELETE', `/api/ledger/connections/${target.id}`)).status).toBe(200);
@@ -340,8 +357,7 @@ describe('OAuth + MCP flow', () => {
     s.resetCookies();
     await s.request('POST', '/api/join', { json: { code: 'home2026' } });
     const conn = await s.connect();
-    const init = await s.rpc(conn.access_token, 'initialize', { protocolVersion: '2025-11-25' });
-    expect(init.data.result.instructions).toContain('家庭');
+    expect((await s.tool(conn.access_token, 'get_ledger')).structuredContent.ledger).toBe('家庭');
 
     s.resetCookies();
     const query = new URLSearchParams({ response_type: 'code', client_id: conn.clientId, redirect_uri: REDIRECT, code_challenge: (await pkce()).challenge, code_challenge_method: 'S256' }).toString();
@@ -524,17 +540,13 @@ describe('admin connections', () => {
     expect(admin).toMatchObject({ status: 200, ledger: null });
     const token = admin.token;
 
-    const init = (await s.rpc(token, 'initialize', { protocolVersion: '2025-11-25' })).data.result;
-    expect(init.instructions).toContain('管理员');
-    const tools = (await s.rpc(token, 'tools/list')).data.result.tools as { name: string; inputSchema: { required?: string[] } }[];
-    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(['list_ledgers', 'create_ledger', 'delete_ledger', 'create_passphrase', 'revoke_passphrase', 'get_ledger', 'add_expense']));
-    expect(tools.find((t) => t.name === 'add_expense')!.inputSchema.required).toContain('ledger');
-
     const created = (await s.tool(token, 'create_ledger', { name: '公司团建', valid_days: 7 })).structuredContent;
     expect(created.created.name).toBe('公司团建');
     expect(created.passphrase).toMatchObject({ status: 'active', joinLink: expect.stringMatching(new RegExp(`^${ORIGIN}/join#`)) });
 
-    expect((await s.tool(token, 'get_ledger')).isError).toBe(true);
+    const unspecified = await s.tool(token, 'get_ledger');
+    expect(unspecified).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('需要用 ledger 参数指定账本') }] });
+    expect(unspecified.content[0]!.text).toContain('「公司团建」');
     await s.tool(token, 'add_member', { ledger: '公司团建', name: '小李' });
     await s.tool(token, 'add_member', { ledger: '公司团建', name: '小王' });
     const expense = await s.tool(token, 'add_expense', { ledger: '公司团建', title: '聚餐', amount: 300, payer: '小李' });
@@ -563,19 +575,38 @@ describe('admin connections', () => {
     expect((await s.rpc(token, 'ping')).status).toBe(401);
   });
 
-  it('keeps admin tools away from members and read-only admins', async () => {
+  it('shows every grant the same tools and checks permissions when they are called', async () => {
     const s = setup();
     await seedLedger(s);
-    const member = await s.connect({ code: 'Camp2026' });
-    const names = (await s.rpc(member.access_token, 'tools/list')).data.result.tools.map((t: { name: string }) => t.name);
-    expect(names).not.toContain('list_ledgers');
-    expect((await s.rpc(member.access_token, 'tools/call', { name: 'delete_ledger', arguments: {} })).data.error.code).toBe(-32602);
+    const member = (await s.connect({ code: 'Camp2026' })).access_token;
+    const readOnlyMember = (await s.connect({ code: 'Camp2026', write: false })).access_token;
+    const admin = (await s.connectAdmin()).token;
+    const readOnlyAdmin = (await s.connectAdmin({}, false)).token;
+    const tokens = [member, readOnlyMember, admin, readOnlyAdmin];
 
-    const readOnly = await s.connectAdmin({}, false);
-    const token = readOnly.token;
-    const tools = (await s.rpc(token, 'tools/list')).data.result.tools.map((t: { name: string }) => t.name);
-    expect(tools).toEqual(['list_ledgers', 'list_passphrases', 'get_ledger', 'list_transactions', 'list_activity']);
-    expect((await s.tool(token, 'create_ledger', { name: 'x' })).isError).toBe(true);
+    const lists = await Promise.all(tokens.map(async (t) => (await s.rpc(t, 'tools/list')).data.result.tools));
+    for (const list of lists) expect(list).toEqual(lists[0]);
+    const inits = await Promise.all(tokens.map(async (t) => (await s.rpc(t, 'initialize', { protocolVersion: '2025-11-25' })).data.result));
+    for (const init of inits) expect(init).toEqual(inits[0]);
+
+    const tools = lists[0] as { name: string; description: string; inputSchema: { properties: object; required?: string[] }; securitySchemes: unknown }[];
+    const addExpense = tools.find((t) => t.name === 'add_expense')!;
+    expect(addExpense.inputSchema.properties).toHaveProperty('ledger');
+    expect(addExpense.inputSchema.required).not.toContain('ledger');
+    expect(addExpense.securitySchemes).toEqual([{ type: 'oauth2', scopes: ['ledger:write'] }]);
+    expect(tools.find((t) => t.name === 'list_ledgers')!).toMatchObject({
+      description: expect.stringContaining('仅管理员授权可用'),
+      securitySchemes: [{ type: 'oauth2', scopes: ['ledger:read'] }],
+    });
+
+    const notAdmin = await s.tool(readOnlyMember, 'create_ledger', { name: '新账本' });
+    expect(notAdmin).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('管理员工具') }] });
+
+    const stepUp = await s.rpc(readOnlyAdmin, 'tools/call', { name: 'create_ledger', arguments: { name: '新账本' } });
+    expect(stepUp.status).toBe(403);
+    expect(stepUp.data).toMatchObject({ error: 'insufficient_scope' });
+    expect(stepUp.headers.get('www-authenticate')).toMatch(/^Bearer error="insufficient_scope", error_description="[^"]+", resource_metadata="[^"]+", scope="ledger:read ledger:write"$/);
+    expect((await s.tool(readOnlyAdmin, 'list_ledgers')).structuredContent.ledgers).toHaveLength(1);
   });
 
   it('requires a verified admin and revokes tokens when the admin loses access', async () => {

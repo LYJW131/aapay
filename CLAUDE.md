@@ -66,7 +66,8 @@ node scripts/seed.mjs http://127.0.0.1:5173                     # 写入演示�
 
 - `src/server/mcp/oauth.ts`：授权服务器（RFC 9728 / 8414 发现、7591 动态注册、Client ID Metadata Document、PKCE S256、8707 资源绑定、刷新令牌轮换、7009 撤销、`private_key_jwt`）。Claude 与 ChatGPT 都用 CIMD（`client_id` 是元数据 URL），ChatGPT 还会用 `private_key_jwt`。
 - `src/server/mcp/server.ts`：无状态 Streamable HTTP，`POST /mcp` 直接返回 JSON-RPC。`src/server/mcp/tools.ts`：工具定义，金额对外以「元」为单位，成员与账本可用名字指代。
-- 授权分两种角色：成员授权绑定一个账本（口令撤销、账本删除时级联失效）；管理员授权不绑定账本，可用管理员工具，账本工具多一个必填的 `ledger` 参数。管理员授权走 `/api/admin/oauth/authorize`，与 `/admin` 用同一套管理员认证；每次请求都会按当前配置重新确认此人仍是管理员。
+- 授权分两种角色：成员授权绑定一个账本（口令撤销、账本删除时级联失效）；管理员授权不绑定账本，可用管理员工具，账本工具必须用 `ledger` 参数指定账本。管理员授权走 `/api/admin/oauth/authorize`，与 `/admin` 用同一套管理员认证；每次请求都会按当前配置重新确认此人仍是管理员。
+- `tools/list` 与 `initialize` 的 instructions 对所有授权都相同（客户端会缓存，换授权后不一定重新拉取），不要按角色或作用域过滤；权限在 `tools/call` 时检查：成员调用管理工具、`ledger` 参数与授权不符返回工具错误；只读令牌调用写入工具在 `POST /mcp` 入口返回 403 `insufficient_scope`，客户端据此重新授权（step-up），不能改成工具错误。
 - `/oauth/authorize` 是前端页面（`src/web/features/oauth/AuthorizePage.tsx`），服务端只处理 `/api/oauth/authorize`。
 
 ## 改动时的注意点

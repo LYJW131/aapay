@@ -26,7 +26,7 @@ import type {
   Settlement,
 } from '../../shared/types.ts';
 import { adminActions } from '../admin.ts';
-import { AppError, badRequest, notFound } from '../core/errors.ts';
+import { AppError, badRequest, forbidden, notFound } from '../core/errors.ts';
 import type { LedgerService, MutationContext } from '../core/ledger.ts';
 import type { GrantRole } from '../core/registry.ts';
 import type { Remote } from '../core/remote.ts';
@@ -414,14 +414,27 @@ interface AdminTool<S extends z.ZodObject = z.ZodObject> extends Omit<Tool<S>, '
 const adminTool = <S extends z.ZodObject>(t: AdminTool<S>) => t as unknown as AdminTool;
 
 const ledgerRef = z.string().trim().min(1).max(64).describe('账本名称或 ID（可用 list_ledgers 查看）');
+const ledgerOption = ledgerRef
+  .optional()
+  .describe('账本名称或 ID。管理员授权必填（可用 list_ledgers 查看）；成员授权只能访问授权时选定的账本，可不填');
 
-async function resolveLedger(platform: Platform, ref: string): Promise<LedgerInfo> {
+async function resolveLedger(platform: Platform, ref: string | undefined): Promise<LedgerInfo> {
   const ledgers = await platform.registry.listLedgers();
-  const key = ref.trim();
-  const found = ledgers.find((l) => l.id === key) ?? ledgers.find((l) => l.name.toLowerCase() === key.toLowerCase());
+  const key = ref?.trim();
+  const found = key && (ledgers.find((l) => l.id === key) ?? ledgers.find((l) => l.name.toLowerCase() === key.toLowerCase()));
   if (found) return { id: found.id, name: found.name, emoji: found.emoji };
   const names = ledgers.map((l) => `「${l.name}」`).join('');
-  throw notFound(`找不到账本「${ref}」。${names ? `现有账本：${names}` : '还没有任何账本，可以用 create_ledger 创建'}`);
+  const hint = names ? `现有账本：${names}` : '还没有任何账本，可以用 create_ledger 创建';
+  throw key ? notFound(`找不到账本「${ref}」。${hint}`) : badRequest(`管理员授权需要用 ledger 参数指定账本。${hint}`);
+}
+
+async function targetLedger(session: McpSession, ref: string | undefined): Promise<LedgerInfo> {
+  if (session.role === 'admin') return resolveLedger(session.platform, ref);
+  const bound = session.ledger!;
+  if (ref !== undefined && ref !== bound.id && ref.toLowerCase() !== bound.name.toLowerCase()) {
+    throw forbidden(`当前连接只授权了账本「${bound.name}」，不能访问「${ref}」`);
+  }
+  return bound;
 }
 
 const isoDay = (ts: number | null) => (ts === null ? null : new Date(ts).toISOString().slice(0, 10));
@@ -577,42 +590,41 @@ const revokePassphrase = adminTool({
 
 const ADMIN_TOOLS = [listLedgers, createLedger, updateLedger, deleteLedger, listPassphrases, createPassphraseTool, revokePassphrase];
 
-type AnyTool = { kind: 'ledger'; tool: Tool } | { kind: 'admin'; tool: AdminTool };
+type AnyTool = { kind: 'ledger'; tool: Tool; input: z.ZodObject } | { kind: 'admin'; tool: AdminTool; input: z.ZodObject };
 
-function available(session: McpSession): AnyTool[] {
-  const canWrite = session.scopes.has('ledger:write');
-  const tools: AnyTool[] = [];
-  if (session.role === 'admin') tools.push(...ADMIN_TOOLS.map((tool) => ({ kind: 'admin' as const, tool })));
-  tools.push(...LEDGER_TOOLS.map((tool) => ({ kind: 'ledger' as const, tool })));
-  return tools.filter(({ tool }) => canWrite || !tool.write);
-}
+const TOOLS: AnyTool[] = [
+  ...LEDGER_TOOLS.map((tool) => ({ kind: 'ledger' as const, tool, input: tool.input.extend({ ledger: ledgerOption }) })),
+  ...ADMIN_TOOLS.map((tool) => ({ kind: 'admin' as const, tool, input: tool.input })),
+];
 
-function schemaOf(entry: AnyTool, session: McpSession): z.ZodObject {
-  return entry.kind === 'ledger' && session.role === 'admin' ? entry.tool.input.extend({ ledger: ledgerRef }) : entry.tool.input;
-}
+const findTool = (name: string) => TOOLS.find((e) => e.tool.name === name);
+
+const permitted = (entry: AnyTool, session: McpSession) => entry.kind === 'ledger' || session.role === 'admin';
 
 function inputSchema(schema: z.ZodObject) {
   const { $schema: _, ...json } = z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' });
   return json;
 }
 
-export function listTools(session: McpSession) {
-  return available(session).map((entry) => {
-    const t = entry.tool;
-    return {
-      name: t.name,
-      title: t.title,
-      description: entry.kind === 'ledger' && session.role === 'admin' ? `${t.description}（管理员需用 ledger 参数指定账本）` : t.description,
-      inputSchema: inputSchema(schemaOf(entry, session)),
-      annotations: {
-        title: t.title,
-        readOnlyHint: !t.write,
-        destructiveHint: !!t.destructive,
-        idempotentHint: !t.write || !!t.idempotent,
-        openWorldHint: false,
-      },
-    };
-  });
+// 客户端会缓存工具列表，换授权后未必重新拉取，所以列表对所有授权都相同，权限在调用时检查
+export const TOOL_LIST = TOOLS.map(({ kind, tool, input }) => ({
+  name: tool.name,
+  title: tool.title,
+  description: kind === 'admin' ? `${tool.description}仅管理员授权可用。` : tool.description,
+  inputSchema: inputSchema(input),
+  annotations: {
+    title: tool.title,
+    readOnlyHint: !tool.write,
+    destructiveHint: !!tool.destructive,
+    idempotentHint: !tool.write || !!tool.idempotent,
+    openWorldHint: false,
+  },
+  securitySchemes: [{ type: 'oauth2', scopes: [tool.write ? 'ledger:write' : 'ledger:read'] }],
+}));
+
+export function missingWriteScope(name: string, session: McpSession) {
+  const entry = findTool(name);
+  return !!entry && entry.tool.write && permitted(entry, session) && !session.scopes.has('ledger:write');
 }
 
 export class UnknownToolError extends Error {}
@@ -620,13 +632,16 @@ export class UnknownToolError extends Error {}
 // 业务错误作为工具结果（isError）返回而非协议错误，模型可据此自行修正
 export async function callTool(name: string, args: unknown, session: McpSession) {
   const fail = (text: string) => ({ content: [{ type: 'text', text }], isError: true });
-  const entry = available({ ...session, scopes: new Set(['ledger:read', 'ledger:write']) }).find((e) => e.tool.name === name);
+  const entry = findTool(name);
   if (!entry) throw new UnknownToolError(`未知工具 ${name}`);
-  if (entry.tool.write && !session.scopes.has('ledger:write')) {
-    return fail('当前授权为只读，无法修改。请在 AI 应用中重新连接并允许修改。');
+  if (!permitted(entry, session)) {
+    return fail(
+      `${name} 是管理员工具，当前连接只授权了账本「${session.ledger!.name}」。` +
+        '如需管理全部账本，请在 AI 应用中重新连接 AAPay，并在授权页以管理员身份授权（选择「全部账本」）。',
+    );
   }
 
-  const parsed = schemaOf(entry, session).safeParse(args ?? {});
+  const parsed = entry.input.safeParse(args ?? {});
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
     return fail(`参数错误：${issue?.path.join('.') || '参数'} ${issue?.message ?? ''}`.trim());
@@ -636,7 +651,7 @@ export async function callTool(name: string, args: unknown, session: McpSession)
     if (entry.kind === 'admin') {
       result = await entry.tool.run(parsed.data, { session, actions: adminActions(session.platform, session.actor) });
     } else {
-      const info = session.role === 'admin' ? await resolveLedger(session.platform, (parsed.data as { ledger: string }).ledger) : session.ledger!;
+      const info = await targetLedger(session, (parsed.data as { ledger?: string }).ledger);
       result = await entry.tool.run(parsed.data, {
         ledger: session.platform.ledger(info.id).api,
         info,

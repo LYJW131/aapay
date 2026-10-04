@@ -149,9 +149,11 @@ AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`
 
 **提供的工具**：`get_ledger`（成员、余额、最少转账方案）、`list_transactions`（按日期 / 成员 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`、`list_activity`（操作动态）。金额以「元」为单位，成员可以直接用名字指代。
 
-**管理员连接**：已登录的管理员在授权页可以选择「全部账本」，AI 就能管理所有账本：`list_ledgers`、`create_ledger`（默认同时生成口令并返回邀请链接）、`update_ledger`（名称与图标）、`delete_ledger`（需再次输入名称确认）、`list_passphrases` / `create_passphrase` / `revoke_passphrase`；账本内的工具多一个 `ledger` 参数（名称或 ID）。管理员授权 30 天有效，在账本页的「连接 AI」中可查看与断开；关闭管理后台或把此人移出 `ADMIN_EMAILS` 后立即失效。还没登录时，授权页有「以管理员身份登录」入口，登录后自动回到授权页。
+**管理员连接**：已登录的管理员在授权页可以选择「全部账本」，AI 就能管理所有账本：`list_ledgers`、`create_ledger`（默认同时生成口令并返回邀请链接）、`update_ledger`（名称与图标）、`delete_ledger`（需再次输入名称确认）、`list_passphrases` / `create_passphrase` / `revoke_passphrase`；账本内的工具用 `ledger` 参数（名称或 ID）指定账本。管理员授权 30 天有效，在账本页的「连接 AI」中可查看与断开；关闭管理后台或把此人移出 `ADMIN_EMAILS` 后立即失效。还没登录时，授权页有「以管理员身份登录」入口，登录后自动回到授权页。
 
 **授权模型**：成员授权只对应一个账本，权限等同于用口令加入的成员。账本成员可在「连接 AI」里查看并断开已连接的应用，管理员卡片的账本列表会显示连接数；口令被撤销、过期或账本被删除时，对应的授权会一并失效。
+
+**工具列表对所有授权都相同**：AI 应用会缓存工具列表，换一种授权重新连接时不一定会重新获取，所以成员 / 管理员、只读 / 可修改看到的是同一份工具，权限在调用时检查——成员调用管理工具会收到提示，需要以管理员身份重新连接；只读授权调用修改类工具时，Claude、ChatGPT 会弹出重新授权并自动重试（Claude Code 需运行 `/mcp` 重新认证）。
 
 **协议细节**（按 [MCP Authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) 规范实现）：
 
@@ -159,6 +161,7 @@ AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`
 - 发现：`/.well-known/oauth-protected-resource`（RFC 9728）与 `/.well-known/oauth-authorization-server`（RFC 8414），未授权请求返回带 `resource_metadata` 的 `WWW-Authenticate`
 - 客户端：动态注册 `POST /oauth/register`（RFC 7591），也支持以 HTTPS URL 作为 `client_id` 的 Client ID Metadata Document（Claude、ChatGPT 均使用这种方式）；令牌端点认证支持 `none`（PKCE）、`client_secret_*` 与 `private_key_jwt`（RFC 7523，按客户端公布的 JWKS 验签）
 - 授权码 + PKCE（仅 `S256`），`resource` 参数（RFC 8707）把令牌绑定到 `/mcp`，回调带 `iss`（RFC 9207）；作用域 `ledger:read` / `ledger:write`
+- 作用域不足：只读令牌调用修改类工具返回 `403` 与 `WWW-Authenticate: Bearer error="insufficient_scope"`（step-up 授权），每个工具用 `securitySchemes` 声明所需作用域
 - 访问令牌 1 小时，刷新令牌每次使用即轮换，授权最长 180 天且不超过口令有效期；`POST /oauth/revoke` 撤销（RFC 7009）
 - 令牌只存 SHA-256 哈希；授权页禁止被嵌入（防点击劫持），输入口令与动态注册共用加入口令的限流
 
