@@ -12,7 +12,7 @@ export interface Config {
   publicUrl: string | null;
   timezone: string;
   auditKey: Uint8Array | null;
-  geminiApiKey: string | null;
+  gemini: { apiKey: string; model: string } | null;
 }
 
 const MODES = ['isolated', 'shared'] as const;
@@ -60,7 +60,7 @@ export function loadConfig(env: object): Config {
     publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
     timezone: str('TIMEZONE') || 'Asia/Shanghai',
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
-    geminiApiKey: str('GEMINI_API_KEY') || null,
+    gemini: str('GEMINI_API_KEY') ? { apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-flash-lite-latest' } : null,
   };
 
   if (config.mode === 'shared') config.adminAuth = 'disabled';

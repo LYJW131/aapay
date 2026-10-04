@@ -5,8 +5,6 @@ import { isoDate } from '../shared/schema.ts';
 import type { BillDraft } from '../shared/types.ts';
 import { AppError } from './core/errors.ts';
 
-export const RECOGNIZE_MODEL = 'gemini-flash-lite-latest';
-
 export const MAX_BILLS = 30;
 
 const instructions = (today: string) =>
@@ -61,13 +59,17 @@ function contentOf(output: Reply): unknown {
   }
 }
 
-export async function recognizeBills(apiKey: string, image: string, today: string): Promise<{ items: BillDraft[] }> {
+export async function recognizeBills(
+  gemini: { apiKey: string; model: string },
+  image: string,
+  today: string,
+): Promise<{ items: BillDraft[] }> {
   const [, mimeType, data] = image.match(/^data:(image\/\w+);base64,(.*)$/)!;
   let output: Reply;
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${RECOGNIZE_MODEL}:generateContent`, {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gemini.model}:generateContent`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': gemini.apiKey },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: instructions(today) }] },
         contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data } }, { text: '识别这张图片里的支出' }] }],

@@ -6,7 +6,6 @@ import type { UpgradeWebSocket } from 'hono/ws';
 import { createApp } from '../src/server/app.ts';
 import { loadConfig } from '../src/server/config.ts';
 import { createNodePlatform } from '../src/server/node/platform.ts';
-import { RECOGNIZE_MODEL } from '../src/server/recognize.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'aapay-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -182,7 +181,7 @@ describe('API (bill recognition)', () => {
         ],
       },
     });
-    expect(seen[0]!.url).toContain(`/models/${RECOGNIZE_MODEL}:generateContent`);
+    expect(seen[0]!.url).toContain('/models/gemini-flash-lite-latest:generateContent');
     expect(seen[0]!.body.contents[0].parts[0].inlineData).toEqual({ mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' });
   });
 
@@ -193,11 +192,16 @@ describe('API (bill recognition)', () => {
         { title: null, amount: null, date: '2026-10-04' },
       ],
     });
-    gemini(() => reply);
-    const { call } = await joined();
+    let url = '';
+    gemini((u) => {
+      url = u;
+      return reply;
+    });
+    const { call } = await joined({ GEMINI_API_KEY: 'test-key', GEMINI_MODEL: 'gemini-2.5-flash' });
     expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
       items: [{ title: '外卖', amount: null, date: null }],
     });
+    expect(url).toContain('/models/gemini-2.5-flash:generateContent');
     reply = completion({ items: [] });
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(422);
     reply = completion({ title: '旧格式', amount: 1, date: null });
