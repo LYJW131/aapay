@@ -78,7 +78,7 @@ export function BillBatch({
                   maxLength={LIMITS.title}
                   placeholder="用途"
                   aria-label="用途"
-                  className="min-w-0 flex-1 bg-transparent text-[15px] font-medium outline-none placeholder:text-zinc-400"
+                  className="min-w-0 flex-1 bg-transparent text-[15px] font-medium outline-none placeholder:text-zinc-400 pointer-coarse:text-base"
                 />
                 <span className="-mr-1.5 text-sm text-zinc-400">¥</span>
                 <input
@@ -88,7 +88,7 @@ export function BillBatch({
                   placeholder="0.00"
                   aria-label="金额"
                   style={{ width: `${(row.amount || '0.00').length + 0.5}ch` }}
-                  className="tabular bg-transparent text-right text-[15px] font-semibold outline-none placeholder:text-zinc-400"
+                  className="tabular bg-transparent text-right text-[15px] font-semibold outline-none placeholder:text-zinc-400 pointer-coarse:text-base"
                 />
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
@@ -98,7 +98,7 @@ export function BillBatch({
                   max="9999-12-31"
                   onChange={(e) => e.target.value && update(row.key, { date: e.target.value })}
                   aria-label="日期"
-                  className="tabular bg-transparent outline-none"
+                  className="tabular bg-transparent outline-none pointer-coarse:text-base"
                 />
                 {row.duplicate && (
                   <span className="rounded-full bg-amber-500/12 px-2 py-0.5 text-amber-700 dark:text-amber-300">可能已记过</span>
