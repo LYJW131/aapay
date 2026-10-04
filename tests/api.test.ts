@@ -155,25 +155,47 @@ describe('API (bill recognition)', () => {
     return api;
   }
 
-  it('turns the model reply into a draft in cents', async () => {
+  it('turns the model reply into drafts in cents', async () => {
     const seen: { model: string; input: any }[] = [];
     const { call } = await joined(async (model, input) => {
       seen.push({ model, input });
-      return completion({ title: ' 瑞幸咖啡 ', amount: 38.5, date: '2026-10-03' });
+      return completion({
+        items: [
+          { title: ' 鑫震源山塘街店 ', amount: -147, date: '2026-10-01' },
+          { title: '滴滴出行', amount: 39.16, date: '2026-10-01' },
+        ],
+      });
     });
     expect((await call('GET', '/config')).data.recognize).toBe(true);
     const res = await call('POST', '/ledger/recognize', { image });
-    expect(res).toEqual({ status: 200, data: { title: '瑞幸咖啡', amount: 3850, date: '2026-10-03' } });
+    expect(res).toEqual({
+      status: 200,
+      data: {
+        items: [
+          { title: '鑫震源山塘街店', amount: 14700, date: '2026-10-01' },
+          { title: '滴滴出行', amount: 3916, date: '2026-10-01' },
+        ],
+      },
+    });
     expect(seen[0]!.model).toBe(RECOGNIZE_MODEL);
     expect(seen[0]!.input.messages[1].content[0].image_url.url).toBe(image);
   });
 
   it('drops fields the model got wrong and rejects non-bills', async () => {
-    let reply: unknown = completion({ title: '外卖', amount: -3, date: '10月4日' });
+    let reply: unknown = completion({
+      items: [
+        { title: '外卖', amount: 0, date: '10月4日' },
+        { title: null, amount: null, date: '2026-10-04' },
+      ],
+    });
     const { call } = await joined(async () => reply);
-    expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({ title: '外卖', amount: null, date: null });
-    reply = completion({ title: null, amount: null, date: null });
+    expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
+      items: [{ title: '外卖', amount: null, date: null }],
+    });
+    reply = completion({ items: [] });
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(422);
+    reply = completion({ title: '旧格式', amount: 1, date: null });
+    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
     reply = { choices: [{ message: { content: '我看不清' } }] };
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
   });

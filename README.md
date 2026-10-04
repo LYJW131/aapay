@@ -197,7 +197,7 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `POST` `PATCH` `DELETE` | `/api/ledger/expenses[/:id]` | 支出 |
 | `POST` `DELETE` | `/api/ledger/settlements[/:id]` | 还款记录 |
 | `GET` | `/api/ledger/audit?before=&after=&limit=` | 操作动态（签名哈希链，附公钥与最新一条） |
-| `POST` | `/api/ledger/recognize` | 识别账单图片，返回用途、金额、日期草稿（不写入账本） |
+| `POST` | `/api/ledger/recognize` | 识别账单图片（小票、付款详情或账单列表），返回一笔或多笔支出草稿（不写入账本） |
 | `GET` `POST` `PATCH` `DELETE` | `/api/admin/ledgers[/:id]` | 账本管理（含统计） |
 | `GET` `POST` | `/api/admin/ledgers/:id/passphrases` | 分享口令 |
 | `DELETE` | `/api/admin/passphrases/:id` | 撤销口令 |

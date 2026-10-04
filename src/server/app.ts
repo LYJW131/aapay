@@ -31,7 +31,7 @@ import {
 } from './mcp/oauth.ts';
 import { mcpRoutes } from './mcp/server.ts';
 import type { Platform } from './platform.ts';
-import { recognizeBill } from './recognize.ts';
+import { recognizeBills } from './recognize.ts';
 import { actorOf, clientIp, findSession } from './session.ts';
 import { body, query } from './validate.ts';
 
@@ -124,7 +124,7 @@ const ledgerRoutes = new Hono<AppEnv>()
     const { platform, config, session } = c.var;
     if (!platform.ai) throw notFound('未启用账单识别');
     if (!(await platform.rateLimit('recognize', session.ledger.id))) throw new AppError(429, '识别太频繁了，请稍后再试');
-    return c.json(await recognizeBill(platform.ai, c.req.valid('json').image, todayIn(config.timezone)));
+    return c.json(await recognizeBills(platform.ai, c.req.valid('json').image, todayIn(config.timezone)));
   })
   .get('/audit', query(auditQuery), async (c) =>
     c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.auditLog(c.req.valid('query'))),
