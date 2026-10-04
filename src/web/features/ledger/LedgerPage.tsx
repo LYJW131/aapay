@@ -160,7 +160,7 @@ export function LedgerPage({
             </Suspense>
           </div>
         )}
-        <aside className="space-y-4 lg:sticky lg:top-20">
+        <aside className="space-y-4">
           {desktop && (
             <Card title="记一笔" icon={<Plus />}>
               <ExpenseForm />
