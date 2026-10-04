@@ -1,6 +1,6 @@
 import { X } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
-import { useEffect, useId, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '../lib/cn.ts';
 import { useMediaQuery } from '../lib/hooks.ts';
@@ -19,6 +19,17 @@ export function Sheet({ open, onClose, title, description, children, className }
   const drag = useDragControls();
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  const [entered, setEntered] = useState(false);
+
+  useEffect(() => {
+    if (!open) return setEntered(false);
+    // 挂载这一帧要排版整个表单，手机上会卡几十毫秒；动画若从这一帧开始计时，第一次画出来时已滑到半路。
+    // 先在屏幕外挂载，等这一帧画完（两层 rAF：第一层回调仍在该帧排版之前）再开始入场动画
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => setEntered(true));
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -34,6 +45,9 @@ export function Sheet({ open, onClose, title, description, children, className }
     };
   }, [open, onClose]);
 
+  const hidden = desktop ? { opacity: 0, scale: 0.96, y: 12 } : { y: '100%' };
+  const shown = desktop ? { opacity: 1, scale: 1, y: 0 } : { y: 0 };
+
   return createPortal(
     <AnimatePresence>
       {open && (
@@ -41,7 +55,7 @@ export function Sheet({ open, onClose, title, description, children, className }
           <motion.div
             className="absolute inset-0 bg-zinc-950/40 backdrop-blur-[3px]"
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            animate={{ opacity: entered ? 1 : 0 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
@@ -55,8 +69,8 @@ export function Sheet({ open, onClose, title, description, children, className }
               'relative flex max-h-[92dvh] w-full flex-col overflow-hidden outline-none rounded-t-[28px] bg-surface shadow-2xl ring-1 ring-zinc-900/5 sm:max-w-md sm:rounded-[28px] dark:ring-white/10',
               className,
             )}
-            initial={desktop ? { opacity: 0, scale: 0.96, y: 12 } : { y: '100%' }}
-            animate={desktop ? { opacity: 1, scale: 1, y: 0 } : { y: 0 }}
+            initial={hidden}
+            animate={entered ? shown : hidden}
             exit={desktop ? { opacity: 0, scale: 0.97, y: 8 } : { y: '100%' }}
             transition={{ type: 'spring', damping: 34, stiffness: 420 }}
             drag={desktop ? false : 'y'}
