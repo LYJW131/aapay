@@ -11,11 +11,14 @@ export interface LedgerHost {
   destroy(): Promise<void>;
 }
 
-export type RateLimitBucket = 'join' | 'login';
+export type RateLimitBucket = 'join' | 'login' | 'recognize';
+
+export type AiRunner = (model: string, input: Record<string, unknown>) => Promise<unknown>;
 
 export interface Platform {
   registry: Remote<RegistryService>;
   ledger(id: string): LedgerHost;
   connectConsole(c: Context): Response | Promise<Response>;
   rateLimit(bucket: RateLimitBucket, key: string): Promise<boolean>;
+  ai: AiRunner | null;
 }

@@ -6,13 +6,15 @@ import type { UpgradeWebSocket } from 'hono/ws';
 import { createApp } from '../src/server/app.ts';
 import { loadConfig } from '../src/server/config.ts';
 import { createNodePlatform } from '../src/server/node/platform.ts';
+import type { AiRunner } from '../src/server/platform.ts';
+import { RECOGNIZE_MODEL } from '../src/server/recognize.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'aapay-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-function setup(env: Record<string, string>) {
+function setup(env: Record<string, string>, ai: AiRunner | null = null) {
   const config = loadConfig(env);
-  const platform = createNodePlatform(join(dir, crypto.randomUUID()), (() => undefined) as unknown as UpgradeWebSocket);
+  const platform = createNodePlatform(join(dir, crypto.randomUUID()), (() => undefined) as unknown as UpgradeWebSocket, null, ai);
   const app = createApp(async (c, next) => {
     c.set('config', config);
     c.set('platform', platform);
@@ -44,7 +46,7 @@ describe('API (isolated mode)', () => {
   const { call, resetCookies } = setup({ ADMIN_AUTH: 'none' });
 
   it('runs the full admin → passphrase → member flow', async () => {
-    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true });
+    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true, recognize: false });
     expect((await call('GET', '/session')).data).toBeNull();
 
     const ledger = (await call('POST', '/admin/ledgers', { name: '周末露营' })).data;
@@ -136,5 +138,60 @@ describe('API (shared mode)', () => {
     expect(session).toMatchObject({ role: 'shared', ledger: { id: 'shared' } });
     expect((await call('POST', '/ledger/members', { name: '室友' })).status).toBe(200);
     expect((await call('POST', '/join', { code: 'abc' })).status).toBe(404);
+  });
+});
+
+describe('API (bill recognition)', () => {
+  const image = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
+  const completion = (content: unknown) => ({ choices: [{ message: { content: JSON.stringify(content) } }] });
+
+  async function joined(ai: AiRunner | null) {
+    const api = setup({ ADMIN_AUTH: 'none' }, ai);
+    const ledger = (await api.call('POST', '/admin/ledgers', { name: '识别测试' })).data;
+    await api.call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: 'scan2026', validUntil: null });
+    api.resetCookies();
+    expect((await api.call('POST', '/ledger/recognize', { image })).status).toBe(401);
+    await api.call('POST', '/join', { code: 'scan2026' });
+    return api;
+  }
+
+  it('turns the model reply into a draft in cents', async () => {
+    const seen: { model: string; input: any }[] = [];
+    const { call } = await joined(async (model, input) => {
+      seen.push({ model, input });
+      return completion({ title: ' 瑞幸咖啡 ', amount: 38.5, date: '2026-10-03' });
+    });
+    expect((await call('GET', '/config')).data.recognize).toBe(true);
+    const res = await call('POST', '/ledger/recognize', { image });
+    expect(res).toEqual({ status: 200, data: { title: '瑞幸咖啡', amount: 3850, date: '2026-10-03' } });
+    expect(seen[0]!.model).toBe(RECOGNIZE_MODEL);
+    expect(seen[0]!.input.messages[1].content[0].image_url.url).toBe(image);
+  });
+
+  it('drops fields the model got wrong and rejects non-bills', async () => {
+    let reply: unknown = completion({ title: '外卖', amount: -3, date: '10月4日' });
+    const { call } = await joined(async () => reply);
+    expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({ title: '外卖', amount: null, date: null });
+    reply = completion({ title: null, amount: null, date: null });
+    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(422);
+    reply = { choices: [{ message: { content: '我看不清' } }] };
+    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
+  });
+
+  it('validates the image, reports model failures and limits the rate', async () => {
+    const { call } = await joined(async () => {
+      throw new Error('upstream down');
+    });
+    expect((await call('POST', '/ledger/recognize', { image: 'https://example.com/a.jpg' })).status).toBe(400);
+    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
+    const statuses = [];
+    for (let i = 0; i < 10; i++) statuses.push((await call('POST', '/ledger/recognize', { image })).status);
+    expect(statuses.at(-1)).toBe(429);
+  });
+
+  it('is unavailable without an AI backend', async () => {
+    const { call } = await joined(null);
+    expect((await call('GET', '/config')).data.recognize).toBe(false);
+    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(404);
   });
 });

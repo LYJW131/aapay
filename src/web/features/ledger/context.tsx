@@ -10,6 +10,7 @@ export interface LedgerContextValue {
   activity: ActivityLog;
   memberById: Map<string, Member>;
   key: (name: string) => string;
+  recognize: boolean;
 }
 
 export const LedgerContext = createContext<LedgerContextValue | null>(null);

@@ -10,13 +10,14 @@ import {
   loginInput,
   memberInput,
   passphraseInput,
+  recognizeInput,
   settlementInput,
 } from '../shared/schema.ts';
 import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, Snapshot } from '../shared/types.ts';
 import { adminActions } from './admin.ts';
 import { authenticateAdmin, passwordMatches } from './auth/admin.ts';
 import { clearSessionCookie, CONSOLE_COOKIE, SESSION_COOKIE, setSessionCookie } from './auth/cookies.ts';
-import type { Config } from './config.ts';
+import { todayIn, type Config } from './config.ts';
 import { AppError, notFound, unauthorized } from './core/errors.ts';
 import { newToken, sha256 } from './core/ids.ts';
 import {
@@ -30,6 +31,7 @@ import {
 } from './mcp/oauth.ts';
 import { mcpRoutes } from './mcp/server.ts';
 import type { Platform } from './platform.ts';
+import { recognizeBill } from './recognize.ts';
 import { actorOf, clientIp, findSession } from './session.ts';
 import { body, query } from './validate.ts';
 
@@ -118,6 +120,12 @@ const ledgerRoutes = new Hono<AppEnv>()
       await c.var.platform.ledger(c.var.session.ledger.id).api.deleteSettlement(c.req.param('id'), mutation(c)),
     ),
   )
+  .post('/recognize', body(recognizeInput), async (c) => {
+    const { platform, config, session } = c.var;
+    if (!platform.ai) throw notFound('未启用账单识别');
+    if (!(await platform.rateLimit('recognize', session.ledger.id))) throw new AppError(429, '识别太频繁了，请稍后再试');
+    return c.json(await recognizeBill(platform.ai, c.req.valid('json').image, todayIn(config.timezone)));
+  })
   .get('/audit', query(auditQuery), async (c) =>
     c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.auditLog(c.req.valid('query'))),
   )
@@ -195,6 +203,7 @@ function buildApi() {
         mode: c.var.config.mode,
         adminAuth: c.var.config.adminAuth,
         mcp: c.var.config.mcp,
+        recognize: c.var.platform.ai !== null,
       } satisfies PublicConfig),
     )
     .get('/session', async (c) => c.json(await findSession(c)))

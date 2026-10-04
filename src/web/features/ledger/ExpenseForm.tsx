@@ -1,5 +1,5 @@
-import { Check, Trash2 } from 'lucide-react';
-import { useMemo, useState, useSyncExternalStore, type FormEvent } from 'react';
+import { Check, ScanLine, Trash2 } from 'lucide-react';
+import { useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { centsToInput, formatMoney, parseAmount, splitEvenly } from '../../../shared/money.ts';
 import { LIMITS } from '../../../shared/limits.ts';
@@ -9,9 +9,10 @@ import { Avatar } from '../../components/Avatar.tsx';
 import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
-import { api, errorMessage } from '../../lib/api.ts';
+import { api, call, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { addDays, today } from '../../lib/dates.ts';
+import { compressImage } from '../../lib/image.ts';
 import { load, save } from '../../lib/storage.ts';
 import { useLedger } from './context.tsx';
 
@@ -38,7 +39,7 @@ export function useDefaultPayer(storageKey: string) {
 }
 
 export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: () => void }) {
-  const { snapshot, store, key, memberById } = useLedger();
+  const { snapshot, store, key, memberById, recognize } = useLedger();
   const { members } = snapshot;
 
   const [initialParticipants] = useState(() => {
@@ -64,6 +65,8 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   const [selected, setSelected] = useState(() => new Set(initialParticipants));
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const cents = parseAmount(amount);
   const participantIds = members.filter((m) => selected.has(m.id)).map((m) => m.id);
@@ -114,6 +117,31 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     }
   }
 
+  async function scan(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setScanning(true);
+    try {
+      let image: string;
+      try {
+        image = await compressImage(file);
+      } catch {
+        return toast.error('无法读取这张图片');
+      }
+      const draft = await call(api.ledger.recognize.$post({ json: { image } }));
+      if (draft.amount) setAmount(centsToInput(draft.amount));
+      if (draft.title) setTitle(draft.title);
+      if (draft.date) setDate(draft.date);
+      const missing = [!draft.amount && '金额', !draft.title && '用途'].filter(Boolean);
+      toast.success(missing.length ? `已识别，${missing.join('和')}没认出来，请补上` : '已识别，请核对后再记一笔');
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setScanning(false);
+    }
+  }
+
   async function remove() {
     if (!expense) return;
     setDeleting(true);
@@ -146,6 +174,21 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
           autoFocus={!expense && window.matchMedia('(min-width: 1024px)').matches}
           className="tabular min-w-0 flex-1 bg-transparent text-[32px] leading-tight font-semibold tracking-tight outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
         />
+        {recognize && !expense && (
+          <>
+            <Button
+              variant="soft"
+              size="sm"
+              className="self-center"
+              loading={scanning}
+              icon={<ScanLine className="size-4" />}
+              onClick={() => fileInput.current?.click()}
+            >
+              {scanning ? '识别中' : '识别账单'}
+            </Button>
+            <input ref={fileInput} type="file" accept="image/*" hidden onChange={scan} />
+          </>
+        )}
       </div>
 
       <div>

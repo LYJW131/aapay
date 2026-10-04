@@ -119,8 +119,9 @@ export function LedgerPage({
         activity,
         memberById: new Map(snapshot.members.map((m) => [m.id, m])),
         key: (name) => prefix + name,
+        recognize: config.recognize,
       },
-    [snapshot, session, store, activity, prefix],
+    [snapshot, session, store, activity, prefix, config.recognize],
   );
 
   const filtered = useMemo(() => {

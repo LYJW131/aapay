@@ -7,7 +7,7 @@ import { createNodeWebSocket } from '@hono/node-ws';
 import { createApp } from '../app.ts';
 import { loadConfig } from '../config.ts';
 import type { Platform } from '../platform.ts';
-import { createNodePlatform } from './platform.ts';
+import { createNodePlatform, workersAiRest } from './platform.ts';
 
 const config = loadConfig(process.env);
 const port = Number(process.env.PORT) || 8787;
@@ -21,7 +21,7 @@ const app = createApp(async (c, next) => {
   await next();
 });
 const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
-platform = createNodePlatform(dataDir, upgradeWebSocket, config.auditKey);
+platform = createNodePlatform(dataDir, upgradeWebSocket, config.auditKey, config.workersAi && workersAiRest(config.workersAi));
 
 // npm run dev:node 时前端由 Vite 提供，这里没有构建产物
 if (existsSync(clientDir)) {
@@ -48,6 +48,7 @@ if (existsSync(clientDir)) {
 const server = serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, (info) => {
   console.log(`AAPay 已启动 → http://localhost:${info.port}`);
   console.log(`  模式 ${config.mode} · 管理员认证 ${config.adminAuth} · 数据目录 ${dataDir}`);
+  console.log(`  账单识别 ${config.workersAi ? '已启用（Workers AI）' : '未启用'}`);
 });
 injectWebSocket(server);
 

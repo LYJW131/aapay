@@ -57,6 +57,13 @@ export const settlementInput = z
   })
   .refine((s) => s.fromId !== s.toId, { message: '付款人和收款人不能相同', path: ['toId'] });
 
+export const recognizeInput = z.object({
+  image: z
+    .string()
+    .max(4_000_000, '图片过大')
+    .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/, '图片格式不支持'),
+});
+
 export const joinInput = z.object({ code: passphraseCode });
 export const loginInput = z.object({ password: z.string().min(1).max(256) });
 export const ledgerInput = z.object({ name: text(LIMITS.ledgerName, '账本名称'), emoji: z.string().trim().max(LIMITS.avatar).optional() });

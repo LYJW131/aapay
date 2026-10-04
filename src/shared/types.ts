@@ -99,6 +99,13 @@ export interface PublicConfig {
   mode: Mode;
   adminAuth: AdminAuthMode;
   mcp: boolean;
+  recognize: boolean;
+}
+
+export interface BillDraft {
+  title: string | null;
+  amount: Cents | null;
+  date: string | null;
 }
 
 export interface AdminIdentity {

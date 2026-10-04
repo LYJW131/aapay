@@ -91,7 +91,7 @@ node scripts/seed.mjs            # 可选：生成演示账本（口令 demo2026
 
 也可以用 **Workers Builds** 自动部署：在 Worker 的 Settings → Builds 关联 GitHub 仓库，构建命令 `npm run typecheck && npm test && npm run build`，部署命令 `npx wrangler deploy`，环境变量 `NODE_VERSION=24`。之后推送到监听的分支就会自动测试并上线（本项目监听 `v2`，只改 `*.md` / `docs/` 不触发）。
 
-Durable Objects 与限流绑定由 `wrangler.jsonc` 自动创建，无需手动建数据库。Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），即使绕过 Access 直连 Worker 也无法访问管理接口。
+Durable Objects、限流与 Workers AI 绑定由 `wrangler.jsonc` 自动创建，无需手动建数据库。「识别账单」调用 Workers AI 的 `@cf/qwen/qwen3.8-27b`，费用计入你的 Cloudflare 账号，每个账本每分钟最多 10 次。Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），即使绕过 Access 直连 Worker 也无法访问管理接口。
 
 ## 部署到 Docker
 
@@ -125,6 +125,7 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 | `PUBLIC_URL` | 可选，对外访问地址（如 `https://aapay.example.com`），作为 OAuth issuer 与 MCP 资源标识；不填则按请求推断（信任 `X-Forwarded-Proto/Host`），反向代理后建议填写 | — |
 | `TIMEZONE` | 可选，AI 记账未指定日期时按此时区取「今天」 | `Asia/Shanghai` |
 | `AUDIT_SIGNING_KEY` | 可选，操作动态的 Ed25519 签名私钥（32 字节随机数的 base64url，可用 `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"` 生成；Cloudflare 上请用 secret）。不填则只有哈希链没有签名；设置后不要更换，否则成员的浏览器会提示签名公钥变化 | — |
+| `WORKERS_AI_ACCOUNT_ID` / `WORKERS_AI_TOKEN` | 仅 Node / Docker，可选：Cloudflare 账号 ID 与有 Workers AI 权限的 API Token，填写后开启「识别账单」（Cloudflare 上直接用 `AI` 绑定，无需配置） | — |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
 
 管理员认证方式：
@@ -196,6 +197,7 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `POST` `PATCH` `DELETE` | `/api/ledger/expenses[/:id]` | 支出 |
 | `POST` `DELETE` | `/api/ledger/settlements[/:id]` | 还款记录 |
 | `GET` | `/api/ledger/audit?before=&after=&limit=` | 操作动态（签名哈希链，附公钥与最新一条） |
+| `POST` | `/api/ledger/recognize` | 识别账单图片，返回用途、金额、日期草稿（不写入账本） |
 | `GET` `POST` `PATCH` `DELETE` | `/api/admin/ledgers[/:id]` | 账本管理（含统计） |
 | `GET` `POST` | `/api/admin/ledgers/:id/passphrases` | 分享口令 |
 | `DELETE` | `/api/admin/passphrases/:id` | 撤销口令 |

@@ -8,13 +8,15 @@ import { LedgerService } from '../core/ledger.ts';
 import { RegistryService } from '../core/registry.ts';
 import { dispatch, remote } from '../core/remote.ts';
 import type { SqlDriver, SqlValue } from '../core/sql.ts';
-import type { LedgerHost, Platform } from '../platform.ts';
+import type { AiRunner, LedgerHost, Platform } from '../platform.ts';
 
 export interface Env {
   LEDGER: DurableObjectNamespace<LedgerRoom>;
   REGISTRY: DurableObjectNamespace<RegistryRoom>;
   JOIN_LIMITER?: RateLimit;
   LOGIN_LIMITER?: RateLimit;
+  RECOGNIZE_LIMITER?: RateLimit;
+  AI?: Ai;
 }
 
 const TAG_HEADER = 'x-aapay-tag';
@@ -108,6 +110,10 @@ function forwardUpgrade(stub: { fetch(request: Request): Promise<Response> }, c:
   return stub.fetch(new Request(c.req.raw.url, { headers }));
 }
 
+function aiRunner(ai: Ai): AiRunner {
+  return (model, input) => ai.run(model as keyof AiModels, input as never);
+}
+
 function cloudflarePlatform(env: Env): Platform {
   const registry = env.REGISTRY.get(env.REGISTRY.idFromName('registry-apac'), { locationHint: 'apac' });
   return {
@@ -123,9 +129,10 @@ function cloudflarePlatform(env: Env): Platform {
     },
     connectConsole: (c) => forwardUpgrade(registry, c, 'console'),
     async rateLimit(bucket, key) {
-      const limiter = bucket === 'join' ? env.JOIN_LIMITER : env.LOGIN_LIMITER;
+      const limiter = { join: env.JOIN_LIMITER, login: env.LOGIN_LIMITER, recognize: env.RECOGNIZE_LIMITER }[bucket];
       return limiter ? (await limiter.limit({ key })).success : true;
     },
+    ai: env.AI ? aiRunner(env.AI) : null,
   };
 }
 
