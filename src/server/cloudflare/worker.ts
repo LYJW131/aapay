@@ -109,11 +109,11 @@ function forwardUpgrade(stub: { fetch(request: Request): Promise<Response> }, c:
 }
 
 function cloudflarePlatform(env: Env): Platform {
-  const registry = env.REGISTRY.get(env.REGISTRY.idFromName('registry'));
+  const registry = env.REGISTRY.get(env.REGISTRY.idFromName('registry-apac'), { locationHint: 'apac' });
   return {
     registry: remote((method, args) => registry.invoke(method, args)),
     ledger(id): LedgerHost {
-      const stub = env.LEDGER.get(env.LEDGER.idFromName(id));
+      const stub = env.LEDGER.get(env.LEDGER.idFromName(id), { locationHint: 'apac' });
       return {
         api: remote((method, args) => stub.invoke(method, args)),
         connect: (c, tag) => forwardUpgrade(stub, c, tag),
