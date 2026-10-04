@@ -1,8 +1,14 @@
-import { Check, ImagePlus } from 'lucide-react';
+import { CalendarDays, Check, ImagePlus } from 'lucide-react';
 import { LIMITS } from '../../../shared/limits.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { cn } from '../../lib/cn.ts';
+import { dayLabel } from '../../lib/dates.ts';
+
+function rowDate(date: string) {
+  const { title, sub } = dayLabel(date);
+  return title === '今天' || title === '昨天' ? title : `${title} ${sub}`;
+}
 
 export interface BillRow {
   key: string;
@@ -48,63 +54,70 @@ export function BillBatch({
       </Label>
       <ul className="space-y-2">
         {rows.map((row) => (
-          <li
-            key={row.key}
-            className={cn(
-              'flex items-start gap-3 rounded-2xl bg-zinc-100/80 px-3 py-2.5 transition dark:bg-white/6',
-              !row.checked && 'opacity-55',
-            )}
-          >
+          <li key={row.key} className="flex items-center gap-1 rounded-2xl bg-zinc-100/80 py-2 pr-2.5 pl-0.5 dark:bg-white/6">
             <button
               type="button"
               role="checkbox"
               aria-checked={row.checked}
               aria-label={`记入 ${row.title || '这笔'}`}
               onClick={() => update(row.key, { checked: !row.checked })}
-              className={cn(
-                'mt-1 flex size-5 shrink-0 items-center justify-center rounded-md ring-1 transition',
-                row.checked
-                  ? 'bg-brand-500 text-white ring-brand-500'
-                  : 'bg-white ring-zinc-900/15 dark:bg-white/8 dark:ring-white/20',
-              )}
+              className="flex size-11 shrink-0 items-center justify-center rounded-xl"
             >
-              {row.checked && <Check className="size-3.5" strokeWidth={3} />}
+              <span
+                className={cn(
+                  'flex size-[22px] items-center justify-center rounded-[7px] ring-1 transition active:scale-90',
+                  row.checked
+                    ? 'bg-brand-500 text-white ring-brand-500'
+                    : 'bg-white ring-zinc-900/20 dark:bg-white/8 dark:ring-white/25',
+                )}
+              >
+                {row.checked && <Check className="size-4" strokeWidth={3} />}
+              </span>
             </button>
-            <div className="min-w-0 flex-1 space-y-1">
-              <div className="flex items-baseline gap-2">
-                <input
-                  value={row.title}
-                  onChange={(e) => update(row.key, { title: e.target.value })}
-                  maxLength={LIMITS.title}
-                  placeholder="用途"
-                  aria-label="用途"
-                  className="min-w-0 flex-1 bg-transparent text-[15px] font-medium outline-none placeholder:text-zinc-400 pointer-coarse:text-base"
-                />
-                <span className="-mr-1.5 text-sm text-zinc-400">¥</span>
-                <input
-                  value={row.amount}
-                  onChange={(e) => update(row.key, { amount: e.target.value })}
-                  inputMode="decimal"
-                  placeholder="0.00"
-                  aria-label="金额"
-                  style={{ width: `${(row.amount || '0.00').length + 0.5}ch` }}
-                  className="tabular bg-transparent text-right text-[15px] font-semibold outline-none placeholder:text-zinc-400 pointer-coarse:text-base"
-                />
-              </div>
-              <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                <input
-                  type="date"
-                  value={row.date}
-                  max="9999-12-31"
-                  onChange={(e) => e.target.value && update(row.key, { date: e.target.value })}
-                  aria-label="日期"
-                  className="tabular bg-transparent outline-none pointer-coarse:text-base"
-                />
+            <div className={cn('min-w-0 flex-1 transition-opacity', !row.checked && 'opacity-45')}>
+              <input
+                value={row.title}
+                onChange={(e) => update(row.key, { title: e.target.value })}
+                maxLength={LIMITS.title}
+                placeholder="用途"
+                aria-label="用途"
+                className="-ml-1.5 w-full rounded-lg bg-transparent px-1.5 py-0.5 text-[15px] font-medium outline-none placeholder:text-zinc-400 focus:bg-white focus:ring-2 focus:ring-brand-500/50 pointer-coarse:text-base dark:focus:bg-white/8"
+              />
+              <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                <label className="relative -ml-1.5 inline-flex h-7 items-center gap-1 rounded-lg px-1.5 text-[13px] whitespace-nowrap text-zinc-500 transition focus-within:ring-2 focus-within:ring-brand-500/50 hover:bg-zinc-900/5 dark:text-zinc-400 dark:hover:bg-white/8">
+                  <CalendarDays className="size-3.5" />
+                  {rowDate(row.date)}
+                  <input
+                    type="date"
+                    value={row.date}
+                    max="9999-12-31"
+                    onChange={(e) => e.target.value && update(row.key, { date: e.target.value })}
+                    onClick={(e) => e.currentTarget.showPicker?.()}
+                    aria-label="日期"
+                    className="absolute inset-0 cursor-pointer text-base opacity-0"
+                  />
+                </label>
                 {row.duplicate && (
-                  <span className="rounded-full bg-amber-500/12 px-2 py-0.5 text-amber-700 dark:text-amber-300">可能已记过</span>
+                  <span className="rounded-full bg-amber-500/12 px-2 py-0.5 text-xs whitespace-nowrap text-amber-700 dark:text-amber-300">可能已记过</span>
                 )}
               </div>
             </div>
+            <label
+              className={cn(
+                'flex h-10 w-24 shrink-0 items-center gap-1 rounded-xl bg-white px-2.5 ring-1 ring-zinc-900/5 transition focus-within:ring-2 focus-within:ring-brand-500/60 dark:bg-white/8 dark:ring-white/8',
+                !row.checked && 'opacity-45',
+              )}
+            >
+              <span className="text-sm text-zinc-400">¥</span>
+              <input
+                value={row.amount}
+                onChange={(e) => update(row.key, { amount: e.target.value })}
+                inputMode="decimal"
+                placeholder="0.00"
+                aria-label="金额"
+                className="tabular min-w-0 flex-1 bg-transparent text-right text-[15px] font-semibold outline-none placeholder:text-zinc-400 pointer-coarse:text-base"
+              />
+            </label>
           </li>
         ))}
       </ul>
