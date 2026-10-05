@@ -5,7 +5,9 @@ import { LIMITS } from '../../../shared/limits.ts';
 import type { PublicConfig, SessionInfo } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Collapse } from '../../components/Collapse.tsx';
+import { LanguageSwitch } from '../../components/LanguageSwitch.tsx';
 import { AppIcon } from '../../components/Logo.tsx';
+import { join as t } from '../../i18n/join.ts';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { navigate } from '../../lib/router.ts';
 
@@ -44,8 +46,8 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
   function submit(e: FormEvent) {
     e.preventDefault();
     const value = code.trim();
-    if (value.length < LIMITS.codeMin) return setError(`口令至少 ${LIMITS.codeMin} 位`);
-    if (!/^[a-zA-Z0-9]+$/.test(value)) return setError('口令只能包含字母和数字');
+    if (value.length < LIMITS.codeMin) return setError(t.tooShort(LIMITS.codeMin));
+    if (!/^[a-zA-Z0-9]+$/.test(value)) return setError(t.invalidChars);
     void join(value);
   }
 
@@ -67,12 +69,12 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
           <h1 className="mt-6 text-3xl font-semibold tracking-tight">
             <span className="bg-gradient-to-br from-brand-500 to-accent-500 bg-clip-text text-transparent">AA</span>Pay
           </h1>
-          <p className="mt-2 text-[15px] text-zinc-500 dark:text-zinc-400">一起花钱，轻松算账</p>
+          <p className="mt-2 text-[15px] text-zinc-500 dark:text-zinc-400">{t.tagline}</p>
         </div>
 
         <form onSubmit={submit} className="card space-y-3 p-5">
           <label htmlFor="code" className="block text-sm font-medium text-zinc-600 dark:text-zinc-300">
-            输入分享口令加入账本
+            {t.label}
           </label>
           <div>
             <input
@@ -83,7 +85,7 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
                 setError('');
               }}
               maxLength={LIMITS.codeMax}
-              placeholder="口令"
+              placeholder={t.placeholder}
               autoFocus
               autoComplete="off"
               autoCapitalize="off"
@@ -96,20 +98,23 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
             </Collapse>
           </div>
           <Button type="submit" variant="primary" size="lg" className="w-full" loading={loading} disabled={code.trim().length < LIMITS.codeMin}>
-            进入账本
+            {t.submit}
             <ArrowRight className="size-4" />
           </Button>
         </form>
 
-        {config.adminAuth !== 'disabled' && (
-          <button
-            onClick={() => window.location.assign('/admin')}
-            className="mx-auto mt-6 flex items-center gap-1.5 text-sm text-zinc-500 transition hover:text-brand-600 dark:text-zinc-400"
-          >
-            <ShieldCheck className="size-4" />
-            管理员入口
-          </button>
-        )}
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+          {config.adminAuth !== 'disabled' && (
+            <button
+              onClick={() => window.location.assign('/admin')}
+              className="flex items-center gap-1.5 text-sm text-zinc-500 transition hover:text-brand-600 dark:text-zinc-400"
+            >
+              <ShieldCheck className="size-4" />
+              {t.admin}
+            </button>
+          )}
+          <LanguageSwitch />
+        </div>
       </motion.div>
     </div>
   );

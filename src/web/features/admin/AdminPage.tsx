@@ -4,8 +4,10 @@ import { toast } from 'sonner';
 import { localPath } from '../../../shared/redirect.ts';
 import type { AdminIdentity, PublicConfig } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
+import { LanguageSwitch } from '../../components/LanguageSwitch.tsx';
 import { AppIcon } from '../../components/Logo.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
+import { admin as t } from '../../i18n/admin.ts';
 import { api, call, errorMessage } from '../../lib/api.ts';
 
 export function AdminPage({ config, admin }: { config: PublicConfig; admin: AdminIdentity | null }) {
@@ -15,7 +17,7 @@ export function AdminPage({ config, admin }: { config: PublicConfig; admin: Admi
   const redirecting = !!admin || (external && params.get('error') !== 'denied');
 
   useEffect(() => {
-    document.title = '管理员登录 · AAPay';
+    document.title = t.login.documentTitle;
     if (admin) window.location.replace(back);
     else if (redirecting) window.location.replace(`/api/admin/login?return_to=${encodeURIComponent(back)}`);
   }, [admin, redirecting, back]);
@@ -33,27 +35,32 @@ export function AdminPage({ config, admin }: { config: PublicConfig; admin: Admi
       <div className="w-full max-w-sm">
         <div className="mb-6 flex flex-col items-center gap-4 text-center">
           <AppIcon className="size-16" />
-          <h1 className="text-xl font-semibold tracking-tight">AAPay 管理员登录</h1>
+          <h1 className="text-xl font-semibold tracking-tight">{t.login.title}</h1>
         </div>
         {config.adminAuth === 'password' ? (
           <LoginForm onDone={() => window.location.replace(back)} />
         ) : config.adminAuth === 'access' ? (
-          <Notice title="当前登录的账号不是管理员">
-            请换一个在管理员名单中的账号登录。
+          <Notice title={t.login.notAdminTitle}>
+            {t.login.notAdminBody}
             <Button variant="primary" className="mt-4 w-full" icon={<LogOut className="size-4" />} onClick={() => window.location.assign('/cdn-cgi/access/logout')}>
-              退出 Cloudflare Access
+              {t.login.accessLogout}
             </Button>
           </Notice>
         ) : config.adminAuth === 'proxy' ? (
-          <Notice title="无权访问">未从上游代理获得允许的管理员身份。</Notice>
+          <Notice title={t.login.deniedTitle}>{t.login.deniedBody}</Notice>
         ) : (
-          <Notice title="管理后台未启用">
-            设置环境变量 <code className="font-mono">ADMIN_AUTH</code> 以启用（见 README）。
+          <Notice title={t.login.disabledTitle}>
+            {t.login.disabledBefore}
+            <code className="font-mono">ADMIN_AUTH</code>
+            {t.login.disabledAfter}
           </Notice>
         )}
-        <button onClick={() => window.location.assign('/')} className="mx-auto mt-6 block text-sm text-zinc-500 hover:text-brand-600">
-          返回首页
-        </button>
+        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2">
+          <button onClick={() => window.location.assign('/')} className="text-sm text-zinc-500 hover:text-brand-600">
+            {t.login.backHome}
+          </button>
+          <LanguageSwitch />
+        </div>
       </div>
     </div>
   );
@@ -93,13 +100,13 @@ function LoginForm({ onDone }: { onDone: () => void }) {
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        placeholder="管理员密码"
+        placeholder={t.login.password}
         autoFocus
         autoComplete="current-password"
         className="field"
       />
       <Button type="submit" variant="primary" size="lg" className="w-full" loading={loading} icon={<KeyRound className="size-4" />}>
-        登录
+        {t.login.submit}
       </Button>
     </form>
   );

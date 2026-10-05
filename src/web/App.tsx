@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import type { AdminIdentity, PublicConfig, SessionInfo, Snapshot } from '../shared/types.ts';
 import { Spinner } from './components/Spinner.tsx';
+import { common } from './i18n/common.ts';
 import { adminModules, preloadAdmin, prefetchAdminData } from './features/admin/preload.ts';
 import { JoinPage } from './features/join/JoinPage.tsx';
 import { LedgerPage } from './features/ledger/LedgerPage.tsx';
@@ -70,7 +71,7 @@ export function App() {
         setApp((a) => {
           if (a.state !== 'ready' || !a.admin) return a;
           if (a.session && a.session.role !== 'admin') return { ...a, admin: null, adminExpired: true };
-          return { ...a, admin: null, session: null, snapshot: null, notice: '管理员登录已过期，请重新登录' };
+          return { ...a, admin: null, session: null, snapshot: null, notice: common.adminExpired };
         }),
       ),
     [],
@@ -92,7 +93,7 @@ export function App() {
       <div className="flex min-h-dvh flex-col items-center justify-center gap-3 px-6 text-center text-sm text-zinc-500">
         <p>{app.message}</p>
         <button className="text-brand-600 underline" onClick={() => window.location.reload()}>
-          重新加载
+          {common.reload}
         </button>
       </div>
     );

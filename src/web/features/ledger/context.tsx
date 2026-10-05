@@ -17,6 +17,6 @@ export const LedgerContext = createContext<LedgerContextValue | null>(null);
 
 export function useLedger() {
   const value = use(LedgerContext);
-  if (!value) throw new Error('useLedger 必须在 LedgerContext 内使用');
+  if (!value) throw new Error('useLedger must be used within LedgerContext');
   return value;
 }

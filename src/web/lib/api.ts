@@ -1,5 +1,7 @@
 import { hc, type ClientResponse } from 'hono/client';
 import type { ApiType } from '../../server/app.ts';
+import { common } from '../i18n/common.ts';
+import { locale } from '../i18n/locale.ts';
 
 // 服务端把它带回实时事件，用来识别自己发起的变更
 export const CLIENT_ID = crypto.randomUUID();
@@ -21,7 +23,7 @@ async function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
 }
 
 export const api = hc<ApiType>('/api', {
-  headers: { 'x-client-id': CLIENT_ID },
+  headers: { 'x-client-id': CLIENT_ID, 'accept-language': locale },
   init: { credentials: 'same-origin' },
   fetch: apiFetch,
 });
@@ -44,14 +46,14 @@ export async function call<R extends ClientResponse<unknown, number, string>>(re
   try {
     res = await request;
   } catch {
-    throw new ApiError(0, '网络连接失败，请检查网络');
+    throw new ApiError(0, common.networkError);
   }
   const data = (await res.json().catch(() => null)) as { error?: string } | null;
-  if (!res.ok) throw new ApiError(res.status, data?.error ?? `请求失败（${res.status}）`);
+  if (!res.ok) throw new ApiError(res.status, data?.error ?? common.requestFailed(res.status));
   return data as Ok<R>;
 }
 
-export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : '操作失败');
+export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : common.operationFailed);
 
 export function liveUrl(path: string) {
   const { protocol, host } = window.location;

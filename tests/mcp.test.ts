@@ -246,12 +246,13 @@ describe('OAuth + MCP flow', () => {
 
     expect((await s.tool(conn.access_token, 'get_ledger', { ledger: '周末露营' })).structuredContent.ledger).toBe('周末露营');
     const elsewhere = await s.tool(conn.access_token, 'get_ledger', { ledger: '别人的账本' });
-    expect(elsewhere).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('只授权了账本「周末露营」') }] });
+    expect(elsewhere).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('only authorized for ledger "周末露营"') }] });
     const adminOnly = await s.tool(conn.access_token, 'delete_ledger', { ledger: '周末露营', confirm_name: '周末露营' });
-    expect(adminOnly).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('管理员工具') }] });
+    expect(adminOnly).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('is an admin tool') }] });
 
     await s.tool(conn.access_token, 'add_member', { name: '阿杰' });
     await s.tool(conn.access_token, 'add_member', { name: '小雨' });
+    expect((await s.tool(conn.access_token, 'add_member', { name: '阿杰' })).content[0]!.text).toBe('A member named “阿杰” already exists');
     await s.tool(conn.access_token, 'add_member', { name: 'Tom' });
 
     const expense = await s.tool(conn.access_token, 'add_expense', { title: '营地', amount: 300, payer: '阿杰', date: '2026-10-01' });
@@ -261,7 +262,7 @@ describe('OAuth + MCP flow', () => {
 
     const bad = await s.tool(conn.access_token, 'add_expense', { title: '奶茶', amount: 20, payer: '路人' });
     expect(bad.isError).toBe(true);
-    expect(bad.content[0]!.text).toContain('现有成员：阿杰、小雨、Tom');
+    expect(bad.content[0]!.text).toContain('Members: 阿杰, 小雨, Tom');
     expect((await s.tool(conn.access_token, 'add_expense', { title: '奶茶', amount: 1.234, payer: '阿杰' })).isError).toBe(true);
 
     const overview = (await s.tool(conn.access_token, 'get_ledger')).structuredContent;
@@ -550,14 +551,14 @@ describe('admin connections', () => {
     expect(created.passphrase).toMatchObject({ status: 'active', joinLink: expect.stringMatching(new RegExp(`^${ORIGIN}/join#`)) });
 
     const unspecified = await s.tool(token, 'get_ledger');
-    expect(unspecified).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('需要用 ledger 参数指定账本') }] });
-    expect(unspecified.content[0]!.text).toContain('「公司团建」');
+    expect(unspecified).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('must specify the ledger argument') }] });
+    expect(unspecified.content[0]!.text).toContain('"公司团建"');
     await s.tool(token, 'add_member', { ledger: '公司团建', name: '小李' });
     await s.tool(token, 'add_member', { ledger: '公司团建', name: '小王' });
     const expense = await s.tool(token, 'add_expense', { ledger: '公司团建', title: '聚餐', amount: 300, payer: '小李' });
     expect(expense.structuredContent.created.participants).toHaveLength(2);
     const missing = await s.tool(token, 'get_ledger', { ledger: '不存在' });
-    expect(missing.content[0]!.text).toContain('现有账本');
+    expect(missing.content[0]!.text).toContain('Ledgers:');
 
     const listed = (await s.tool(token, 'list_ledgers')).structuredContent.ledgers;
     expect(listed.find((l: { name: string }) => l.name === '公司团建')).toMatchObject({ members: 2, expenses: 1, totalSpent: 300, activePassphrases: 1 });
@@ -600,12 +601,12 @@ describe('admin connections', () => {
     expect(addExpense.inputSchema.required).not.toContain('ledger');
     expect(addExpense.securitySchemes).toEqual([{ type: 'oauth2', scopes: ['ledger:write'] }]);
     expect(tools.find((t) => t.name === 'list_ledgers')!).toMatchObject({
-      description: expect.stringContaining('仅管理员授权可用'),
+      description: expect.stringContaining('Admin grants only.'),
       securitySchemes: [{ type: 'oauth2', scopes: ['ledger:read'] }],
     });
 
     const notAdmin = await s.tool(readOnlyMember, 'create_ledger', { name: '新账本' });
-    expect(notAdmin).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('管理员工具') }] });
+    expect(notAdmin).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('is an admin tool') }] });
 
     const stepUp = await s.rpc(readOnlyAdmin, 'tools/call', { name: 'create_ledger', arguments: { name: '新账本' } });
     expect(stepUp.status).toBe(403);

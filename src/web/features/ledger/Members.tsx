@@ -8,9 +8,12 @@ import { Avatar } from '../../components/Avatar.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Card, Label } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
+import { ledger } from '../../i18n/ledger.ts';
 import { api, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { useLedger } from './context.tsx';
+
+const t = ledger.members;
 
 const EMOJIS = ['🐱', '🐶', '🦊', '🐼', '🐨', '🐯', '🦁', '🐸', '🐵', '🐧', '🦄', '🐙', '😀', '😎', '🥳', '🤓', '👻', '🌝'];
 
@@ -36,7 +39,7 @@ export function MembersCard() {
 
   return (
     <>
-      <Card id="members" defaultCollapsed title="成员" icon={<Users />} action={<span className="tabular text-xs text-zinc-400">{snapshot.members.length} 人</span>}>
+      <Card id="members" defaultCollapsed title={t.title} icon={<Users />} action={<span className="tabular text-xs text-zinc-400">{t.count(snapshot.members.length)}</span>}>
         <AutoHeight className="-mx-1 px-1">
           {snapshot.members.length > 0 && (
             <div className="-mx-1 mb-4 flex flex-wrap gap-1">
@@ -45,7 +48,7 @@ export function MembersCard() {
                   key={m.id}
                   onClick={() => setEditing(m)}
                   className="group flex w-[60px] flex-col items-center gap-1 rounded-2xl py-1.5 transition hover:bg-zinc-900/4 dark:hover:bg-white/5"
-                  title={`编辑 ${m.name}`}
+                  title={t.edit(m.name)}
                 >
                   <Avatar member={m} className="transition group-active:scale-90" />
                   <span className="w-full truncate px-0.5 text-center text-xs text-zinc-600 dark:text-zinc-300">{m.name}</span>
@@ -59,11 +62,11 @@ export function MembersCard() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={LIMITS.memberName}
-            placeholder={snapshot.members.length ? '添加新成员' : '先添加一起记账的人'}
+            placeholder={snapshot.members.length ? t.addPlaceholder : t.firstPlaceholder}
             className="field"
-            aria-label="新成员名字"
+            aria-label={t.newName}
           />
-          <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={adding} aria-label="添加成员" icon={<Plus className="size-5" />} />
+          <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={adding} aria-label={t.add} icon={<Plus className="size-5" />} />
         </form>
       </Card>
       <MemberSheet member={editing} onClose={() => setEditing(null)} />
@@ -73,7 +76,7 @@ export function MembersCard() {
 
 function MemberSheet({ member, onClose }: { member: Member | null; onClose: () => void }) {
   return (
-    <Sheet open={!!member} onClose={onClose} title="编辑成员">
+    <Sheet open={!!member} onClose={onClose} title={t.editTitle}>
       {member && <MemberEditor key={member.id} member={member} onDone={onClose} />}
     </Sheet>
   );
@@ -105,7 +108,7 @@ function MemberEditor({ member, onDone }: { member: Member; onDone: () => void }
     setBusy('delete');
     try {
       await store.mutate(api.ledger.members[':id'].$delete({ param: { id: member.id } }));
-      toast.success(`已移除 ${member.name}`);
+      toast.success(t.removed(member.name));
       onDone();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -119,7 +122,7 @@ function MemberEditor({ member, onDone }: { member: Member; onDone: () => void }
         <Avatar member={{ ...member, avatar, name: name || member.name }} size="xl" />
       </div>
       <div>
-        <Label>头像</Label>
+        <Label>{t.avatar}</Label>
         <div className="grid grid-cols-6 gap-2">
           {EMOJIS.map((e) => (
             <button
@@ -138,12 +141,12 @@ function MemberEditor({ member, onDone }: { member: Member; onDone: () => void }
         <input
           value={EMOJIS.includes(avatar) ? '' : avatar}
           onChange={(e) => setAvatar([...new Intl.Segmenter().segment(e.target.value)].at(-1)?.segment ?? '')}
-          placeholder="或输入任意 emoji"
+          placeholder={t.customEmoji}
           className="field mt-2 text-center"
         />
       </div>
       <div>
-        <Label>名字</Label>
+        <Label>{t.name}</Label>
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.memberName} className="field" />
       </div>
       <div className="flex gap-2">
@@ -153,16 +156,16 @@ function MemberEditor({ member, onDone }: { member: Member; onDone: () => void }
           onClick={remove}
           loading={busy === 'delete'}
           disabled={used}
-          title={used ? '该成员已有账目，无法删除' : undefined}
+          title={used ? t.cannotRemove : undefined}
           icon={<Trash2 className="size-4" />}
         >
-          移除
+          {t.remove}
         </Button>
         <Button type="submit" variant="primary" size="lg" className="flex-1" loading={busy === 'save'}>
-          保存
+          {t.save}
         </Button>
       </div>
-      {used && <p className="text-center text-xs text-zinc-400">该成员已有账目记录，不能移除</p>}
+      {used && <p className="text-center text-xs text-zinc-400">{t.inUse}</p>}
     </form>
   );
 }

@@ -13,6 +13,7 @@ import { Collapse, Reveal } from '../../components/Collapse.tsx';
 import { QrCode } from '../../components/QrCode.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
+import { admin as t } from '../../i18n/admin.ts';
 import { api, call, errorMessage, liveUrl } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { formatDateTime } from '../../lib/dates.ts';
@@ -112,7 +113,7 @@ export function AdminCard({ admin, current, onEnter, standalone = false }: Props
       >
         <Shield className="size-[18px] shrink-0 text-brand-500 dark:text-brand-300" />
         <h2 className="min-w-0 truncate text-[15px] font-semibold tracking-tight">
-          管理员
+          {t.card.title}
           {current && <span className="font-normal text-zinc-400"> · {current.ledger.name}</span>}
         </h2>
         {!standalone && (
@@ -131,7 +132,7 @@ export function AdminCard({ admin, current, onEnter, standalone = false }: Props
             void logout();
           }}
         >
-          退出
+          {t.card.logout}
         </Button>
       </header>
 
@@ -158,7 +159,7 @@ export function AdminCard({ admin, current, onEnter, standalone = false }: Props
         )}
       </AnimatePresence>
 
-      <Sheet open={!!qr} onClose={() => setQr(null)} title="邀请加入" description={current?.ledger.name}>
+      <Sheet open={!!qr} onClose={() => setQr(null)} title={t.card.inviteTitle} description={current?.ledger.name}>
         {qr && <InviteContent passphrase={qr} />}
       </Sheet>
       <DeleteLedger
@@ -209,7 +210,7 @@ function Ledgers({
       const ledger = await call(api.admin.ledgers.$post({ json: { name: name.trim() } }));
       setName('');
       onChanged();
-      toast.success(`已创建「${ledger.name}」，接下来为它生成一个分享口令吧`);
+      toast.success(t.ledgers.created(ledger.name));
       await enter(ledger.id);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -219,15 +220,15 @@ function Ledgers({
 
   return (
     <div className="min-w-0">
-      <Label aside={ledgers && <span className="tabular">{ledgers.length} 个</span>}>
+      <Label aside={ledgers && <span className="tabular">{t.ledgers.count(ledgers.length)}</span>}>
         <span className="flex items-center gap-1.5">
           <FolderOpen className="size-3.5" />
-          账本
+          {t.ledgers.title}
         </span>
       </Label>
       <form onSubmit={create} className="mb-2 flex gap-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} placeholder="新账本名称" className="field" />
-        <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={busy === 'create'} aria-label="创建账本" icon={<Plus className="size-5" />} />
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} placeholder={t.ledgers.newName} className="field" />
+        <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={busy === 'create'} aria-label={t.ledgers.create} icon={<Plus className="size-5" />} />
       </form>
       {/* 每块自带 pb-1 作间距（随增删动画一起伸缩），最后一块多出的 pb-1 由 -mb-1 抵掉 */}
       <div className="-mb-1">
@@ -237,7 +238,7 @@ function Ledgers({
           </div>
         </Collapse>
         <Collapse open={ledgers?.length === 0} className="pb-1">
-          <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500 dark:bg-white/3">还没有账本，先创建一个吧</p>
+          <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500 dark:bg-white/3">{t.ledgers.empty}</p>
         </Collapse>
         <ul>
           <AnimatePresence initial={false}>
@@ -256,7 +257,7 @@ function Ledgers({
           </AnimatePresence>
         </ul>
       </div>
-      <Sheet open={!!editing} onClose={() => setEditing(null)} title="编辑账本">
+      <Sheet open={!!editing} onClose={() => setEditing(null)} title={t.ledgers.edit}>
         {editing && <LedgerEditor key={editing.id} ledger={editing} onDone={() => (setEditing(null), onChanged())} />}
       </Sheet>
     </div>
@@ -295,29 +296,29 @@ function LedgerRow({
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">
             <span className="truncate text-sm font-medium">{l.name}</span>
-            {current && <span className="shrink-0 rounded bg-brand-500/15 px-1 text-[10px] font-medium text-brand-600 dark:text-brand-300">当前</span>}
+            {current && <span className="shrink-0 rounded bg-brand-500/15 px-1 text-[10px] font-medium text-brand-600 dark:text-brand-300">{t.ledgers.current}</span>}
           </span>
           <span className="tabular block truncate text-xs text-zinc-500 dark:text-zinc-400">
-            {l.stats ? `${l.stats.members} 人 · ${l.stats.expenses} 笔 · ${formatMoney(l.stats.total)}` : '—'}
+            {l.stats ? t.ledgers.stats(l.stats.members, l.stats.expenses, formatMoney(l.stats.total)) : '—'}
           </span>
         </span>
         {l.connections > 0 && (
-          <span title="已连接的 AI 应用" className="flex shrink-0 items-center gap-0.5 text-[11px] text-brand-600 dark:text-brand-300">
+          <span title={t.ledgers.connections} className="flex shrink-0 items-center gap-0.5 text-[11px] text-brand-600 dark:text-brand-300">
             <Sparkles className="size-3" />
             {l.connections}
           </span>
         )}
         {l.activePassphrases > 0 && (
-          <span title="生效中的口令" className="flex shrink-0 items-center gap-0.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+          <span title={t.ledgers.activePassphrases} className="flex shrink-0 items-center gap-0.5 text-[11px] text-emerald-600 dark:text-emerald-400">
             <KeyRound className="size-3" />
             {l.activePassphrases}
           </span>
         )}
       </button>
-      <Button size="icon" variant="ghost" className="size-9 text-zinc-400" onClick={onEdit} aria-label="编辑账本">
+      <Button size="icon" variant="ghost" className="size-9 text-zinc-400" onClick={onEdit} aria-label={t.ledgers.edit}>
         <Pencil className="size-4" />
       </Button>
-      <Button size="icon" variant="ghost" className="size-9 text-zinc-400 hover:bg-rose-500/10 hover:text-rose-500" onClick={onDelete} aria-label="删除账本">
+      <Button size="icon" variant="ghost" className="size-9 text-zinc-400 hover:bg-rose-500/10 hover:text-rose-500" onClick={onDelete} aria-label={t.ledgers.delete}>
         <Trash2 className="size-4" />
       </Button>
     </div>
@@ -350,7 +351,7 @@ function LedgerEditor({ ledger, onDone }: { ledger: LedgerOverview; onDone: () =
         </span>
       </div>
       <div>
-        <Label>图标</Label>
+        <Label>{t.editor.icon}</Label>
         <div className="grid grid-cols-6 gap-2">
           {LEDGER_EMOJIS.map((e) => (
             <button
@@ -370,17 +371,17 @@ function LedgerEditor({ ledger, onDone }: { ledger: LedgerOverview; onDone: () =
         <input
           value={LEDGER_EMOJIS.includes(emoji) ? '' : emoji}
           onChange={(e) => setEmoji([...new Intl.Segmenter().segment(e.target.value)].at(-1)?.segment ?? ledger.emoji)}
-          placeholder="或输入任意 emoji"
-          aria-label="自定义图标"
+          placeholder={t.editor.customEmoji}
+          aria-label={t.editor.customIcon}
           className="field mt-2 text-center"
         />
       </div>
       <div>
-        <Label>名称</Label>
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} className="field" aria-label="账本名称" />
+        <Label>{t.editor.name}</Label>
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} className="field" aria-label={t.editor.ledgerName} />
       </div>
       <Button type="submit" variant="primary" size="lg" className="w-full" loading={saving}>
-        保存
+        {t.editor.save}
       </Button>
     </form>
   );
@@ -394,7 +395,7 @@ function DeleteLedger({ ledger, onClose, onDeleted }: { ledger: LedgerOverview |
     setBusy(true);
     try {
       await call(api.admin.ledgers[':id'].$delete({ param: { id: ledger.id } }));
-      toast.success(`已删除「${ledger.name}」`);
+      toast.success(t.remove.done(ledger.name));
       onDeleted();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -404,17 +405,17 @@ function DeleteLedger({ ledger, onClose, onDeleted }: { ledger: LedgerOverview |
   }
 
   return (
-    <Sheet open={!!ledger} onClose={onClose} title={`删除「${ledger?.name ?? ''}」？`}>
+    <Sheet open={!!ledger} onClose={onClose} title={t.remove.title(ledger?.name ?? '')}>
       <div className="space-y-4 pb-1">
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          账本内的所有成员、支出和还款记录都会被永久删除，所有口令与 AI 连接立即失效，在线成员会被移出。此操作不可恢复。
+          {t.remove.body}
         </p>
         <div className="flex gap-2">
           <Button className="flex-1" onClick={onClose}>
-            取消
+            {t.remove.cancel}
           </Button>
           <Button variant="danger" className="flex-1 bg-rose-500! text-white!" loading={busy} onClick={remove}>
-            永久删除
+            {t.remove.confirm}
           </Button>
         </div>
       </div>
@@ -439,7 +440,7 @@ function Passphrases({
     setBusy(p.id);
     try {
       await call(api.admin.passphrases[':id'].$delete({ param: { id: p.id } }));
-      toast.success(`已撤销口令 ${p.code}，使用它加入的成员已被移出`);
+      toast.success(t.passphrases.revoked(p.code));
       onChanged();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -453,7 +454,7 @@ function Passphrases({
       <Label>
         <span className="flex items-center gap-1.5">
           <KeyRound className="size-3.5" />
-          分享口令
+          {t.passphrases.title}
         </span>
       </Label>
       <PassphraseForm ledgerId={ledgerId} onCreated={(p) => (onChanged(), onQr(p))} />
@@ -465,7 +466,7 @@ function Passphrases({
         </Collapse>
         <Collapse open={passphrases?.length === 0}>
           <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500 dark:bg-white/3">
-            还没有口令，生成后把它或邀请链接发给大家即可加入
+            {t.passphrases.empty}
           </p>
         </Collapse>
         <ul>
@@ -485,11 +486,11 @@ function Passphrases({
 
 type Validity = '1d' | '7d' | '30d' | 'forever' | 'custom';
 const VALIDITY: { key: Validity; label: string; days?: number }[] = [
-  { key: '1d', label: '1 天', days: 1 },
-  { key: '7d', label: '7 天', days: 7 },
-  { key: '30d', label: '30 天', days: 30 },
-  { key: 'forever', label: '永久' },
-  { key: 'custom', label: '自定义' },
+  { key: '1d', label: t.passphrases.days(1), days: 1 },
+  { key: '7d', label: t.passphrases.days(7), days: 7 },
+  { key: '30d', label: t.passphrases.days(30), days: 30 },
+  { key: 'forever', label: t.passphrases.forever },
+  { key: 'custom', label: t.passphrases.custom },
 ];
 
 const toLocalInput = (ts: number) => {
@@ -533,7 +534,7 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
               value={code}
               onChange={(e) => setCode(e.target.value)}
               maxLength={LIMITS.codeMax}
-              placeholder={`口令（${LIMITS.codeMin}-${LIMITS.codeMax} 位字母或数字）`}
+              placeholder={t.passphrases.placeholder(LIMITS.codeMin, LIMITS.codeMax)}
               autoCapitalize="off"
               spellCheck={false}
               className="field pr-11 font-mono tracking-wider"
@@ -542,18 +543,18 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
               type="button"
               onClick={() => setCode(randomPassphrase())}
               className="absolute top-1/2 right-2 -translate-y-1/2 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-900/5 hover:text-brand-600"
-              aria-label="随机生成"
-              title="随机生成"
+              aria-label={t.passphrases.random}
+              title={t.passphrases.random}
             >
               <Dices className="size-4" />
             </button>
           </div>
           <Button type="submit" variant="primary" loading={saving} icon={<Plus className="size-4" />}>
-            生成
+            {t.passphrases.generate}
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-xs text-zinc-500">有效期</span>
+          <span className="mr-1 text-xs text-zinc-500">{t.passphrases.validity}</span>
           {VALIDITY.map((v) => (
             <button
               key={v.key}
@@ -574,11 +575,11 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
       <Collapse open={validity === 'custom'} className="pt-2.5">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label>
-            <Label>开始</Label>
+            <Label>{t.passphrases.from}</Label>
             <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)} className="field tabular px-3" />
           </label>
           <label>
-            <Label>结束</Label>
+            <Label>{t.passphrases.until}</Label>
             <input type="datetime-local" value={until} onChange={(e) => setUntil(e.target.value)} className="field tabular px-3" />
           </label>
         </div>
@@ -589,9 +590,9 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
 
 function status(p: Passphrase) {
   const now = Date.now();
-  if (p.validFrom > now) return { label: '未生效', className: 'bg-amber-500/12 text-amber-700 dark:text-amber-400' };
-  if (p.validUntil !== null && p.validUntil <= now) return { label: '已过期', className: 'bg-zinc-500/12 text-zinc-500' };
-  return { label: '生效中', className: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-400' };
+  if (p.validFrom > now) return { label: t.passphrases.pending, className: 'bg-amber-500/12 text-amber-700 dark:text-amber-400' };
+  if (p.validUntil !== null && p.validUntil <= now) return { label: t.passphrases.expired, className: 'bg-zinc-500/12 text-zinc-500' };
+  return { label: t.passphrases.active, className: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-400' };
 }
 
 function PassphraseRow({ passphrase: p, busy, onQr, onRevoke }: { passphrase: Passphrase; busy: boolean; onQr: () => void; onRevoke: () => void }) {
@@ -604,13 +605,13 @@ function PassphraseRow({ passphrase: p, busy, onQr, onRevoke }: { passphrase: Pa
           <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium', st.className)}>{st.label}</span>
         </div>
         <p className="tabular mt-0.5 truncate text-xs text-zinc-500 dark:text-zinc-400">
-          {formatDateTime(p.validFrom)} → {p.validUntil ? formatDateTime(p.validUntil) : '永久有效'}
+          {formatDateTime(p.validFrom)} → {p.validUntil ? formatDateTime(p.validUntil) : t.passphrases.neverExpires}
         </p>
       </div>
-      <Button size="icon" variant="ghost" className="size-9" onClick={onQr} aria-label="二维码与链接">
+      <Button size="icon" variant="ghost" className="size-9" onClick={onQr} aria-label={t.passphrases.qr}>
         <QrIcon className="size-4" />
       </Button>
-      <Button size="icon" variant="ghost" className="size-9 text-rose-500 hover:bg-rose-500/10" onClick={onRevoke} loading={busy} aria-label="撤销口令" icon={<Trash2 className="size-4" />} />
+      <Button size="icon" variant="ghost" className="size-9 text-rose-500 hover:bg-rose-500/10" onClick={onRevoke} loading={busy} aria-label={t.passphrases.revoke} icon={<Trash2 className="size-4" />} />
     </div>
   );
 }
@@ -624,7 +625,7 @@ function InviteContent({ passphrase }: { passphrase: Passphrase }) {
       setCopied(what);
       setTimeout(() => setCopied(null), 1800);
     } catch {
-      toast.error('复制失败');
+      toast.error(t.invite.copyFailed);
     }
   };
   return (
@@ -632,8 +633,8 @@ function InviteContent({ passphrase }: { passphrase: Passphrase }) {
       <div className="rounded-3xl bg-white p-4 text-zinc-900 shadow-sm ring-1 ring-zinc-900/5">
         <QrCode value={link} className="size-52" />
       </div>
-      <button onClick={() => copy(passphrase.code, 'code')} className="group text-center" title="点击复制口令">
-        <p className="text-sm text-zinc-500">口令</p>
+      <button onClick={() => copy(passphrase.code, 'code')} className="group text-center" title={t.invite.copyCode}>
+        <p className="text-sm text-zinc-500">{t.invite.code}</p>
         <p className="mt-1 flex items-center gap-2 font-mono text-2xl font-semibold tracking-[0.2em]">
           {passphrase.code}
           {copied === 'code' ? <Check className="size-4 text-emerald-500" /> : <Copy className="size-4 text-zinc-300 group-hover:text-zinc-500" />}
@@ -641,7 +642,7 @@ function InviteContent({ passphrase }: { passphrase: Passphrase }) {
       </button>
       <p className="w-full truncate rounded-xl bg-zinc-50 px-3 py-2 text-center font-mono text-xs text-zinc-500 dark:bg-white/4">{link}</p>
       <Button variant="primary" className="w-full" onClick={() => copy(link, 'link')} icon={copied === 'link' ? <Check className="size-4" /> : <Copy className="size-4" />}>
-        {copied === 'link' ? '已复制' : '复制邀请链接'}
+        {copied === 'link' ? t.invite.copied : t.invite.copyLink}
       </Button>
     </div>
   );

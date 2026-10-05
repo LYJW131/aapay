@@ -10,6 +10,8 @@ import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { Collapse } from '../../components/Collapse.tsx';
+import { common } from '../../i18n/common.ts';
+import { expense as t } from '../../i18n/expense.ts';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { addDays, today } from '../../lib/dates.ts';
@@ -82,8 +84,8 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   const liveSuggestions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const e of snapshot.expenses.slice(0, 200)) counts.set(e.title, (counts.get(e.title) ?? 0) + 1);
-    const recent = [...counts].sort((a, b) => b[1] - a[1]).map(([t]) => t);
-    return [...new Set([...recent, '早餐', '午饭', '晚饭', '打车', '超市', '咖啡'])].slice(0, 6);
+    const recent = [...counts].sort((a, b) => b[1] - a[1]).map(([title]) => title);
+    return [...new Set([...recent, ...t.form.suggestions])].slice(0, 6);
   }, [snapshot.expenses]);
   // 弹窗里提交后表单随弹窗关掉，而账目更新常先于弹窗退场到达，建议跟着重排会在关闭时闪一下
   const [openedSuggestions] = useState(liveSuggestions);
@@ -100,10 +102,10 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (drafts) return submitBatch(drafts);
-    if (!cents) return toast.error('请输入有效金额（最多两位小数）');
-    if (!title.trim()) return toast.error('请填写用途');
-    if (!payerId) return toast.error('请选择付款人');
-    if (participantIds.length === 0) return toast.error('请至少选择一位参与者');
+    if (!cents) return toast.error(t.form.invalidAmount);
+    if (!title.trim()) return toast.error(t.form.titleRequired);
+    if (!payerId) return toast.error(t.form.payerRequired);
+    if (participantIds.length === 0) return toast.error(t.form.participantsRequired);
 
     const input = { title: title.trim(), amount: cents, payerId, date, participantIds };
     setSaving(true);
@@ -111,11 +113,11 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
       if (expense) {
         if (unchanged(expense, input)) return onDone?.();
         await store.mutate(api.ledger.expenses[':id'].$patch({ param: { id: expense.id }, json: input }));
-        toast.success('已保存修改');
+        toast.success(t.form.saved);
       } else {
         await store.mutate(api.ledger.expenses.$post({ json: input }));
         save(key('expense-defaults'), { participantIds, at: Date.now() } satisfies Remembered);
-        toast.success(`已记录 ${input.title} ${formatMoney(cents)}`);
+        toast.success(t.form.added(input.title, formatMoney(cents)));
         // 在弹窗里时表单随弹窗关掉，这时清空会让退场动画里的内容先变一下
         if (!onDone) {
           setAmount('');
@@ -135,13 +137,13 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     for (const [index, row] of rows.entries()) {
       if (!row.checked) continue;
       const rowCents = parseAmount(row.amount);
-      if (!row.title.trim()) return toast.error(`第 ${index + 1} 笔缺少用途`);
-      if (!rowCents) return toast.error(`第 ${index + 1} 笔的金额无效`);
+      if (!row.title.trim()) return toast.error(t.form.rowTitleRequired(index + 1));
+      if (!rowCents) return toast.error(t.form.rowAmountInvalid(index + 1));
       inputs.push({ key: row.key, input: { title: row.title.trim(), amount: rowCents, payerId, date: row.date, participantIds } });
     }
-    if (inputs.length === 0) return toast.error('请至少勾选一笔');
-    if (!payerId) return toast.error('请选择付款人');
-    if (participantIds.length === 0) return toast.error('请至少选择一位参与者');
+    if (inputs.length === 0) return toast.error(t.form.noneChecked);
+    if (!payerId) return toast.error(t.form.payerRequired);
+    if (participantIds.length === 0) return toast.error(t.form.participantsRequired);
 
     setSaving(true);
     const saved = new Set<string>();
@@ -151,12 +153,12 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         saved.add(rowKey);
       }
       save(key('expense-defaults'), { participantIds, at: Date.now() } satisfies Remembered);
-      toast.success(`已记录 ${inputs.length} 笔，共 ${formatMoney(inputs.reduce((sum, { input }) => sum + input.amount, 0))}`);
+      toast.success(t.form.addedBatch(inputs.length, formatMoney(inputs.reduce((sum, { input }) => sum + input.amount, 0))));
       setDrafts(null);
       onDone?.();
     } catch (err) {
       setDrafts(rows.filter((r) => !saved.has(r.key)));
-      toast.error(saved.size ? `已记录 ${saved.size} 笔，剩下的没保存：${errorMessage(err)}` : errorMessage(err));
+      toast.error(saved.size ? t.form.partiallyAdded(saved.size, errorMessage(err)) : errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -166,12 +168,12 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     const all = [...(e.target.files ?? [])];
     e.target.value = '';
     if (all.length === 0) return;
-    if (all.length > MAX_IMAGES) toast(`一次最多识别 ${MAX_IMAGES} 张，先识别前 ${MAX_IMAGES} 张`);
+    if (all.length > MAX_IMAGES) toast(t.form.tooManyImages(MAX_IMAGES));
     setScanning(true);
     const results = await Promise.allSettled(
       all.slice(0, MAX_IMAGES).map(async (file) => {
         const image = await compressImage(file).catch(() => {
-          throw new Error('无法读取这张图片');
+          throw new Error(t.form.unreadableImage);
         });
         return (await call(api.ledger.recognize.$post({ json: { image } }))).items;
       }),
@@ -180,16 +182,16 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
 
     const found = results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
     const failures = results.flatMap((r) => (r.status === 'rejected' ? [errorMessage(r.reason)] : []));
-    if (found.length === 0) return toast.error(failures[0] ?? '没有在图片里找到账单信息');
-    const skipped = failures.length ? `，${failures.length} 张图片没识别出来` : '';
+    if (found.length === 0) return toast.error(failures[0] ?? t.form.nothingFound);
+    const skipped = failures.length ? t.form.imagesSkipped(failures.length) : '';
 
     if (found.length === 1 && !drafts) {
       const [draft] = found as [BillDraft];
       if (draft.amount) setAmount(centsToInput(draft.amount));
       if (draft.title) setTitle(draft.title);
       if (draft.date) setDate(draft.date);
-      const missing = [!draft.amount && '金额', !draft.title && '用途'].filter(Boolean);
-      toast.success((missing.length ? `已识别，${missing.join('和')}没认出来，请补上` : '已识别，请核对后再记一笔') + skipped);
+      const missing = [!draft.amount && t.form.missingAmount, !draft.title && t.form.missingTitle].filter((f) => f !== false);
+      toast.success((missing.length ? t.form.recognizedMissing(missing) : t.form.recognized) + skipped);
       return;
     }
 
@@ -210,7 +212,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
       });
     }
     setDrafts(rows);
-    toast.success(`识别到 ${found.length} 笔，请核对后记入${skipped}`);
+    toast.success(t.form.recognizedBatch(found.length) + skipped);
   }
 
   async function remove() {
@@ -218,7 +220,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     setDeleting(true);
     try {
       await store.mutate(api.ledger.expenses[':id'].$delete({ param: { id: expense.id } }));
-      toast.success(`已删除 ${expense.title}`);
+      toast.success(t.form.deleted(expense.title));
       onDone?.();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -237,7 +239,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   return (
     <>
       <Collapse open={members.length === 0}>
-        <p className="py-6 text-center text-sm text-zinc-500">先添加成员，才能开始记账 👇</p>
+        <p className="py-6 text-center text-sm text-zinc-500">{t.form.noMembers}</p>
       </Collapse>
       <Collapse open={members.length > 0}>
         <form onSubmit={submit} className="space-y-5 pb-1">
@@ -255,7 +257,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                       onChange={(e) => setAmount(e.target.value)}
                       inputMode="decimal"
                       placeholder="0.00"
-                      aria-label="金额"
+                      aria-label={t.amount}
                       autoFocus={!expense && window.matchMedia('(min-width: 1024px)').matches}
                       className="tabular min-w-0 flex-1 bg-transparent text-[32px] leading-tight font-semibold tracking-tight outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
                     />
@@ -269,19 +271,19 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                           icon={<ScanLine className="size-4" />}
                           onClick={pickImages}
                         >
-                          识别账单
+                          {t.form.scan}
                         </Button>
                       </>
                     )}
                   </div>
 
                   <div>
-                    <Label aside={<span className="tabular text-xs text-zinc-400">{title.length}/{LIMITS.title}</span>}>用途</Label>
+                    <Label aside={<span className="tabular text-xs text-zinc-400">{title.length}/{LIMITS.title}</span>}>{t.title}</Label>
                     <input
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       maxLength={LIMITS.title}
-                      placeholder="例如：午饭"
+                      placeholder={t.form.titlePlaceholder}
                       className="field"
                     />
                     <AutoHeight className="-m-1 p-1">
@@ -306,11 +308,11 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                   </div>
 
                   <div>
-                    <Label>日期</Label>
+                    <Label>{t.date}</Label>
                     <div className="flex gap-2">
                       {[
-                        [today(), '今天'],
-                        [yesterday, '昨天'],
+                        [today(), common.today],
+                        [yesterday, common.yesterday],
                       ].map(([value, label]) => (
                         <button
                           key={value}
@@ -332,7 +334,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                         max="9999-12-31"
                         onChange={(e) => e.target.value && setDate(e.target.value)}
                         className="field tabular min-w-0 flex-1 px-3 text-center"
-                        aria-label="选择日期"
+                        aria-label={t.form.pickDate}
                       />
                     </div>
                   </div>
@@ -342,7 +344,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
           </div>
 
           <div>
-            <Label>谁付的钱</Label>
+            <Label>{t.paidBy}</Label>
             <AutoHeight className="-m-1 p-1">
               <div className="flex flex-wrap gap-2">
                 {members.map((m) => (
@@ -360,11 +362,11 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                   onClick={() => setSelected(new Set(allSelected ? [] : members.map((m) => m.id)))}
                   className="rounded-full px-2 py-0.5 text-xs text-brand-600 hover:bg-brand-500/10 dark:text-brand-300"
                 >
-                  {allSelected ? '全不选' : '全选'}
+                  {allSelected ? t.form.selectNone : t.form.selectAll}
                 </button>
               }
             >
-              谁一起分摊 · {participantIds.length}/{members.length}
+              {t.form.splitBetween} · {participantIds.length}/{members.length}
             </Label>
             <AutoHeight className="-m-1 p-1">
               <div className="flex flex-wrap gap-2">
@@ -379,19 +381,19 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
             {drafts ? (
               <>
                 <span className="text-zinc-500 dark:text-zinc-400">
-                  {batch.count} 笔合计{participantIds.length > 0 && `，每笔 ${participantIds.length} 人平摊`}
+                  {t.form.batchTotal(batch.count, participantIds.length)}
                 </span>
                 <span className="tabular font-semibold text-brand-600 dark:text-brand-300">{formatMoney(batch.total)}</span>
               </>
             ) : (
               <>
                 <span className="text-zinc-500 dark:text-zinc-400">
-                  {participantIds.length > 0 ? `${participantIds.length} 人平摊，每人` : '请选择参与者'}
+                  {participantIds.length > 0 ? t.form.perPerson(participantIds.length) : t.form.choosePeople}
                 </span>
                 <span className="tabular font-semibold text-brand-600 dark:text-brand-300">
                   {shares.length ? formatMoney(shares[shares.length - 1]!.amount) : '—'}
                   {shares.length > 1 && shares[0]!.amount !== shares[shares.length - 1]!.amount && (
-                    <span className="ml-1 text-xs font-normal text-zinc-400">起</span>
+                    <span className="ml-1 text-xs font-normal text-zinc-400">{t.form.unevenShares}</span>
                   )}
                 </span>
               </>
@@ -401,11 +403,11 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
           <div className="flex gap-2">
             {expense && (
               <Button variant="danger" size="lg" onClick={remove} loading={deleting} icon={<Trash2 className="size-4" />}>
-                删除
+                {t.form.delete}
               </Button>
             )}
             <Button type="submit" variant="primary" size="lg" className="flex-1" loading={saving} icon={<Check className="size-4" />}>
-              {expense ? '保存修改' : drafts ? `记 ${batch.count} 笔` : '记一笔'}
+              {expense ? t.form.saveChanges : drafts ? t.form.addBatch(batch.count) : t.form.add}
             </Button>
           </div>
         </form>

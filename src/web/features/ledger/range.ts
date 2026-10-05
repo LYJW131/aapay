@@ -1,4 +1,5 @@
 import type { Expense, IsoDate, Settlement } from '../../../shared/types.ts';
+import { ledger } from '../../i18n/ledger.ts';
 import { addDays, today } from '../../lib/dates.ts';
 
 export type RangeKey = 'all' | 'today' | '7d' | 'month' | 'custom';
@@ -10,10 +11,10 @@ export interface RangeFilter {
 }
 
 export const RANGE_OPTIONS: { key: Exclude<RangeKey, 'custom'>; label: string }[] = [
-  { key: 'all', label: '全部' },
-  { key: 'today', label: '今天' },
-  { key: '7d', label: '近 7 天' },
-  { key: 'month', label: '本月' },
+  { key: 'all', label: ledger.range.all },
+  { key: 'today', label: ledger.range.today },
+  { key: '7d', label: ledger.range.last7 },
+  { key: 'month', label: ledger.range.month },
 ];
 
 export function resolveRange(range: RangeFilter): { from: IsoDate | null; to: IsoDate | null } {
@@ -45,5 +46,5 @@ export function rangeLabel(range: RangeFilter) {
   if (range.key !== 'custom') return RANGE_OPTIONS.find((o) => o.key === range.key)!.label;
   const { from, to } = resolveRange(range);
   if (from && from === to) return from;
-  return `${from ?? '最早'} ~ ${to ?? '至今'}`;
+  return ledger.range.span(from, to);
 }

@@ -6,10 +6,13 @@ import type { Expense, IsoDate } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Card } from '../../components/Card.tsx';
 import { Collapse } from '../../components/Collapse.tsx';
+import { ledger } from '../../i18n/ledger.ts';
 import { cn } from '../../lib/cn.ts';
 import { addDays, daysBetween, parseIsoDate, shortDate, today } from '../../lib/dates.ts';
 import { useLedger } from './context.tsx';
 import { RANGE_OPTIONS, resolveRange, type RangeFilter } from './range.ts';
+
+const t = ledger.overview;
 
 interface Props {
   range: RangeFilter;
@@ -56,8 +59,8 @@ function buckets(expenses: Expense[], from: IsoDate, to: IsoDate): Bucket[] {
     const last = new Date(y, cur.getMonth() + 1, 0).getDate();
     result.push({
       key: k,
-      label: `${cur.getMonth() + 1}月`,
-      tip: `${y}年${cur.getMonth() + 1}月`,
+      label: t.month(cur.getMonth() + 1),
+      tip: t.yearMonth(y, cur.getMonth() + 1),
       total: totals.get(k) ?? 0,
       range: { key: 'custom', from: `${k}-01`, to: `${k}-${last}` },
     });
@@ -93,7 +96,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
   }, [expenses, resolved.from, resolved.to, memberId]);
 
   return (
-    <Card id="overview" title="账本概览" icon={<ChartColumnBig />}>
+    <Card id="overview" title={t.title} icon={<ChartColumnBig />}>
       <div ref={rangeBar} className="relative">
         <div className="-mx-1 -mt-1 flex gap-1 overflow-x-auto p-1 [scrollbar-width:none]">
           {RANGE_OPTIONS.map((o) => (
@@ -117,7 +120,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
           >
             <CalendarRange className="size-3.5" />
             <span className="tabular">
-              {range.key === 'custom' && range.from && range.to ? `${shortDate(range.from)} – ${shortDate(range.to)}` : '自定义'}
+              {range.key === 'custom' && range.from && range.to ? `${shortDate(range.from)} – ${shortDate(range.to)}` : t.custom}
             </span>
           </Chip>
         </div>
@@ -137,7 +140,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
                 max={range.to}
                 onChange={(e) => onRange({ ...range, from: e.target.value || undefined })}
                 className="field tabular h-10 min-w-0 px-1 text-center"
-                aria-label="开始日期"
+                aria-label={t.from}
               />
               <input
                 type="date"
@@ -145,7 +148,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
                 min={range.from}
                 onChange={(e) => onRange({ ...range, to: e.target.value || undefined })}
                 className="field tabular h-10 min-w-0 px-1 text-center"
-                aria-label="结束日期"
+                aria-label={t.to}
               />
               <button
                 type="button"
@@ -153,7 +156,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
                 className="col-span-2 flex h-9 items-center justify-center gap-1 rounded-xl text-sm font-medium text-brand-600 transition hover:bg-brand-500/10 dark:text-brand-300"
               >
                 <Check className="size-4" />
-                完成
+                {t.done}
               </button>
             </motion.div>
           )}
@@ -163,7 +166,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
       <Collapse open={snapshot.members.length > 1} className="pt-2">
         <div className="-mx-1 -mt-1 flex gap-1 overflow-x-auto p-1 [scrollbar-width:none]">
           <Chip active={!memberId} onClick={() => onMember(null)}>
-            全部成员
+            {t.allMembers}
           </Chip>
           {snapshot.members.map((m) => (
             <Chip key={m.id} active={memberId === m.id} onClick={() => onMember(memberId === m.id ? null : m.id)}>
@@ -177,20 +180,20 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-[13px] text-zinc-500 dark:text-zinc-400">
-            {memberId ? '相关支出' : '总支出'} · {expenses.length} 笔
+            {t.total(!!memberId, expenses.length)}
           </p>
           <p className="mt-1 text-[40px] leading-none font-semibold tracking-tight">{formatMoney(stats.total)}</p>
         </div>
         <dl className="flex gap-6 text-sm">
           {memberId ? (
             <>
-              <Stat label="TA 垫付" value={formatMoney(stats.paid)} />
-              <Stat label="TA 分摊" value={formatMoney(stats.consumed)} />
+              <Stat label={t.paid} value={formatMoney(stats.paid)} />
+              <Stat label={t.share} value={formatMoney(stats.consumed)} />
             </>
           ) : (
             <>
-              <Stat label="日均" value={formatMoney(Math.round(stats.total / stats.days))} />
-              <Stat label="天数" value={`${stats.days} 天`} />
+              <Stat label={t.dailyAverage} value={formatMoney(Math.round(stats.total / stats.days))} />
+              <Stat label={t.days} value={t.dayCount(stats.days)} />
             </>
           )}
         </dl>
@@ -198,7 +201,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
 
       <SpendChart
         series={stats.series}
-        empty={stats.total === 0 ? '这段时间没有支出' : '选择 3 天以上的范围查看走势'}
+        empty={stats.total === 0 ? t.noSpending : t.tooShort}
         onPick={(b) => (setCustomOpen(false), onRange(b.range))}
       />
     </Card>
@@ -241,7 +244,7 @@ function SpendChart({ series, empty, onPick }: { series: Bucket[]; empty: string
   if (max === 0) {
     return (
       <figure className="mt-5">
-        <figcaption className="mb-2 flex h-5 items-center text-xs text-zinc-500 dark:text-zinc-400">支出走势</figcaption>
+        <figcaption className="mb-2 flex h-5 items-center text-xs text-zinc-500 dark:text-zinc-400">{t.trend}</figcaption>
         <div className="flex h-28 items-center justify-center rounded-2xl bg-zinc-50 text-[13px] text-zinc-400 dark:bg-white/3">{empty}</div>
         <div className="mt-1.5 h-4" />
       </figure>
@@ -251,14 +254,14 @@ function SpendChart({ series, empty, onPick }: { series: Bucket[]; empty: string
   return (
     <figure className="mt-5">
       <figcaption className="mb-2 flex h-5 items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-        <span>{series[0]!.key.length === 7 ? '每月支出' : '每日支出'}</span>
+        <span>{series[0]!.key.length === 7 ? t.monthly : t.daily}</span>
         <span className="tabular">
           {active ? (
             <>
               {active.tip} · <b className="font-semibold text-zinc-900 dark:text-zinc-100">{formatMoney(active.total)}</b>
             </>
           ) : (
-            <>峰值 {formatMoney(max)}</>
+            <>{t.peak(formatMoney(max))}</>
           )}
         </span>
       </figcaption>

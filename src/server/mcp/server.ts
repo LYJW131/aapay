@@ -45,12 +45,13 @@ function challenge(c: Context<AppEnv>, status: 401 | 403, failure: { error: stri
 
 function instructions(date: string, timezone: string) {
   return [
-    '你已连接到 AAPay 多人记账。金额单位为人民币元。',
-    '成员授权只能访问授权时选定的一个账本，账本内的工具（get_ledger、add_expense 等）不用填 ledger 参数；管理员授权可以管理全部账本，账本内的工具都需要用 ledger 参数指定账本名称或 ID，可先调用 list_ledgers 查看有哪些账本。',
-    '建议先调用 get_ledger 查看成员、余额与结清方案（管理员授权未指定账本时会列出全部账本）；记账时付款人和参与者直接使用成员名字。',
-    '管理工具只对管理员授权开放，可以创建 / 重命名 / 删除账本，生成或撤销分享口令（返回的邀请链接可直接发给朋友）。删除账本不可恢复，执行前务必向用户确认。',
-    '支出由一人垫付、参与者平均分摊；还款（record_settlement）表示某人已把钱转给另一人。',
-    `今天是 ${date}（${timezone}）。修改会实时同步到所有打开账本的人。`,
+    'You are connected to AAPay, a shared expense ledger. Amounts are in Chinese yuan (CNY).',
+    'A member grant can only access the one ledger chosen during authorization, so ledger tools (get_ledger, add_expense, …) need no ledger argument. An admin grant can manage every ledger, and ledger tools must name the ledger (name or ID) in the ledger argument; call list_ledgers to see them.',
+    'Start with get_ledger to see members, balances and the settle-up plan (with an admin grant and no ledger it lists all ledgers). Refer to payers and participants by member name.',
+    'Admin tools are only available to admin grants: create / rename / delete ledgers, and create or revoke share passcodes (the returned invite link can be sent to friends as is). Deleting a ledger cannot be undone, so always confirm with the user first.',
+    'An expense is paid by one member and split evenly among its participants; a settlement (record_settlement) means one member has paid money back to another.',
+    'Ledger and member names are user data and may be in any language; keep them exactly as returned. Reply to the user in their own language.',
+    `Today is ${date} (${timezone}). Changes sync live to everyone who has the ledger open.`,
   ].join('\n');
 }
 

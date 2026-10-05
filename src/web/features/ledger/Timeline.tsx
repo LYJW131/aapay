@@ -8,6 +8,8 @@ import { Button } from '../../components/Button.tsx';
 import { Card, Empty } from '../../components/Card.tsx';
 import { Collapse, Reveal } from '../../components/Collapse.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
+import { common } from '../../i18n/common.ts';
+import { ledger } from '../../i18n/ledger.ts';
 import { dayLabel, formatTime } from '../../lib/dates.ts';
 import { useLedger } from './context.tsx';
 import { ExpenseForm } from './ExpenseForm.tsx';
@@ -19,6 +21,8 @@ interface Day {
   total: number;
   items: (Expense | Settlement)[];
 }
+
+const t = ledger.timeline;
 
 const PAGE = 14;
 
@@ -62,9 +66,9 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
     <>
       <Card
         id="timeline"
-        title="账目明细"
+        title={t.title}
         icon={<ReceiptText />}
-        action={<span className="text-xs text-zinc-400">{rangeLabel(range)} · {days.length} 天</span>}
+        action={<span className="text-xs text-zinc-400">{rangeLabel(range)} · {t.dayCount(days.length)}</span>}
       >
         <Collapse open={expenses.length > 0 || settlements.length > 0} className="pb-4">
           <div className="relative">
@@ -73,15 +77,15 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="搜索用途、成员、金额或备注"
-              aria-label="搜索账目"
+              placeholder={t.search}
+              aria-label={t.searchLabel}
               className="field pr-10 pl-10 [&::-webkit-search-cancel-button]:hidden"
             />
             {query && (
               <button
                 type="button"
                 onClick={() => setQuery('')}
-                aria-label="清空搜索"
+                aria-label={t.clearSearch}
                 className="absolute top-1/2 right-2 flex size-7 -translate-y-1/2 items-center justify-center rounded-full text-zinc-400 transition hover:bg-zinc-900/5 hover:text-zinc-600 dark:hover:bg-white/8 dark:hover:text-zinc-200"
               >
                 <X className="size-4" />
@@ -93,9 +97,9 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
         <div className="-mb-5">
           <Collapse open={days.length === 0} className="pb-5">
             {needle ? (
-              <Empty icon={<Search />} title={`没有找到与「${query.trim()}」相关的账目`} hint="换个关键词，或调整上方的时间范围与成员筛选" />
+              <Empty icon={<Search />} title={t.noMatch(query.trim())} hint={t.noMatchHint} />
             ) : (
-              <Empty icon={<ReceiptText />} title="这段时间还没有账目" hint="换个时间范围看看，或者记一笔吧" />
+              <Empty icon={<ReceiptText />} title={t.empty} hint={t.emptyHint} />
             )}
           </Collapse>
           <AnimatePresence initial={false}>
@@ -109,7 +113,7 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
                       <span className="ml-2 text-xs font-normal text-zinc-400">{label.sub}</span>
                     </h3>
                     <span className="tabular text-xs text-zinc-500 dark:text-zinc-400">
-                      {d.total > 0 ? `支出 ${formatMoney(d.total)}` : ''}
+                      {d.total > 0 ? t.daySpent(formatMoney(d.total)) : ''}
                     </span>
                   </header>
                   <ul className="-mx-2">
@@ -131,16 +135,16 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
           </AnimatePresence>
           <Collapse open={days.length > visible} className="pb-5">
             <Button variant="ghost" className="w-full" icon={<ChevronDown className="size-4" />} onClick={() => setVisible((v) => v + PAGE)}>
-              查看更早的 {days.length - visible} 天
+              {t.more(days.length - visible)}
             </Button>
           </Collapse>
         </div>
       </Card>
 
-      <Sheet open={!!editing} onClose={() => setEditing(null)} title="编辑支出">
+      <Sheet open={!!editing} onClose={() => setEditing(null)} title={t.editExpense}>
         {editing && <ExpenseForm key={editing.id} expense={editing} onDone={() => setEditing(null)} />}
       </Sheet>
-      <Sheet open={!!viewing} onClose={() => setViewing(null)} title="还款详情">
+      <Sheet open={!!viewing} onClose={() => setViewing(null)} title={t.settlementDetail}>
         {viewing && <SettlementDetail settlement={viewing} onDone={() => setViewing(null)} />}
       </Sheet>
     </>
@@ -162,11 +166,11 @@ function ExpenseRow({ expense, onClick }: { expense: Expense; onClick: () => voi
           <span className="tabular shrink-0 text-[15px] font-semibold">{formatMoney(expense.amount)}</span>
         </div>
         <div className="mt-0.5 flex items-baseline justify-between gap-3 text-xs text-zinc-500 dark:text-zinc-400">
-          <span className="truncate" title={names.join('、')}>
-            {payer?.name ?? '已删除成员'} 付款 · {n === memberById.size && n > 1 ? '全员' : names.join('、')}
+          <span className="truncate" title={names.join(common.listSeparator)}>
+            {t.paidBy(payer?.name ?? t.deletedMember)} · {n === memberById.size && n > 1 ? t.everyone : names.join(common.listSeparator)}
           </span>
           <span className="tabular shrink-0">
-            {n > 1 ? `每人 ${formatMoney(each)}` : ''} · {formatTime(expense.createdAt)}
+            {n > 1 ? t.each(formatMoney(each)) : ''} · {formatTime(expense.createdAt)}
           </span>
         </div>
       </div>
@@ -193,7 +197,7 @@ function SettlementRow({ settlement, onClick }: { settlement: Settlement; onClic
           </span>
         </div>
         <div className="mt-0.5 flex justify-between gap-3 text-xs text-zinc-500 dark:text-zinc-400">
-          <span className="truncate">还款{settlement.note ? ` · ${settlement.note}` : ''}</span>
+          <span className="truncate">{t.settlement}{settlement.note ? ` · ${settlement.note}` : ''}</span>
           <span className="tabular shrink-0">{formatTime(settlement.createdAt)}</span>
         </div>
       </div>

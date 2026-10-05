@@ -13,6 +13,7 @@ import {
   recognizeInput,
   settlementInput,
 } from '../shared/schema.ts';
+import { translateError } from '../shared/errors.ts';
 import { localPath } from '../shared/redirect.ts';
 import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, SessionState, Snapshot } from '../shared/types.ts';
 import { adminActions } from './admin.ts';
@@ -34,7 +35,7 @@ import { mcpRoutes } from './mcp/server.ts';
 import type { Platform } from './platform.ts';
 import { recognizeBills } from './recognize.ts';
 import { actorOf, clientIp, findSession } from './session.ts';
-import { body, query } from './validate.ts';
+import { body, localeOf, query } from './validate.ts';
 
 const cursor = z.coerce.number().int().nonnegative().optional();
 const auditQuery = z.object({ before: cursor, after: cursor, limit: z.coerce.number().int().min(1).max(500).default(50) });
@@ -68,7 +69,7 @@ const admin = (c: Context<AppEnv>) => adminActions(c.var.platform, { kind: 'admi
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   const admin = await authenticateAdmin(c, c.var.config, c.var.platform);
-  if (!admin) throw new AppError(c.var.config.adminAuth === 'disabled' ? 404 : 401, '管理员登录已失效，请重新登录');
+  if (!admin) throw new AppError(c.var.config.adminAuth === 'disabled' ? 404 : 401, 'adminSessionInvalid');
   c.set('admin', admin.identity);
   c.set('consoleHash', admin.consoleHash);
   await next();
@@ -131,9 +132,9 @@ const ledgerRoutes = new Hono<AppEnv>()
   )
   .post('/recognize', body(recognizeInput), async (c) => {
     const { platform, config, session } = c.var;
-    if (!config.recognizer) throw notFound('未启用账单识别');
-    if (!(await platform.rateLimit('recognize', session.ledger.id))) throw new AppError(429, '识别太频繁了，请稍后再试');
-    return c.json(await recognizeBills(config.recognizer, c.req.valid('json').image, todayIn(config.timezone)));
+    if (!config.recognizer) throw notFound('recognizeDisabled');
+    if (!(await platform.rateLimit('recognize', session.ledger.id))) throw new AppError(429, 'recognizeRateLimited');
+    return c.json(await recognizeBills(config.recognizer, c.req.valid('json').image, todayIn(config.timezone), localeOf(c)));
   })
   .get('/audit', query(auditQuery), async (c) =>
     c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.auditLog(c.req.valid('query'))),
@@ -160,10 +161,10 @@ const adminRoutes = new Hono<AppEnv>()
   })
   .post('/login', body(loginInput), async (c) => {
     const { config, platform } = c.var;
-    if (config.adminAuth !== 'password') throw notFound('当前未启用密码登录');
-    if (!(await platform.rateLimit('login', clientIp(c)))) throw new AppError(429, '尝试过于频繁，请稍后再试');
+    if (config.adminAuth !== 'password') throw notFound('passwordLoginDisabled');
+    if (!(await platform.rateLimit('login', clientIp(c)))) throw new AppError(429, 'tooManyAttempts');
     if (!(await passwordMatches(c.req.valid('json').password, config.adminPassword))) {
-      throw new AppError(401, '密码错误');
+      throw new AppError(401, 'wrongPassword');
     }
     await openConsole(c, 'admin');
     return c.json({ name: 'admin' } satisfies AdminIdentity);
@@ -225,8 +226,8 @@ function buildApi() {
     })
     .post('/join', body(joinInput), async (c) => {
       const { platform, config } = c.var;
-      if (config.mode === 'shared') throw notFound('共享模式无需口令');
-      if (!(await platform.rateLimit('join', clientIp(c)))) throw new AppError(429, '尝试过于频繁，请稍后再试');
+      if (config.mode === 'shared') throw notFound('sharedModeNoPassphrase');
+      if (!(await platform.rateLimit('join', clientIp(c)))) throw new AppError(429, 'tooManyAttempts');
       const token = newToken();
       const session = await platform.registry.join(c.req.valid('json').code, await sha256(token));
       setSessionCookie(c, SESSION_COOKIE, token, session.expiresAt!);
@@ -256,13 +257,13 @@ export function createApp(inject: MiddlewareHandler<AppEnv>) {
     const origin = c.req.header('origin');
     const host = c.req.header('x-forwarded-host') ?? new URL(c.req.url).host;
     if (c.req.method !== 'GET' && origin && URL.parse(origin)?.host !== host) {
-      return c.json({ error: '跨站请求被拒绝' }, 403);
+      return c.json({ error: translateError(localeOf(c), 'crossSiteRejected') }, 403);
     }
     await next();
   });
   for (const path of SERVER_PATHS) app.use(path, inject);
   app.route('/api', buildApi());
-  app.all('/api/*', (c) => c.json({ error: '接口不存在' }, 404));
+  app.all('/api/*', (c) => c.json({ error: translateError(localeOf(c), 'apiNotFound') }, 404));
   // MCP 与 OAuth 端点面向 AI 应用，不走 Cookie，不能挂在上面的同源写保护之下
   app.route('/mcp', mcpRoutes);
   app.route('/oauth', oauthRoutes);
@@ -275,10 +276,10 @@ export function createApp(inject: MiddlewareHandler<AppEnv>) {
       if (err.status === 401) c.header('WWW-Authenticate', 'Basic realm="aapay"');
       return c.json({ error: err.code, error_description: err.message }, err.status, { 'Cache-Control': 'no-store' });
     }
-    if (err instanceof AppError) return c.json({ error: err.message }, err.status);
+    if (err instanceof AppError) return c.json({ error: err.localized(localeOf(c)) }, err.status);
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
     console.error(err);
-    return c.json({ error: '服务器开小差了，请稍后再试' }, 500);
+    return c.json({ error: translateError(localeOf(c), 'internalError') }, 500);
   });
   return app;
 }

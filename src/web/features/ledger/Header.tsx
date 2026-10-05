@@ -6,9 +6,11 @@ import type { PublicConfig, SessionInfo } from '../../../shared/types.ts';
 import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
+import { LanguageSwitch } from '../../components/LanguageSwitch.tsx';
 import { LogoMark } from '../../components/Logo.tsx';
 import { QrCode } from '../../components/QrCode.tsx';
 import { roomInSheet, Sheet } from '../../components/Sheet.tsx';
+import { ledger } from '../../i18n/ledger.ts';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { ActivityPanel } from './Activity.tsx';
@@ -16,10 +18,13 @@ import { ConnectAI } from './ConnectAI.tsx';
 import { useLedger } from './context.tsx';
 import type { LiveStatus } from './store.ts';
 
+const text = ledger.header;
+const shareText = ledger.share;
+
 const LIVE: Record<LiveStatus, { label: string; dot: string }> = {
-  online: { label: '实时同步', dot: 'bg-emerald-500' },
-  connecting: { label: '连接中', dot: 'bg-amber-400 animate-pulse' },
-  offline: { label: '已离线', dot: 'bg-rose-500' },
+  online: { label: text.live.online, dot: 'bg-emerald-500' },
+  connecting: { label: text.live.connecting, dot: 'bg-amber-400 animate-pulse' },
+  offline: { label: text.live.offline, dot: 'bg-rose-500' },
 };
 
 export function joinLink(code: string) {
@@ -48,9 +53,9 @@ export function Header({
   const tabsRef = useRef<HTMLDivElement>(null);
   const status = LIVE[live];
 
-  const tabs: { key: Tab; label: string }[] = [{ key: 'activity', label: '动态' }];
-  if (session.role !== 'shared') tabs.push({ key: 'share', label: '邀请' });
-  if (config.mcp) tabs.push({ key: 'ai', label: '连接 AI' });
+  const tabs: { key: Tab; label: string }[] = [{ key: 'activity', label: text.activity }];
+  if (session.role !== 'shared') tabs.push({ key: 'share', label: text.invite });
+  if (config.mcp) tabs.push({ key: 'ai', label: text.connectAI });
 
   function show() {
     setTab('activity');
@@ -69,13 +74,19 @@ export function Header({
           </h1>
           <p className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
             <span className={cn('size-1.5 rounded-full', status.dot)} />
-            {/* 按最长的「实时同步」留宽，状态切换时后面的管理员标记不左右挪 */}
-            <span className="min-w-[4em]">{status.label}</span>
-            {session.role === 'admin' && <span className="rounded bg-brand-500/12 px-1 text-brand-600 dark:text-brand-300">管理员</span>}
+            {/* 按最长的状态文字留宽，状态切换时后面的管理员标记不左右挪 */}
+            <span className="grid">
+              {Object.values(LIVE).map((option) => (
+                <span key={option.label} className={cn('col-start-1 row-start-1', option !== status && 'invisible')}>
+                  {option.label}
+                </span>
+              ))}
+            </span>
+            {session.role === 'admin' && <span className="rounded bg-brand-500/12 px-1 text-brand-600 dark:text-brand-300">{text.admin}</span>}
           </p>
         </div>
-        <Button size="sm" variant="secondary" className="relative" icon={<History className="size-4" />} onClick={show} aria-label="动态、邀请与连接 AI">
-          {session.role === 'shared' ? '动态' : '动态 · 邀请'}
+        <Button size="sm" variant="secondary" className="relative" icon={<History className="size-4" />} onClick={show} aria-label={text.sheetLabel}>
+          {session.role === 'shared' ? text.activity : text.activityAndInvite}
           {unread && <span className="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-rose-500 ring-2 ring-canvas" />}
         </Button>
       </div>
@@ -116,6 +127,9 @@ export function Header({
           {tab === 'share' && <ShareContent config={config} admin={admin} onSwitch={onSwitch} onLeave={onLeave} />}
           {tab === 'ai' && <ConnectAI admin={admin} />}
         </AutoHeight>
+        <div className="flex justify-center border-t border-zinc-900/5 py-3 dark:border-white/5">
+          <LanguageSwitch />
+        </div>
       </Sheet>
     </header>
   );
@@ -145,7 +159,7 @@ function ShareContent({
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast.error('复制失败，请长按链接手动复制');
+      toast.error(shareText.copyFailed);
     }
   }
 
@@ -156,7 +170,7 @@ function ShareContent({
     try {
       const next = await call(api.join.$post({ json: { code: code.trim() } }));
       await onSwitch(next);
-      toast.success(`已进入「${next.ledger.name}」`);
+      toast.success(shareText.switched(next.ledger.name));
     } catch (err) {
       toast.error(errorMessage(err));
       setJoining(false);
@@ -176,20 +190,20 @@ function ShareContent({
             <QrCode value={link} className="size-48" />
           </div>
           <div className="text-center">
-            <p className="text-sm text-zinc-500">扫码或打开链接即可加入，口令</p>
+            <p className="text-sm text-zinc-500">{shareText.scanToJoin}</p>
             <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.2em]">{session.passphrase}</p>
           </div>
           <div className="flex w-full gap-2">
             <Button variant="primary" className="flex-1" onClick={copy} icon={copied ? <Check className="size-4" /> : <Copy className="size-4" />}>
-              {copied ? '已复制' : '复制邀请链接'}
+              {copied ? shareText.copied : shareText.copyLink}
             </Button>
             {'share' in navigator && (
               <Button
                 variant="secondary"
                 size="icon"
                 className="size-11 rounded-2xl"
-                aria-label="系统分享"
-                onClick={() => navigator.share({ title: 'AAPay 记账邀请', url: link }).catch(() => undefined)}
+                aria-label={shareText.systemShare}
+                onClick={() => navigator.share({ title: shareText.shareTitle, url: link }).catch(() => undefined)}
               >
                 <UserPlus className="size-4" />
               </Button>
@@ -198,34 +212,34 @@ function ShareContent({
         </div>
       ) : (
         <p className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-500 dark:bg-white/4">
-          你以管理员身份进入此账本，在页面顶部的「管理员」卡片里生成分享口令即可邀请成员。
+          {shareText.adminNoPasscode}
         </p>
       )}
 
       <form onSubmit={switchLedger}>
-        <Label>切换到其他账本</Label>
+        <Label>{shareText.switchLedger}</Label>
         <div className="flex gap-2">
           <input
             value={code}
             onChange={(e) => setCode(e.target.value)}
-            placeholder="输入分享口令"
+            placeholder={shareText.passcodePlaceholder}
             autoCapitalize="off"
             autoCorrect="off"
             spellCheck={false}
             className="field font-mono tracking-wider"
           />
-          <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={joining} aria-label="进入" icon={<LogIn className="size-4" />} />
+          <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={joining} aria-label={shareText.enter} icon={<LogIn className="size-4" />} />
         </div>
       </form>
 
       <div className="flex gap-2">
         {config.adminAuth !== 'disabled' && !admin && (
           <Button variant="ghost" className="flex-1" onClick={() => window.location.assign('/admin')} icon={<ShieldCheck className="size-4" />}>
-            管理员登录
+            {shareText.adminLogin}
           </Button>
         )}
         <Button variant="danger" className="flex-1" onClick={leave} icon={<LogOut className="size-4" />}>
-          退出此账本
+          {shareText.leave}
         </Button>
       </div>
     </div>
