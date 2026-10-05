@@ -1,6 +1,6 @@
 import { Check, Copy, History, LogIn, LogOut, ShieldCheck, UserPlus } from 'lucide-react';
 import { motion } from 'motion/react';
-import { useState, useSyncExternalStore, type FormEvent } from 'react';
+import { useRef, useState, useSyncExternalStore, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import type { PublicConfig, SessionInfo } from '../../../shared/types.ts';
 import { AutoHeight } from '../../components/AutoHeight.tsx';
@@ -8,7 +8,7 @@ import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { LogoMark } from '../../components/Logo.tsx';
 import { QrCode } from '../../components/QrCode.tsx';
-import { Sheet } from '../../components/Sheet.tsx';
+import { roomInSheet, Sheet } from '../../components/Sheet.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { ActivityPanel } from './Activity.tsx';
@@ -45,6 +45,7 @@ export function Header({
   const { unread } = useSyncExternalStore(activity.subscribe, activity.getState);
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>('activity');
+  const tabsRef = useRef<HTMLDivElement>(null);
   const status = LIVE[live];
 
   const tabs: { key: Tab; label: string }[] = [{ key: 'activity', label: '动态' }];
@@ -80,14 +81,17 @@ export function Header({
       </div>
       <Sheet open={open} onClose={() => setOpen(false)} title={`${snapshot.ledger.emoji} ${snapshot.ledger.name}`}>
         {tabs.length > 1 && (
-          <div className="sticky top-0 z-10 -mx-5 bg-surface px-5 pb-4">
+          <div ref={tabsRef} className="sticky top-0 z-10 -mx-5 bg-surface px-5 pb-4">
             <div role="tablist" className="flex rounded-2xl bg-zinc-100 p-1 dark:bg-white/6">
               {tabs.map((t) => (
                 <button
                   key={t.key}
                   role="tab"
                   aria-selected={tab === t.key}
-                  onClick={() => setTab(t.key)}
+                  onClick={() => {
+                    setTab(t.key);
+                    tabsRef.current?.parentElement?.scrollTo({ top: 0 });
+                  }}
                   className={cn(
                     'relative h-8 flex-1 rounded-xl text-[13px] font-medium transition-colors',
                     tab === t.key ? 'text-zinc-900 dark:text-white' : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200',
@@ -106,7 +110,7 @@ export function Header({
             </div>
           </div>
         )}
-        <AutoHeight>
+        <AutoHeight max={roomInSheet}>
           {tab === 'activity' && <ActivityPanel />}
           {tab === 'share' && <ShareContent config={config} onSwitch={onSwitch} onLeave={onLeave} />}
           {tab === 'ai' && <ConnectAI admin={admin} />}

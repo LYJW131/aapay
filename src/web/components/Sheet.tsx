@@ -14,6 +14,12 @@ interface SheetProps {
   className?: string;
 }
 
+// offsetTop 以面板（relative）为基准且不受滚动影响，el 与面板之间不能再有定位元素
+export function roomInSheet(el: HTMLElement) {
+  const panel = el.closest<HTMLElement>('[role=dialog]')!;
+  return parseFloat(getComputedStyle(panel).maxHeight) - el.offsetTop + panel.lastElementChild!.scrollTop;
+}
+
 export function Sheet({ open, onClose, title, description, children, className }: SheetProps) {
   const desktop = useMediaQuery('(min-width: 640px)');
   const drag = useDragControls();
