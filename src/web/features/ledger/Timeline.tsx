@@ -1,11 +1,12 @@
 import { ArrowRight, ChevronDown, ReceiptText, Search, X } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { useMemo, useState } from 'react';
 import { formatMoney } from '../../../shared/money.ts';
 import type { Expense, IsoDate, Member, Settlement } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Card, Empty } from '../../components/Card.tsx';
+import { Collapse, Reveal } from '../../components/Collapse.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { dayLabel, formatTime } from '../../lib/dates.ts';
 import { useLedger } from './context.tsx';
@@ -65,8 +66,8 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
         icon={<ReceiptText />}
         action={<span className="text-xs text-zinc-400">{rangeLabel(range)} · {days.length} 天</span>}
       >
-        {(expenses.length > 0 || settlements.length > 0) && (
-          <div className="relative mb-4">
+        <Collapse open={expenses.length > 0 || settlements.length > 0} className="pb-4">
+          <div className="relative">
             <Search className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-zinc-400" />
             <input
               type="search"
@@ -87,60 +88,53 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
               </button>
             )}
           </div>
-        )}
-        {days.length === 0 ? (
-          needle ? (
-            <Empty icon={<Search />} title={`没有找到与「${query.trim()}」相关的账目`} hint="换个关键词，或调整上方的时间范围与成员筛选" />
-          ) : (
-            <Empty icon={<ReceiptText />} title="这段时间还没有账目" hint="换个时间范围看看，或者记一笔吧" />
-          )
-        ) : (
-          <div className="space-y-5">
-            <AnimatePresence initial={false}>
-              {days.slice(0, visible).map((d) => {
-                const label = dayLabel(d.date);
-                return (
-                  <motion.section key={d.date} layout="position" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                    <header className="sticky top-14 z-10 -mx-2 mb-1 flex items-baseline justify-between rounded-xl bg-surface/90 px-2 py-1.5 backdrop-blur">
-                      <h3 className="text-sm font-semibold">
-                        {label.title}
-                        <span className="ml-2 text-xs font-normal text-zinc-400">{label.sub}</span>
-                      </h3>
-                      <span className="tabular text-xs text-zinc-500 dark:text-zinc-400">
-                        {d.total > 0 ? `支出 ${formatMoney(d.total)}` : ''}
-                      </span>
-                    </header>
-                    <ul className="-mx-2">
-                      <AnimatePresence initial={false}>
-                        {d.items.map((item) => (
-                          <motion.li
-                            key={item.id}
-                            layout="position"
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.22 }}
-                          >
-                            {'payerId' in item ? (
-                              <ExpenseRow expense={item} onClick={() => setEditing(item)} />
-                            ) : (
-                              <SettlementRow settlement={item} onClick={() => setViewing(item)} />
-                            )}
-                          </motion.li>
-                        ))}
-                      </AnimatePresence>
-                    </ul>
-                  </motion.section>
-                );
-              })}
-            </AnimatePresence>
-            {days.length > visible && (
-              <Button variant="ghost" className="w-full" icon={<ChevronDown className="size-4" />} onClick={() => setVisible((v) => v + PAGE)}>
-                查看更早的 {days.length - visible} 天
-              </Button>
+        </Collapse>
+        {/* 每块自带 pb-5 作间距（随增删动画一起伸缩），最后一块多出的 pb-5 由 -mb-5 抵掉 */}
+        <div className="-mb-5">
+          <Collapse open={days.length === 0} className="pb-5">
+            {needle ? (
+              <Empty icon={<Search />} title={`没有找到与「${query.trim()}」相关的账目`} hint="换个关键词，或调整上方的时间范围与成员筛选" />
+            ) : (
+              <Empty icon={<ReceiptText />} title="这段时间还没有账目" hint="换个时间范围看看，或者记一笔吧" />
             )}
-          </div>
-        )}
+          </Collapse>
+          <AnimatePresence initial={false}>
+            {days.slice(0, visible).map((d) => {
+              const label = dayLabel(d.date);
+              return (
+                <Reveal as="section" key={d.date} layout="position" className="pb-5">
+                  <header className="sticky top-14 z-10 -mx-2 mb-1 flex items-baseline justify-between rounded-xl bg-surface/90 px-2 py-1.5 backdrop-blur">
+                    <h3 className="text-sm font-semibold">
+                      {label.title}
+                      <span className="ml-2 text-xs font-normal text-zinc-400">{label.sub}</span>
+                    </h3>
+                    <span className="tabular text-xs text-zinc-500 dark:text-zinc-400">
+                      {d.total > 0 ? `支出 ${formatMoney(d.total)}` : ''}
+                    </span>
+                  </header>
+                  <ul className="-mx-2">
+                    <AnimatePresence initial={false}>
+                      {d.items.map((item) => (
+                        <Reveal as="li" key={item.id} layout="position">
+                          {'payerId' in item ? (
+                            <ExpenseRow expense={item} onClick={() => setEditing(item)} />
+                          ) : (
+                            <SettlementRow settlement={item} onClick={() => setViewing(item)} />
+                          )}
+                        </Reveal>
+                      ))}
+                    </AnimatePresence>
+                  </ul>
+                </Reveal>
+              );
+            })}
+          </AnimatePresence>
+          <Collapse open={days.length > visible} className="pb-5">
+            <Button variant="ghost" className="w-full" icon={<ChevronDown className="size-4" />} onClick={() => setVisible((v) => v + PAGE)}>
+              查看更早的 {days.length - visible} 天
+            </Button>
+          </Collapse>
+        </div>
       </Card>
 
       <Sheet open={!!editing} onClose={() => setEditing(null)} title="编辑支出">

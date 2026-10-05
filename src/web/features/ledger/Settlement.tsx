@@ -1,15 +1,15 @@
 import { ArrowRight, Check, HandCoins, PartyPopper, Plus, Trash2 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { useMemo, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { centsToInput, formatMoney, parseAmount } from '../../../shared/money.ts';
 import { LIMITS } from '../../../shared/limits.ts';
 import { computeBalances, suggestTransfers, type Transfer } from '../../../shared/settle.ts';
 import type { Settlement } from '../../../shared/types.ts';
-import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Card, Empty, Label } from '../../components/Card.tsx';
+import { Collapse, Reveal } from '../../components/Collapse.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { api, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
@@ -27,7 +27,10 @@ export function SettlementCard() {
       .filter((b) => memberById.has(b.memberId));
     return {
       balances,
-      transfers: suggestTransfers(balances),
+      // 按金额排：还掉一笔后其余转账的相对顺序通常不变，不会在收起动画的同时互换位置
+      transfers: suggestTransfers(balances).sort(
+        (a, b) => b.amount - a.amount || `${a.fromId}-${a.toId}`.localeCompare(`${b.fromId}-${b.toId}`),
+      ),
       maxAbs: Math.max(1, ...balances.map((b) => Math.abs(b.net))),
     };
   }, [snapshot, memberById]);
@@ -74,112 +77,101 @@ export function SettlementCard() {
           )
         }
       >
-        <AutoHeight className="-m-1 p-1">
-          {!hasActivity ? (
-            <Empty icon={<HandCoins />} title="还没有需要结算的账目" hint="记账后，这里会自动算出谁该给谁多少钱" />
-          ) : (
-            <div className="space-y-5">
-              <div>
-                <p className="mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
-                  {transfers.length ? `只需 ${transfers.length} 笔转账即可结清` : '每个人都已结清'}
-                </p>
-                {transfers.length === 0 ? (
-                  <div className="flex items-center gap-3 rounded-2xl bg-emerald-500/8 px-4 py-4 text-emerald-700 dark:text-emerald-300">
-                    <PartyPopper className="size-5 shrink-0" />
-                    <span className="text-sm font-medium">账已算清，没有待结算的转账</span>
-                  </div>
-                ) : (
-                  <ul>
-                    <AnimatePresence initial={false}>
-                      {transfers.map((t) => {
-                        const from = memberById.get(t.fromId);
-                        const to = memberById.get(t.toId);
-                        const key = `${t.fromId}-${t.toId}`;
-                        return (
-                          <motion.li
-                            key={key}
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.22 }}
-                          >
-                            <div className="mb-2 flex items-center gap-3 rounded-2xl bg-zinc-50 py-2.5 pr-2.5 pl-3 dark:bg-white/4">
-                              <span className="flex shrink-0 -space-x-2.5">
-                                <Avatar member={from} className="ring-[3px] ring-zinc-50 dark:ring-[#26262c]" />
-                                <Avatar member={to} className="ring-[3px] ring-zinc-50 dark:ring-[#26262c]" />
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="flex min-w-0 items-center gap-1 text-[13px] text-zinc-500 dark:text-zinc-400">
-                                  <span className="truncate">{from?.name}</span>
-                                  <ArrowRight className="size-3.5 shrink-0" />
-                                  <span className="truncate">{to?.name}</span>
-                                </p>
-                                <button
-                                  onClick={() => setDraft({ ...t })}
-                                  className="tabular text-base font-semibold hover:underline"
-                                  title="修改金额后记录"
-                                >
-                                  {formatMoney(t.amount)}
-                                </button>
-                              </div>
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                loading={paying === key}
-                                onClick={() => markPaid(t)}
-                                icon={<Check className="size-3.5" />}
-                              >
-                                已付
-                              </Button>
-                            </div>
-                          </motion.li>
-                        );
-                      })}
-                    </AnimatePresence>
-                  </ul>
-                )}
-              </div>
+        <Collapse open={!hasActivity}>
+          <Empty icon={<HandCoins />} title="还没有需要结算的账目" hint="记账后，这里会自动算出谁该给谁多少钱" />
+        </Collapse>
+        <Collapse open={hasActivity}>
+          <p className="mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
+            {transfers.length ? `只需 ${transfers.length} 笔转账即可结清` : '每个人都已结清'}
+          </p>
+          <Collapse open={transfers.length === 0} className="pb-2">
+            <div className="flex items-center gap-3 rounded-2xl bg-emerald-500/8 px-4 py-4 text-emerald-700 dark:text-emerald-300">
+              <PartyPopper className="size-5 shrink-0" />
+              <span className="text-sm font-medium">账已算清，没有待结算的转账</span>
+            </div>
+          </Collapse>
+          <ul>
+            <AnimatePresence initial={false}>
+              {transfers.map((t) => {
+                const from = memberById.get(t.fromId);
+                const to = memberById.get(t.toId);
+                const key = `${t.fromId}-${t.toId}`;
+                return (
+                  // 余额变化后转账可能重新排序，layout 让它们滑到新位置而不是瞬间互换
+                  <Reveal as="li" key={key} layout="position" className="pb-2">
+                    <div className="flex items-center gap-3 rounded-2xl bg-zinc-50 py-2.5 pr-2.5 pl-3 dark:bg-white/4">
+                      <span className="flex shrink-0 -space-x-2.5">
+                        <Avatar member={from} className="ring-[3px] ring-zinc-50 dark:ring-[#26262c]" />
+                        <Avatar member={to} className="ring-[3px] ring-zinc-50 dark:ring-[#26262c]" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="flex min-w-0 items-center gap-1 text-[13px] text-zinc-500 dark:text-zinc-400">
+                          <span className="truncate">{from?.name}</span>
+                          <ArrowRight className="size-3.5 shrink-0" />
+                          <span className="truncate">{to?.name}</span>
+                        </p>
+                        <button
+                          onClick={() => setDraft({ ...t })}
+                          className="tabular text-base font-semibold hover:underline"
+                          title="修改金额后记录"
+                        >
+                          {formatMoney(t.amount)}
+                        </button>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        loading={paying === key}
+                        onClick={() => markPaid(t)}
+                        icon={<Check className="size-3.5" />}
+                      >
+                        已付
+                      </Button>
+                    </div>
+                  </Reveal>
+                );
+              })}
+            </AnimatePresence>
+          </ul>
 
-              <div>
-                <p className="mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">每人净额</p>
-                <ul className="space-y-1.5">
-                  {balances.map((b) => {
-                    const m = memberById.get(b.memberId);
-                    const pct = (Math.abs(b.net) / maxAbs) * 50;
-                    return (
-                      <li key={b.memberId} className="grid grid-cols-[minmax(0,6.5rem)_1fr_auto] items-center gap-3 py-1">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <Avatar member={m} size="xs" />
-                          <span className="truncate text-sm">{m?.name}</span>
-                        </span>
-                        <span className="relative h-2 rounded-full bg-zinc-100 dark:bg-white/6" aria-hidden>
-                          <span className="absolute inset-y-0 left-1/2 w-px bg-zinc-300 dark:bg-white/20" />
-                          {b.net !== 0 && (
-                            <span
-                              className={cn(
-                                'absolute inset-y-0 rounded-full',
-                                b.net > 0 ? 'left-1/2 bg-emerald-500' : 'right-1/2 bg-rose-500',
-                              )}
-                              style={{ width: `${pct}%` }}
-                            />
-                          )}
-                        </span>
+          <p className="mt-3 mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">每人净额</p>
+          <ul className="-mb-1.5">
+            <AnimatePresence initial={false}>
+              {balances.map((b) => {
+                const m = memberById.get(b.memberId);
+                const pct = (Math.abs(b.net) / maxAbs) * 50;
+                return (
+                  <Reveal as="li" key={b.memberId} className="pt-1 pb-2.5">
+                    <div className="grid grid-cols-[minmax(0,6.5rem)_1fr_auto] items-center gap-3">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Avatar member={m} size="xs" />
+                        <span className="truncate text-sm">{m?.name}</span>
+                      </span>
+                      <span className="relative h-2 rounded-full bg-zinc-100 dark:bg-white/6" aria-hidden>
+                        <span className="absolute inset-y-0 left-1/2 w-px bg-zinc-300 dark:bg-white/20" />
                         <span
                           className={cn(
-                            'tabular w-24 text-right text-[13px] font-medium',
-                            b.net > 0 ? 'text-emerald-600 dark:text-emerald-400' : b.net < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-400',
+                            'absolute inset-y-0 rounded-full transition-[width] duration-300',
+                            b.net > 0 ? 'left-1/2 bg-emerald-500' : 'right-1/2 bg-rose-500',
                           )}
-                        >
-                          {b.net > 0 ? `应收 ${formatMoney(b.net)}` : b.net < 0 ? `应付 ${formatMoney(-b.net)}` : '已结清'}
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </div>
-          )}
-        </AutoHeight>
+                          style={{ width: `${pct}%` }}
+                        />
+                      </span>
+                      <span
+                        className={cn(
+                          'tabular w-24 text-right text-[13px] font-medium',
+                          b.net > 0 ? 'text-emerald-600 dark:text-emerald-400' : b.net < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-400',
+                        )}
+                      >
+                        {b.net > 0 ? `应收 ${formatMoney(b.net)}` : b.net < 0 ? `应付 ${formatMoney(-b.net)}` : '已结清'}
+                      </span>
+                    </div>
+                  </Reveal>
+                );
+              })}
+            </AnimatePresence>
+          </ul>
+        </Collapse>
       </Card>
 
       <Sheet open={!!draft} onClose={() => setDraft(null)} title="记录还款" description="记下谁向谁支付了多少，结算会自动更新">

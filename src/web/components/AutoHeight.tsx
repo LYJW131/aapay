@@ -28,8 +28,8 @@ export function AutoHeight({ children, className }: { children: ReactNode; class
       onAnimationComplete={() => setAnimating(false)}
       // 定高只量内容，padding（如给阴影和焦点环留余量的 -m-1 p-1）要加在外面，否则定高后比 auto 时矮一截
       className={cn('box-content', className)}
-      // 只在高度真正变化的过渡中裁切（首次测量不算），避免切掉子元素的阴影和焦点环
-      style={{ overflow: animating ? 'hidden' : 'visible' }}
+      // 只在高度真正变化的过渡中裁切（首次测量不算），避免切掉子元素的阴影和焦点环；clip 不像 hidden 会成为滚动容器
+      style={{ overflow: animating ? 'clip' : 'visible' }}
     >
       <div ref={inner} className="flow-root">
         {children}
