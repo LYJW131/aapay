@@ -35,17 +35,24 @@ function setup(env: Record<string, string>) {
       if (v) cookies.set(k!, v);
       else cookies.delete(k!);
     }
-    return { status: res.status, data: (await res.json()) as any };
+    const text = await res.text();
+    const location = res.headers.get('location');
+    return { status: res.status, ...(location && { location }), data: (text ? JSON.parse(text) : null) as any };
   };
-  return { call, resetCookies: () => (cookies = new Map()) };
+  const login = (returnTo?: string, headers: Record<string, string> = {}) =>
+    call('GET', `/admin/login${returnTo === undefined ? '' : `?return_to=${encodeURIComponent(returnTo)}`}`, undefined, headers);
+  return { call, login, config, resetCookies: () => (cookies = new Map()) };
 }
 
 describe('API (isolated mode)', () => {
-  const { call, resetCookies } = setup({ ADMIN_AUTH: 'none' });
+  const { call, login, resetCookies } = setup({ ADMIN_AUTH: 'none' });
 
   it('runs the full admin → passphrase → member flow', async () => {
     expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true, recognize: false });
-    expect((await call('GET', '/session')).data).toBeNull();
+    expect((await call('GET', '/session')).data).toEqual({ session: null, admin: null });
+    expect((await call('GET', '/admin/ledgers')).status).toBe(401);
+    expect(await login('/oauth/authorize?client_id=x')).toMatchObject({ status: 302, location: '/oauth/authorize?client_id=x' });
+    expect((await call('GET', '/session')).data).toEqual({ session: null, admin: { name: 'developer' } });
 
     const ledger = (await call('POST', '/admin/ledgers', { name: '周末露营' })).data;
     expect(ledger.name).toBe('周末露营');
@@ -91,11 +98,31 @@ describe('API (isolated mode)', () => {
     expect((await call('GET', '/ledger')).status).toBe(200);
 
     await call('DELETE', `/admin/ledgers/${ledger.id}`);
-    expect((await call('GET', '/session')).data).toBeNull();
+    expect((await call('GET', '/session')).data.session).toBeNull();
+    resetCookies();
+  });
+
+  it('ends ledger sessions opened by an admin together with the admin session', async () => {
+    await login();
+    const ledger = (await call('POST', '/admin/ledgers', { name: '管理员会话' })).data;
+    expect((await call('POST', `/admin/ledgers/${ledger.id}/enter`)).data).toMatchObject({ role: 'admin', subject: 'developer' });
+    expect((await call('GET', '/ledger')).status).toBe(200);
+    await call('POST', '/admin/logout');
+    expect((await call('GET', '/session')).data).toEqual({ session: null, admin: null });
+    expect((await call('GET', '/ledger')).status).toBe(401);
+    resetCookies();
+  });
+
+  it('only redirects back to same-site paths after login', async () => {
+    for (const evil of ['https://evil.example/x', '//evil.example/x', '/\\evil.example/x', 'javascript:alert(1)']) {
+      expect((await login(evil)).location).toBe('/');
+    }
+    expect((await login()).location).toBe('/');
     resetCookies();
   });
 
   it('honours passphrase validity windows', async () => {
+    await login();
     const ledger = (await call('POST', '/admin/ledgers', { name: '未来' })).data;
     const now = Date.now();
     await call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: 'later', validFrom: now + 60_000, validUntil: now + 120_000 });
@@ -110,7 +137,9 @@ describe('API (isolated mode)', () => {
 
 describe('API (admin auth)', () => {
   it('requires the admin password when configured', async () => {
-    const { call } = setup({ ADMIN_AUTH: 'password', ADMIN_PASSWORD: 'correct-horse' });
+    const { call, login } = setup({ ADMIN_AUTH: 'password', ADMIN_PASSWORD: 'correct-horse' });
+    expect((await call('GET', '/admin/ledgers')).status).toBe(401);
+    expect(await login('/x')).toMatchObject({ status: 302, location: '/admin?return_to=%2Fx' });
     expect((await call('GET', '/admin/ledgers')).status).toBe(401);
     expect((await call('POST', '/admin/login', { password: 'wrong' })).status).toBe(401);
     expect((await call('POST', '/admin/login', { password: 'correct-horse' })).status).toBe(200);
@@ -122,17 +151,27 @@ describe('API (admin auth)', () => {
     expect((await call('GET', '/admin/ledgers')).status).toBe(404);
   });
 
-  it('trusts the proxy header only for allowed emails', async () => {
-    const { call } = setup({ ADMIN_AUTH: 'proxy', ADMIN_EMAILS: 'me@example.com' });
-    expect((await call('GET', '/admin/me', undefined, { 'x-forwarded-email': 'evil@example.com' })).status).toBe(401);
-    expect((await call('GET', '/admin/me', undefined, { 'x-forwarded-email': 'me@example.com' })).data.name).toBe('me@example.com');
+  it('trusts the proxy header only at login, then only the admin session', async () => {
+    const { call, login, config } = setup({ ADMIN_AUTH: 'proxy', ADMIN_EMAILS: 'me@example.com' });
+    expect(await login('/x', { 'x-forwarded-email': 'evil@example.com' })).toMatchObject({ status: 302, location: '/admin?return_to=%2Fx&error=denied' });
+    expect((await call('GET', '/admin/ledgers', undefined, { 'x-forwarded-email': 'me@example.com' })).status).toBe(401);
+    expect(await login('/x', { 'x-forwarded-email': 'me@example.com' })).toMatchObject({ status: 302, location: '/x' });
+    expect((await call('GET', '/session')).data.admin).toEqual({ name: 'me@example.com' });
+
+    const ledger = (await call('POST', '/admin/ledgers', { name: '白名单' })).data;
+    await call('POST', `/admin/ledgers/${ledger.id}/enter`);
+    expect((await call('GET', '/ledger')).status).toBe(200);
+    config.adminEmails = ['someone-else@example.com'];
+    expect((await call('GET', '/admin/ledgers')).status).toBe(401);
+    expect((await call('GET', '/ledger')).status).toBe(401);
+    expect((await call('GET', '/session')).data).toEqual({ session: null, admin: null });
   });
 });
 
 describe('API (shared mode)', () => {
   it('lets everyone in without a passphrase', async () => {
     const { call } = setup({ MODE: 'shared' });
-    const session = (await call('GET', '/session')).data;
+    const { session } = (await call('GET', '/session')).data;
     expect(session).toMatchObject({ role: 'shared', ledger: { id: 'shared' } });
     expect((await call('POST', '/ledger/members', { name: '室友' })).status).toBe(200);
     expect((await call('POST', '/join', { code: 'abc' })).status).toBe(404);
@@ -150,6 +189,7 @@ describe('API (bill recognition)', () => {
 
   async function joined(env: Record<string, string> = { GEMINI_API_KEY: 'test-key' }) {
     const api = setup({ ADMIN_AUTH: 'none', ...env });
+    await api.login();
     const ledger = (await api.call('POST', '/admin/ledgers', { name: '识别测试' })).data;
     await api.call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: 'scan2026', validUntil: null });
     api.resetCookies();

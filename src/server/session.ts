@@ -3,6 +3,7 @@ import { getCookie } from 'hono/cookie';
 import type { AuditActor } from '../shared/audit.ts';
 import type { LedgerInfo, SessionInfo } from '../shared/types.ts';
 import type { AppEnv } from './app.ts';
+import { stillAdmin } from './auth/admin.ts';
 import { SESSION_COOKIE } from './auth/cookies.ts';
 import { sha256 } from './core/ids.ts';
 
@@ -20,7 +21,8 @@ export async function findSession(c: Context<AppEnv>): Promise<SessionInfo | nul
     return { ledger: await sharedLedger, role: 'shared', passphrase: null, subject: null, expiresAt: null };
   }
   const token = getCookie(c, SESSION_COOKIE);
-  return token ? platform.registry.resolveLedgerSession(await sha256(token)) : null;
+  const session = token ? await platform.registry.resolveLedgerSession(await sha256(token)) : null;
+  return session?.role === 'admin' && !stillAdmin(config, session.subject) ? null : session;
 }
 
 export const clientIp = (c: Context) =>

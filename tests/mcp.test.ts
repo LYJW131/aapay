@@ -123,7 +123,10 @@ function setup(env: Record<string, string> = { ADMIN_AUTH: 'none' }) {
     return res.data.result as { isError?: boolean; structuredContent?: any; content: { text: string }[] };
   }
 
+  const loginAdmin = (headers: Record<string, string> = {}) => request('GET', '/api/admin/login', { headers });
+
   async function connectAdmin(headers: Record<string, string> = {}, write = true) {
+    await loginAdmin(headers);
     const clientId = (await request('POST', '/oauth/register', {
       json: { client_name: 'Claude', redirect_uris: [REDIRECT], token_endpoint_auth_method: 'none' },
     })).data.client_id;
@@ -138,10 +141,11 @@ function setup(env: Record<string, string> = { ADMIN_AUTH: 'none' }) {
     return { status: 200, token: token.data.access_token as string, ledger: approved.data.ledger };
   }
 
-  return { request, connect, connectAdmin, rpc, tool, config, resetCookies: () => (cookies = new Map()) };
+  return { request, connect, loginAdmin, connectAdmin, rpc, tool, config, resetCookies: () => (cookies = new Map()) };
 }
 
 async function seedLedger(s: ReturnType<typeof setup>, name = '周末露营', code = 'Camp2026') {
+  await s.loginAdmin();
   const ledger = (await s.request('POST', '/api/admin/ledgers', { json: { name } })).data;
   const phrase = (await s.request('POST', `/api/admin/ledgers/${ledger.id}/passphrases`, { json: { code, validUntil: null } })).data;
   return { ledger, phrase };
@@ -344,6 +348,7 @@ describe('OAuth + MCP flow', () => {
     expect((await s.request('DELETE', `/api/ledger/connections/${target.id}`)).status).toBe(200);
     expect((await s.rpc(b.access_token, 'ping')).status).toBe(401);
 
+    await s.loginAdmin();
     const admin = (await s.request('GET', '/api/admin/ledgers')).data.find((l: { id: string }) => l.id === ledger.id);
     expect(admin.connections).toBe(1);
 

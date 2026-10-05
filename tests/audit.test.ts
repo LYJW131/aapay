@@ -161,9 +161,11 @@ describe('audit log (app)', () => {
       });
       const set = res.headers.getSetCookie()[0];
       if (set) cookie = set.split(';')[0]!;
-      return (await res.json()) as any;
+      const text = await res.text();
+      return (text ? JSON.parse(text) : null) as any;
     };
 
+    await call('GET', '/api/admin/login');
     const ledger = await call('POST', '/api/admin/ledgers', { name: '露营' });
     await call('POST', `/api/admin/ledgers/${ledger.id}/passphrases`, { code: 'camp88', validUntil: null });
     await call('PATCH', `/api/admin/ledgers/${ledger.id}`, { name: '周末露营' });

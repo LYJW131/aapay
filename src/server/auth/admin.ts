@@ -15,15 +15,20 @@ function jwks(team: string) {
   return set;
 }
 
-const allowed = (config: Config, identity: string) =>
-  config.adminEmails.length === 0 || config.adminEmails.includes(identity.toLowerCase());
+// 白名单只在 access / proxy 模式下生效
+export function stillAdmin(config: Config, subject: string | null) {
+  if (config.adminAuth === 'disabled' || !subject) return false;
+  if (config.adminAuth !== 'access' && config.adminAuth !== 'proxy') return true;
+  return config.adminEmails.length === 0 || config.adminEmails.includes(subject.toLowerCase());
+}
 
 // 即使边缘已有 Access 拦截，仍独立校验 Access JWT，防止绕过 Access 直连 Worker
-export async function authenticateAdmin(c: Context, config: Config, platform: Platform): Promise<AdminIdentity | null> {
+export async function externalAdmin(c: Context, config: Config): Promise<string | null> {
+  let identity: string | null = null;
   switch (config.adminAuth) {
     case 'none':
-      return { name: 'developer', method: 'none' };
-
+      identity = 'developer';
+      break;
     case 'access': {
       const token = c.req.header('cf-access-jwt-assertion') ?? getCookie(c, 'CF_Authorization');
       if (!token) return null;
@@ -33,28 +38,26 @@ export async function authenticateAdmin(c: Context, config: Config, platform: Pl
           audience: config.accessAud,
         });
         // 用户登录带 email；Service Token 调用带 common_name
-        const identity = String(payload.email ?? payload.common_name ?? '');
-        return identity && allowed(config, identity) ? { name: identity, method: 'access' } : null;
+        identity = String(payload.email ?? payload.common_name ?? '') || null;
       } catch {
         return null;
       }
+      break;
     }
-
-    case 'proxy': {
-      const identity = c.req.header(config.adminEmailHeader)?.trim();
-      return identity && allowed(config, identity) ? { name: identity, method: 'proxy' } : null;
-    }
-
-    case 'password': {
-      const token = getCookie(c, CONSOLE_COOKIE);
-      if (!token) return null;
-      const session = await platform.registry.resolveConsoleSession(await sha256(token));
-      return session ? { name: session.subject, method: 'password' } : null;
-    }
-
-    default:
-      return null;
+    case 'proxy':
+      identity = c.req.header(config.adminEmailHeader)?.trim() || null;
+      break;
   }
+  return stillAdmin(config, identity) ? identity : null;
+}
+
+export async function authenticateAdmin(c: Context, config: Config, platform: Platform): Promise<{ identity: AdminIdentity; consoleHash: string } | null> {
+  if (config.adminAuth === 'disabled') return null;
+  const token = getCookie(c, CONSOLE_COOKIE);
+  if (!token) return null;
+  const consoleHash = await sha256(token);
+  const session = await platform.registry.resolveConsoleSession(consoleHash);
+  return session && stillAdmin(config, session.subject) ? { identity: { name: session.subject }, consoleHash } : null;
 }
 
 // 常量时间比较，避免通过响应时间猜测密码

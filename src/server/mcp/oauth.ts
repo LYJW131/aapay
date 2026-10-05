@@ -498,7 +498,6 @@ export const approveInput = z.object({
 
 export type ApproveInput = z.infer<typeof approveInput>;
 
-// 管理员授权走 /api/admin/oauth/authorize，由 Access 在边缘把关（不依赖 Cookie 的作用路径）
 export async function approveAuthorization(c: Context<AppEnv>, input: ApproveInput, admin: string | null) {
   const { platform, config } = c.var;
   const parsed = await parseAuthorize(c, new URLSearchParams(input.query));
@@ -517,6 +516,7 @@ export async function approveAuthorization(c: Context<AppEnv>, input: ApproveInp
   } else {
     const token = getCookie(c, SESSION_COOKIE);
     if (!token) throw new AppError(401, '请输入账本口令');
+    if (!(await findSession(c))) throw new AppError(401, '当前浏览器的账本登录已过期，请输入口令');
     source = { kind: 'session', tokenHash: await sha256(token) };
   }
 

@@ -43,7 +43,7 @@ function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-export function AuthorizePage({ config }: { config: PublicConfig }) {
+export function AuthorizePage({ config, admin }: { config: PublicConfig; admin: AdminIdentity | null }) {
   const [state, setState] = useState<State>({ step: 'loading' });
 
   useEffect(() => {
@@ -111,6 +111,7 @@ export function AuthorizePage({ config }: { config: PublicConfig }) {
     <Consent
       info={state.info}
       config={config}
+      admin={admin}
       onDone={(redirect, message) => {
         setState({ step: 'leaving', host: new URL(redirect).host, message });
         window.location.replace(redirect);
@@ -121,28 +122,26 @@ export function AuthorizePage({ config }: { config: PublicConfig }) {
 
 type Target = 'admin' | 'session' | 'code';
 
-function Consent({ info, config, onDone }: { info: AuthorizeInfo; config: PublicConfig; onDone: (redirect: string, message: string) => void }) {
+function Consent({
+  info,
+  config,
+  admin,
+  onDone,
+}: {
+  info: AuthorizeInfo;
+  config: PublicConfig;
+  admin: AdminIdentity | null;
+  onDone: (redirect: string, message: string) => void;
+}) {
   const shared = config.mode === 'shared';
   const canWrite = info.scopes.includes('ledger:write');
-  const [admin, setAdmin] = useState<AdminIdentity | null>(null);
-  const [target, setTarget] = useState<Target>(info.session && !shared ? 'session' : 'code');
+  const [target, setTarget] = useState<Target>(admin && !shared ? 'admin' : info.session && !shared ? 'session' : 'code');
   const [write, setWrite] = useState(canWrite);
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const name = info.client.name || info.client.host || '未知应用';
   const needCode = !shared && target === 'code';
-
-  useEffect(() => {
-    if (shared || config.adminAuth === 'disabled') return;
-    call(api.admin.me.$get()).then(
-      (me) => {
-        setAdmin(me);
-        setTarget('admin');
-      },
-      () => undefined,
-    );
-  }, [shared, config.adminAuth]);
 
   async function approve(e: FormEvent) {
     e.preventDefault();

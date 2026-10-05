@@ -1,9 +1,10 @@
-import { Plus } from 'lucide-react';
+import { Plus, ShieldAlert } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { formatMoney } from '../../../shared/money.ts';
 import type { AdminIdentity, LiveMessage, PublicConfig, SessionInfo, Snapshot } from '../../../shared/types.ts';
+import { Button } from '../../components/Button.tsx';
 import { Card } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
@@ -61,6 +62,7 @@ export function LedgerPage({
   welcome,
   config,
   admin,
+  adminExpired,
   onSwitch,
   onExit,
 }: {
@@ -69,6 +71,7 @@ export function LedgerPage({
   welcome: boolean;
   config: PublicConfig;
   admin: AdminIdentity | null;
+  adminExpired: boolean;
   onSwitch: (session: SessionInfo) => Promise<void>;
   onExit: (message?: string) => void;
 }) {
@@ -78,7 +81,8 @@ export function LedgerPage({
     () =>
       new LedgerStore({
         onAudit: (record, own) => activity.receive(record, own),
-        onClosed: (reason) => onExit(CLOSE_MESSAGES[reason]),
+        onClosed: (reason) =>
+          onExit(reason === 'unauthorized' && session.role === 'admin' ? '管理员登录已过期，请重新登录' : CLOSE_MESSAGES[reason]),
         onRemote: (message, before) => {
           const after = store.getState().snapshot;
           const text = after && describe(message, before, after);
@@ -159,6 +163,15 @@ export function LedgerPage({
             <Suspense fallback={null}>
               <AdminCard admin={admin} current={session} onEnter={onSwitch} />
             </Suspense>
+          </div>
+        )}
+        {!admin && adminExpired && (
+          <div className="card mb-4 flex items-center gap-3 px-5 py-4 lg:col-span-2 lg:mb-0">
+            <ShieldAlert className="size-[18px] shrink-0 text-amber-500" />
+            <span className="flex-1 text-sm">管理员登录已过期</span>
+            <Button size="sm" variant="soft" onClick={() => window.location.assign('/admin')}>
+              重新登录
+            </Button>
           </div>
         )}
         <aside className="space-y-4">

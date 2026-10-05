@@ -107,7 +107,7 @@ export function Header({
         )}
         <AutoHeight>
           {tab === 'activity' && <ActivityPanel />}
-          {tab === 'share' && <ShareContent config={config} onSwitch={onSwitch} onLeave={onLeave} />}
+          {tab === 'share' && <ShareContent config={config} admin={admin} onSwitch={onSwitch} onLeave={onLeave} />}
           {tab === 'ai' && <ConnectAI admin={admin} />}
         </AutoHeight>
       </Sheet>
@@ -117,10 +117,12 @@ export function Header({
 
 function ShareContent({
   config,
+  admin,
   onSwitch,
   onLeave,
 }: {
   config: PublicConfig;
+  admin: boolean;
   onSwitch: (session: SessionInfo) => Promise<void>;
   onLeave: () => void;
 }) {
@@ -211,7 +213,7 @@ function ShareContent({
       </form>
 
       <div className="flex gap-2">
-        {config.adminAuth !== 'disabled' && session.role !== 'admin' && (
+        {config.adminAuth !== 'disabled' && !admin && (
           <Button variant="ghost" className="flex-1" onClick={() => window.location.assign('/admin')} icon={<ShieldCheck className="size-4" />}>
             管理员登录
           </Button>

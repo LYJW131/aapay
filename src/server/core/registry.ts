@@ -18,9 +18,10 @@ import { first, migrate, type SqlDriver, type SqlValue } from './sql.ts';
 const DAY = 86_400_000;
 export const SESSION_TTL = {
   member: 180 * DAY,
-  admin: 7 * DAY,
-  console: 7 * DAY,
+  console: DAY,
 } as const;
+
+const CONSOLE_BOUND = "(s.role <> 'admin' OR EXISTS (SELECT 1 FROM sessions c WHERE c.token_hash = s.console_hash AND c.kind = 'console'))";
 
 export const OAUTH_TTL = {
   code: 5 * 60_000,
@@ -175,6 +176,11 @@ export const MIGRATIONS = [
   );
   `,
   `ALTER TABLE ledgers ADD COLUMN emoji TEXT NOT NULL DEFAULT '📒';`,
+  `
+  -- 管理员进入账本的会话随签发它的管理员会话一起失效；迁移前留下的这类会话没有绑定，会直接失效
+  ALTER TABLE sessions ADD COLUMN console_hash TEXT;
+  CREATE INDEX sessions_console ON sessions (console_hash);
+  `,
 ];
 
 export type GrantRole = 'member' | 'admin';
@@ -434,20 +440,21 @@ export class RegistryService {
     const now = Date.now();
     const p = this.activePassphrase(code, now);
     const expiresAt = Math.min(p.valid_until ?? Infinity, now + SESSION_TTL.member);
-    this.insertSession(tokenHash, 'ledger', 'member', p.ledger_id, p.id, null, expiresAt);
+    this.insertSession(tokenHash, 'ledger', 'member', p.ledger_id, p.id, null, null, expiresAt);
     return { ledger: { id: p.ledger_id, name: p.name, emoji: p.emoji }, role: 'member', passphrase: p.code, subject: null, expiresAt };
   }
 
-  openLedgerSession(tokenHash: string, ledgerId: string, subject: string): SessionInfo {
+  openLedgerSession(tokenHash: string, ledgerId: string, consoleHash: string): SessionInfo {
     const ledger = this.getLedger(ledgerId);
-    const expiresAt = Date.now() + SESSION_TTL.admin;
-    this.insertSession(tokenHash, 'ledger', 'admin', ledgerId, null, subject, expiresAt);
-    return { ledger, role: 'admin', passphrase: null, subject, expiresAt };
+    const admin = this.resolveConsoleSession(consoleHash);
+    if (!admin) throw new AppError(401, '管理员登录已过期，请重新登录');
+    this.insertSession(tokenHash, 'ledger', 'admin', ledgerId, null, admin.subject, consoleHash, admin.expiresAt);
+    return { ledger, role: 'admin', passphrase: null, subject: admin.subject, expiresAt: admin.expiresAt };
   }
 
   openConsoleSession(tokenHash: string, subject: string): number {
     const expiresAt = Date.now() + SESSION_TTL.console;
-    this.insertSession(tokenHash, 'console', 'console', null, null, subject, expiresAt);
+    this.insertSession(tokenHash, 'console', 'console', null, null, subject, null, expiresAt);
     return expiresAt;
   }
 
@@ -458,7 +465,7 @@ export class RegistryService {
          FROM sessions s
          JOIN ledgers l ON l.id = s.ledger_id
          LEFT JOIN passphrases p ON p.id = s.passphrase_id
-         WHERE s.token_hash = ? AND s.kind = 'ledger' AND s.expires_at > ?`,
+         WHERE s.token_hash = ? AND s.kind = 'ledger' AND s.expires_at > ? AND ${CONSOLE_BOUND}`,
         tokenHash,
         Date.now(),
       ),
@@ -473,19 +480,19 @@ export class RegistryService {
     };
   }
 
-  resolveConsoleSession(tokenHash: string): { subject: string } | null {
+  resolveConsoleSession(tokenHash: string): { subject: string; expiresAt: number } | null {
     const row = first(
-      this.db.all<{ subject: string }>(
-        "SELECT subject FROM sessions WHERE token_hash = ? AND kind = 'console' AND expires_at > ?",
+      this.db.all<{ subject: string; expires_at: number }>(
+        "SELECT subject, expires_at FROM sessions WHERE token_hash = ? AND kind = 'console' AND expires_at > ?",
         tokenHash,
         Date.now(),
       ),
     );
-    return row ?? null;
+    return row ? { subject: row.subject, expiresAt: row.expires_at } : null;
   }
 
   endSession(tokenHash: string): void {
-    this.db.run('DELETE FROM sessions WHERE token_hash = ?', tokenHash);
+    this.db.run('DELETE FROM sessions WHERE token_hash = ? OR console_hash = ?', tokenHash, tokenHash);
   }
 
   getClient(id: string): OAuthClient | null {
@@ -774,7 +781,7 @@ export class RegistryService {
              FROM sessions s
              JOIN ledgers l ON l.id = s.ledger_id
              LEFT JOIN passphrases p ON p.id = s.passphrase_id
-             WHERE s.token_hash = ? AND s.kind = 'ledger' AND s.expires_at > ?`,
+             WHERE s.token_hash = ? AND s.kind = 'ledger' AND s.expires_at > ? AND ${CONSOLE_BOUND}`,
             source.tokenHash,
             now,
           ),
@@ -820,19 +827,21 @@ export class RegistryService {
     ledgerId: string | null,
     passphraseId: string | null,
     subject: string | null,
+    consoleHash: string | null,
     expiresAt: number,
   ) {
     const now = Date.now();
     this.db.run('DELETE FROM sessions WHERE expires_at <= ?', now);
     this.db.run(
-      `INSERT INTO sessions (token_hash, kind, role, ledger_id, passphrase_id, subject, expires_at, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sessions (token_hash, kind, role, ledger_id, passphrase_id, subject, console_hash, expires_at, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       tokenHash,
       kind,
       role,
       ledgerId,
       passphraseId,
       subject,
+      consoleHash,
       expiresAt,
       now,
     );
