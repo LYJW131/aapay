@@ -4,9 +4,26 @@ import type { ApiType } from '../../server/app.ts';
 // 服务端把它带回实时事件，用来识别自己发起的变更
 export const CLIENT_ID = crypto.randomUUID();
 
+const adminExpiredListeners = new Set<() => void>();
+
+export function onAdminExpired(listener: () => void) {
+  adminExpiredListeners.add(listener);
+  return () => void adminExpiredListeners.delete(listener);
+}
+
+async function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    const { pathname } = new URL(res.url, window.location.origin);
+    if (pathname.startsWith('/api/admin/') && pathname !== '/api/admin/login') adminExpiredListeners.forEach((l) => l());
+  }
+  return res;
+}
+
 export const api = hc<ApiType>('/api', {
   headers: { 'x-client-id': CLIENT_ID },
   init: { credentials: 'same-origin' },
+  fetch: apiFetch,
 });
 
 export class ApiError extends Error {

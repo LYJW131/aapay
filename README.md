@@ -79,7 +79,7 @@ node scripts/seed.mjs            # 可选：生成演示账本（口令 demo2026
 
 1. 修改 `wrangler.jsonc` 中的 `routes`（自定义域名）与 `vars`
 2. 在 Cloudflare Zero Trust → Access 新建 **Self-hosted** 应用：
-   - 目标填 `你的域名/admin` 与 `你的域名/api/admin` 两条
+   - 目标只填 `你的域名/api/admin/login` 一条（其余管理接口只认登录后签发的管理员会话，不能放进 Access，否则会话过期时浏览器的请求会被重定向到登录页而失败）
    - 策略：Allow，Include → Emails → 你的邮箱
    - 把应用的 **Application Audience (AUD) Tag** 填入 `ACCESS_AUD`，团队域名（`xxx.cloudflareaccess.com`）填入 `ACCESS_TEAM_DOMAIN`
 3. 部署：
@@ -91,7 +91,7 @@ node scripts/seed.mjs            # 可选：生成演示账本（口令 demo2026
 
 也可以用 **Workers Builds** 自动部署：在 Worker 的 Settings → Builds 关联 GitHub 仓库，构建命令 `npm run typecheck && npm test && npm run build`，部署命令 `npx wrangler deploy`，环境变量 `NODE_VERSION=24`。之后推送到监听的分支就会自动测试并上线（本项目监听 `v2`，只改 `*.md` / `docs/` 不触发）。
 
-Durable Objects 与限流由 `wrangler.jsonc` 自动创建，无需手动建数据库。「识别账单」调用 DeepSeek 或 Gemini 的视觉模型，用 `npx wrangler secret put DEEPSEEK_API_KEY`（或 `GEMINI_API_KEY`）配置密钥，每个账本每分钟最多 10 次。Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），即使绕过 Access 直连 Worker 也无法访问管理接口。
+Durable Objects 与限流由 `wrangler.jsonc` 自动创建，无需手动建数据库。「识别账单」调用 DeepSeek 或 Gemini 的视觉模型，用 `npx wrangler secret put DEEPSEEK_API_KEY`（或 `GEMINI_API_KEY`）配置密钥，每个账本每分钟最多 10 次。登录时 Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），通过后签发本站的管理员会话；绕过 Access 直连 Worker 拿不到会话，也就无法访问管理接口。
 
 ## 部署到 Docker
 
@@ -135,8 +135,10 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 
 - **access**（推荐）：Cloudflare Workers 或 Docker + Cloudflare Tunnel，由 Access 负责登录
 - **password**：内置密码登录，适合自托管且没有 SSO 的场景（带防爆破限流）
-- **proxy**：沿用 oauth2-proxy / Authelia / Traefik ForwardAuth 等上游认证，信任其传入的身份头（确保应用不直接暴露）
+- **proxy**：沿用 oauth2-proxy / Authelia / Traefik ForwardAuth 等上游认证，在 `/api/admin/login` 信任其传入的身份头（确保应用不直接暴露）
 - **none**：不校验，仅限本地开发
+
+无论哪种方式，外部身份只在登录（`/admin` → `GET /api/admin/login`）时校验一次，之后换成本站的管理员会话（HttpOnly Cookie，24 小时）。每次请求都会按当前配置重新确认此人仍在 `ADMIN_EMAILS` 中；管理员进入账本时签发的会话随管理员会话一起过期或退出。管理员卡片里的「退出」只结束本站会话，Access 的登录状态不受影响。
 
 ## 连接 AI（MCP）
 
@@ -191,7 +193,10 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/api/config` | 运行模式与认证方式 |
-| `GET` | `/api/session` | 当前会话（未加入时为 `null`） |
+| `GET` | `/api/session` | 当前账本会话与管理员身份（`{ session, admin }`，未登录时为 `null`） |
+| `GET` | `/api/admin/login?return_to=` | 管理员登录：校验 Access / 代理身份，签发管理员会话后跳回（password 模式跳到 `/admin` 表单） |
+| `POST` | `/api/admin/login` | password 模式：用密码换取管理员会话 |
+| `POST` | `/api/admin/logout` | 退出管理员会话 |
 | `POST` | `/api/join` | 用口令加入账本 |
 | `POST` | `/api/logout` | 退出账本 |
 | `GET` | `/api/ledger` | 账本快照 |

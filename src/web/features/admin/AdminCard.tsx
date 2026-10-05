@@ -20,7 +20,8 @@ import { useDelayed, usePersistentState } from '../../lib/hooks.ts';
 import { joinLink } from '../ledger/Header.tsx';
 import { adminCache } from './preload.ts';
 
-function useAdminLive(onEvent: (event: RegistryEvent) => void) {
+// 断线期间可能漏掉事件，重连前先重新拉取；管理员会话过期时这次请求返回 401，卡片随之卸载，不再重连
+function useAdminLive(onEvent: (event: RegistryEvent) => void, resync: () => Promise<void>) {
   useEffect(() => {
     let ws: WebSocket | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -29,7 +30,11 @@ function useAdminLive(onEvent: (event: RegistryEvent) => void) {
       ws = new WebSocket(liveUrl('/admin/live'));
       ws.onmessage = (e) => e.data !== 'pong' && onEvent(JSON.parse(e.data as string) as RegistryEvent);
       ws.onclose = () => {
-        if (!stopped) timer = setTimeout(connect, 3000);
+        if (stopped) return;
+        timer = setTimeout(async () => {
+          await resync();
+          if (!stopped) connect();
+        }, 3000);
       };
     };
     connect();
@@ -38,7 +43,7 @@ function useAdminLive(onEvent: (event: RegistryEvent) => void) {
       clearTimeout(timer);
       ws?.close();
     };
-  }, [onEvent]);
+  }, [onEvent, resync]);
 }
 
 interface Props {
@@ -89,6 +94,9 @@ export function AdminCard({ admin, current, onEnter, standalone = false }: Props
       },
       [loadLedgers, loadPassphrases, currentId],
     ),
+    useCallback(async () => {
+      await Promise.all([loadLedgers(), loadPassphrases()]);
+    }, [loadLedgers, loadPassphrases]),
   );
 
   async function logout() {
@@ -113,19 +121,18 @@ export function AdminCard({ admin, current, onEnter, standalone = false }: Props
           </motion.span>
         )}
         <span className="ml-auto hidden truncate text-xs text-zinc-400 sm:block">{admin.name}</span>
-        {admin.method === 'password' && (
-          <Button
-            size="sm"
-            variant="ghost"
-            icon={<LogOut className="size-3.5" />}
-            onClick={(e) => {
-              e.stopPropagation();
-              void logout();
-            }}
-          >
-            退出
-          </Button>
-        )}
+        <Button
+          size="sm"
+          variant="ghost"
+          className="ml-auto sm:ml-0"
+          icon={<LogOut className="size-3.5" />}
+          onClick={(e) => {
+            e.stopPropagation();
+            void logout();
+          }}
+        >
+          退出
+        </Button>
       </header>
 
       <AnimatePresence initial={false}>

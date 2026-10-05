@@ -1,37 +1,26 @@
-import { KeyRound, LockKeyhole, RefreshCw, ShieldAlert } from 'lucide-react';
-import { useCallback, useEffect, useState, type FormEvent } from 'react';
+import { KeyRound, LogOut, ShieldAlert } from 'lucide-react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
-import type { PublicConfig } from '../../../shared/types.ts';
+import { localPath } from '../../../shared/redirect.ts';
+import type { AdminIdentity, PublicConfig } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { AppIcon } from '../../components/Logo.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
-import { api, ApiError, call, errorMessage } from '../../lib/api.ts';
-import { save } from '../../lib/storage.ts';
-import { ADMIN_HINT } from './identity.ts';
+import { api, call, errorMessage } from '../../lib/api.ts';
 
-type Gate = { state: 'loading' } | { state: 'denied' } | { state: 'disabled' };
-
-// 只允许跳回站内授权页，避免开放跳转
-export function AdminPage({ config }: { config: PublicConfig }) {
-  const [gate, setGate] = useState<Gate>({ state: 'loading' });
-
-  const check = useCallback(async () => {
-    try {
-      await call(api.admin.me.$get());
-      save(ADMIN_HINT, true);
-      const returnTo = new URLSearchParams(window.location.search).get('return_to');
-      window.location.replace(returnTo?.startsWith('/oauth/authorize?') ? returnTo : '/');
-    } catch (err) {
-      setGate({ state: err instanceof ApiError && err.status === 404 ? 'disabled' : 'denied' });
-    }
-  }, []);
+export function AdminPage({ config, admin }: { config: PublicConfig; admin: AdminIdentity | null }) {
+  const [params] = useState(() => new URLSearchParams(window.location.search));
+  const back = localPath(params.get('return_to'));
+  const external = config.adminAuth === 'access' || config.adminAuth === 'proxy' || config.adminAuth === 'none';
+  const redirecting = !!admin || (external && params.get('error') !== 'denied');
 
   useEffect(() => {
     document.title = '管理员登录 · AAPay';
-    void check();
-  }, [check]);
+    if (admin) window.location.replace(back);
+    else if (redirecting) window.location.replace(`/api/admin/login?return_to=${encodeURIComponent(back)}`);
+  }, [admin, redirecting, back]);
 
-  if (gate.state === 'loading') {
+  if (redirecting) {
     return (
       <div className="flex min-h-dvh items-center justify-center text-zinc-400">
         <Spinner className="size-7" />
@@ -46,22 +35,20 @@ export function AdminPage({ config }: { config: PublicConfig }) {
           <AppIcon className="size-16" />
           <h1 className="text-xl font-semibold tracking-tight">AAPay 管理员登录</h1>
         </div>
-        {gate.state === 'disabled' ? (
-          <Notice icon={<ShieldAlert />} title="管理后台未启用">
-            设置环境变量 <code className="font-mono">ADMIN_AUTH</code> 以启用（见 README）。
-          </Notice>
-        ) : config.adminAuth === 'password' ? (
-          <LoginForm onDone={check} />
+        {config.adminAuth === 'password' ? (
+          <LoginForm onDone={() => window.location.replace(back)} />
         ) : config.adminAuth === 'access' ? (
-          <Notice icon={<LockKeyhole />} title="需要通过 Cloudflare Access 登录">
-            你的登录状态已失效或账号无权访问。
-            <Button variant="primary" className="mt-4 w-full" icon={<RefreshCw className="size-4" />} onClick={() => window.location.reload()}>
-              重新登录
+          <Notice title="当前登录的账号不是管理员">
+            请换一个在管理员名单中的账号登录。
+            <Button variant="primary" className="mt-4 w-full" icon={<LogOut className="size-4" />} onClick={() => window.location.assign('/cdn-cgi/access/logout')}>
+              退出 Cloudflare Access
             </Button>
           </Notice>
+        ) : config.adminAuth === 'proxy' ? (
+          <Notice title="无权访问">未从上游代理获得允许的管理员身份。</Notice>
         ) : (
-          <Notice icon={<ShieldAlert />} title="无权访问">
-            未从上游代理获得允许的管理员身份。
+          <Notice title="管理后台未启用">
+            设置环境变量 <code className="font-mono">ADMIN_AUTH</code> 以启用（见 README）。
           </Notice>
         )}
         <button onClick={() => window.location.assign('/')} className="mx-auto mt-6 block text-sm text-zinc-500 hover:text-brand-600">
@@ -72,10 +59,12 @@ export function AdminPage({ config }: { config: PublicConfig }) {
   );
 }
 
-function Notice({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function Notice({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="card p-5 text-center">
-      <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-amber-500/12 text-amber-600 [&>svg]:size-5">{icon}</div>
+      <div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-amber-500/12 text-amber-600">
+        <ShieldAlert className="size-5" />
+      </div>
       <p className="font-medium">{title}</p>
       <div className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{children}</div>
     </div>

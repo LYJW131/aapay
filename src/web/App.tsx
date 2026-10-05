@@ -2,11 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Toaster } from 'sonner';
 import type { AdminIdentity, PublicConfig, SessionInfo, Snapshot } from '../shared/types.ts';
 import { Spinner } from './components/Spinner.tsx';
-import { detectAdmin } from './features/admin/identity.ts';
 import { adminModules, preloadAdmin, prefetchAdminData } from './features/admin/preload.ts';
 import { JoinPage } from './features/join/JoinPage.tsx';
 import { LedgerPage } from './features/ledger/LedgerPage.tsx';
-import { api, ApiError, call } from './lib/api.ts';
+import { api, ApiError, call, onAdminExpired } from './lib/api.ts';
 import { useDelayed, useMediaQuery } from './lib/hooks.ts';
 import { usePathname } from './lib/router.ts';
 
@@ -19,6 +18,7 @@ type Ready = {
   session: SessionInfo | null;
   snapshot: Snapshot | null;
   admin: AdminIdentity | null;
+  adminExpired?: boolean;
   notice?: string;
   welcome?: boolean;
 };
@@ -35,11 +35,10 @@ async function loadSnapshot(): Promise<Snapshot | null> {
 
 async function boot(): Promise<Ready> {
   const { pathname } = window.location;
-  // 这些页面自己处理登录状态，不在这里拉会话
   const standalone = pathname === '/join' || pathname === '/oauth/authorize' || pathname.startsWith('/admin');
-  const [config, session] = await Promise.all([call(api.config.$get()), standalone ? null : call(api.session.$get())]);
-  const [snapshot, admin] = await Promise.all([session ? loadSnapshot() : null, detectAdmin(config, session)]);
-  if (admin) await preloadAdmin(session?.ledger.id ?? null);
+  const [config, { session, admin }] = await Promise.all([call(api.config.$get()), call(api.session.$get())]);
+  if (standalone) return { state: 'ready', config, session: null, snapshot: null, admin };
+  const [snapshot] = await Promise.all([session ? loadSnapshot() : null, admin ? preloadAdmin(session?.ledger.id ?? null) : null]);
   return { state: 'ready', config, session: snapshot ? session : null, snapshot, admin };
 }
 
@@ -64,6 +63,18 @@ export function App() {
     };
   }, []);
 
+  useEffect(
+    () =>
+      onAdminExpired(() =>
+        setApp((a) => {
+          if (a.state !== 'ready' || !a.admin) return a;
+          if (a.session && a.session.role !== 'admin') return { ...a, admin: null, adminExpired: true };
+          return { ...a, admin: null, session: null, snapshot: null, notice: '管理员登录已过期，请重新登录' };
+        }),
+      ),
+    [],
+  );
+
   const open = useCallback(async (session: SessionInfo, welcome = false) => {
     const [snapshot] = await Promise.all([
       call(api.ledger.$get()),
@@ -87,13 +98,13 @@ export function App() {
   } else if (pathname.startsWith('/admin')) {
     page = (
       <Suspense fallback={<Pending />}>
-        <AdminPage config={app.config} />
+        <AdminPage config={app.config} admin={app.admin} />
       </Suspense>
     );
   } else if (pathname === '/oauth/authorize') {
     page = (
       <Suspense fallback={<Pending />}>
-        <AuthorizePage config={app.config} />
+        <AuthorizePage config={app.config} admin={app.admin} />
       </Suspense>
     );
   } else if (app.session && app.snapshot) {
@@ -105,6 +116,7 @@ export function App() {
         welcome={!!app.welcome}
         config={app.config}
         admin={app.admin}
+        adminExpired={!!app.adminExpired}
         onSwitch={open}
         onExit={(notice) => setApp({ ...app, session: null, snapshot: null, notice })}
       />

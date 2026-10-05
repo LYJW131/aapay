@@ -1,7 +1,8 @@
 import { Hono, type Context } from 'hono';
 import type { McpScope } from '../../shared/types.ts';
 import type { AppEnv } from '../app.ts';
-import { todayIn, type Config } from '../config.ts';
+import { stillAdmin } from '../auth/admin.ts';
+import { todayIn } from '../config.ts';
 import { sha256 } from '../core/ids.ts';
 import type { AccessGrant } from '../core/registry.ts';
 import { baseUrl, openCors, requireMcp, resourceMetadataUrl, resourceUrl, SCOPES } from './oauth.ts';
@@ -40,13 +41,6 @@ function challenge(c: Context<AppEnv>, status: 401 | 403, failure: { error: stri
   if (failure) params.unshift(`error="${failure.error}"`, `error_description="${failure.error_description}"`);
   c.header('WWW-Authenticate', `Bearer ${params.join(', ')}`);
   return c.json(failure ?? { error: 'unauthorized' }, status);
-}
-
-// 与 authenticateAdmin 一致：白名单只在 access / proxy 模式下生效
-function stillAdmin(config: Config, subject: string | null) {
-  if (config.adminAuth === 'disabled' || !subject) return false;
-  if (config.adminAuth !== 'access' && config.adminAuth !== 'proxy') return true;
-  return config.adminEmails.length === 0 || config.adminEmails.includes(subject.toLowerCase());
 }
 
 function instructions(date: string, timezone: string) {

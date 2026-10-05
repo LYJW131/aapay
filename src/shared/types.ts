@@ -110,7 +110,11 @@ export interface BillDraft {
 
 export interface AdminIdentity {
   name: string;
-  method: AdminAuthMode;
+}
+
+export interface SessionState {
+  session: SessionInfo | null;
+  admin: AdminIdentity | null;
 }
 
 export interface LedgerRecord {

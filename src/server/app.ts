@@ -13,9 +13,10 @@ import {
   recognizeInput,
   settlementInput,
 } from '../shared/schema.ts';
-import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, Snapshot } from '../shared/types.ts';
+import { localPath } from '../shared/redirect.ts';
+import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, SessionState, Snapshot } from '../shared/types.ts';
 import { adminActions } from './admin.ts';
-import { authenticateAdmin, passwordMatches } from './auth/admin.ts';
+import { authenticateAdmin, externalAdmin, passwordMatches } from './auth/admin.ts';
 import { clearSessionCookie, CONSOLE_COOKIE, SESSION_COOKIE, setSessionCookie } from './auth/cookies.ts';
 import { todayIn, type Config } from './config.ts';
 import { AppError, notFound, unauthorized } from './core/errors.ts';
@@ -44,6 +45,7 @@ export type AppEnv = {
     config: Config;
     session: SessionInfo;
     admin: AdminIdentity;
+    consoleHash: string;
   };
 };
 
@@ -66,10 +68,17 @@ const admin = (c: Context<AppEnv>) => adminActions(c.var.platform, { kind: 'admi
 
 const requireAdmin = createMiddleware<AppEnv>(async (c, next) => {
   const admin = await authenticateAdmin(c, c.var.config, c.var.platform);
-  if (!admin) throw new AppError(c.var.config.adminAuth === 'disabled' ? 404 : 401, '需要管理员身份');
-  c.set('admin', admin);
+  if (!admin) throw new AppError(c.var.config.adminAuth === 'disabled' ? 404 : 401, '管理员登录已失效，请重新登录');
+  c.set('admin', admin.identity);
+  c.set('consoleHash', admin.consoleHash);
   await next();
 });
+
+async function openConsole(c: Context<AppEnv>, subject: string) {
+  const token = newToken();
+  const expiresAt = await c.var.platform.registry.openConsoleSession(await sha256(token), subject);
+  setSessionCookie(c, CONSOLE_COOKIE, token, expiresAt);
+}
 
 const ledgerRoutes = new Hono<AppEnv>()
   .use(requireSession)
@@ -137,7 +146,18 @@ const ledgerRoutes = new Hono<AppEnv>()
     return c.json({ ok: true });
   });
 
+// Access / 上游代理只拦截这一个整页跳转的地址：外部身份在这里换成本站的管理员会话，其余管理接口只认会话，过期时返回 401 而不是被边缘重定向
 const adminRoutes = new Hono<AppEnv>()
+  .get('/login', query(z.object({ return_to: z.string().optional() })), async (c) => {
+    const { config } = c.var;
+    const back = localPath(c.req.valid('query').return_to);
+    const page = (extra = '') => c.redirect(`/admin?return_to=${encodeURIComponent(back)}${extra}`);
+    if (config.adminAuth === 'password' || config.adminAuth === 'disabled') return page();
+    const subject = await externalAdmin(c, config);
+    if (!subject) return page('&error=denied');
+    await openConsole(c, subject);
+    return c.redirect(back);
+  })
   .post('/login', body(loginInput), async (c) => {
     const { config, platform } = c.var;
     if (config.adminAuth !== 'password') throw notFound('当前未启用密码登录');
@@ -145,10 +165,8 @@ const adminRoutes = new Hono<AppEnv>()
     if (!(await passwordMatches(c.req.valid('json').password, config.adminPassword))) {
       throw new AppError(401, '密码错误');
     }
-    const token = newToken();
-    const expiresAt = await platform.registry.openConsoleSession(await sha256(token), 'admin');
-    setSessionCookie(c, CONSOLE_COOKIE, token, expiresAt);
-    return c.json({ name: 'admin', method: 'password' } satisfies AdminIdentity);
+    await openConsole(c, 'admin');
+    return c.json({ name: 'admin' } satisfies AdminIdentity);
   })
   .post('/logout', async (c) => {
     const token = getCookie(c, CONSOLE_COOKIE);
@@ -157,7 +175,6 @@ const adminRoutes = new Hono<AppEnv>()
     return c.json({ ok: true });
   })
   .use(requireAdmin)
-  .get('/me', (c) => c.json(c.var.admin))
   .post('/oauth/authorize', requireMcp, body(approveInput), async (c) =>
     c.json(await approveAuthorization(c, c.req.valid('json'), c.var.admin.name)),
   )
@@ -187,11 +204,7 @@ const adminRoutes = new Hono<AppEnv>()
   })
   .post('/ledgers/:id/enter', async (c) => {
     const token = newToken();
-    const session = await c.var.platform.registry.openLedgerSession(
-      await sha256(token),
-      c.req.param('id'),
-      c.var.admin.name,
-    );
+    const session = await c.var.platform.registry.openLedgerSession(await sha256(token), c.req.param('id'), c.var.consoleHash);
     setSessionCookie(c, SESSION_COOKIE, token, session.expiresAt!);
     return c.json(session);
   });
@@ -206,7 +219,10 @@ function buildApi() {
         recognize: c.var.config.recognizer !== null,
       } satisfies PublicConfig),
     )
-    .get('/session', async (c) => c.json(await findSession(c)))
+    .get('/session', async (c) => {
+      const admin = await authenticateAdmin(c, c.var.config, c.var.platform);
+      return c.json({ session: await findSession(c), admin: admin?.identity ?? null } satisfies SessionState);
+    })
     .post('/join', body(joinInput), async (c) => {
       const { platform, config } = c.var;
       if (config.mode === 'shared') throw notFound('共享模式无需口令');
