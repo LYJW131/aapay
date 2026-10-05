@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
+import { CLIP_Y } from './Collapse.tsx';
 
 // max：外层有高度上限时（如弹窗）只在露出的范围内过渡。否则内容很高时头一帧就顶到上限，过渡全花在看不见的地方
 export function AutoHeight({ children, className, max }: { children: ReactNode; className?: string; max?: (el: HTMLElement) => number }) {
@@ -18,12 +19,12 @@ export function AutoHeight({ children, className, max }: { children: ReactNode; 
         const to = Math.min(next, room);
         running?.cancel();
         running = null;
-        // 只在过渡中纵向裁切，静止时裁切会切掉阴影和焦点环；clip 不像 hidden 会成为滚动容器
-        el.style.overflowY = from === to ? '' : 'clip';
+        // 只在过渡中纵向裁切，静止时裁切会切掉阴影和焦点环
+        el.style.clipPath = from === to ? '' : CLIP_Y;
         if (from !== to) {
           running = el.animate({ height: [`${from}px`, `${to}px`] }, { duration: 250, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' });
           running.onfinish = () => {
-            el.style.overflowY = '';
+            el.style.clipPath = '';
             running = null;
           };
         }

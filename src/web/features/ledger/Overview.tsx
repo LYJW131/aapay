@@ -95,7 +95,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
   return (
     <Card id="overview" title="账本概览" icon={<ChartColumnBig />}>
       <div ref={rangeBar} className="relative">
-        <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+        <div className="-mx-1 -mt-1 flex gap-1 overflow-x-auto p-1 [scrollbar-width:none]">
           {RANGE_OPTIONS.map((o) => (
             <Chip
               key={o.key}
@@ -161,7 +161,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
       </div>
 
       <Collapse open={snapshot.members.length > 1} className="pt-2">
-        <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+        <div className="-mx-1 -mt-1 flex gap-1 overflow-x-auto p-1 [scrollbar-width:none]">
           <Chip active={!memberId} onClick={() => onMember(null)}>
             全部成员
           </Chip>

@@ -81,7 +81,7 @@ export function Header({
       </div>
       <Sheet open={open} onClose={() => setOpen(false)} title={`${snapshot.ledger.emoji} ${snapshot.ledger.name}`}>
         {tabs.length > 1 && (
-          <div ref={tabsRef} className="sticky top-0 z-10 -mx-5 bg-surface px-5 pb-4">
+          <div ref={tabsRef} className="sticky top-0 z-10 -mx-5 bg-surface px-5 pb-3">
             <div role="tablist" className="flex rounded-2xl bg-zinc-100 p-1 dark:bg-white/6">
               {tabs.map((t) => (
                 <button
@@ -110,7 +110,8 @@ export function Header({
             </div>
           </div>
         )}
-        <AutoHeight max={roomInSheet}>
+        {/* 顶部留出余量：吸顶标签栏的背景会盖住紧贴其下内容的描边和阴影（如二维码卡片） */}
+        <AutoHeight max={roomInSheet} className="pt-1">
           {tab === 'activity' && <ActivityPanel />}
           {tab === 'share' && <ShareContent config={config} admin={admin} onSwitch={onSwitch} onLeave={onLeave} />}
           {tab === 'ai' && <ConnectAI admin={admin} />}

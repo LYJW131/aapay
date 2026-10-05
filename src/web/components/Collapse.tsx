@@ -2,6 +2,10 @@ import { AnimatePresence, motion, PresenceContext, useIsPresent, type MotionProp
 import { useContext, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
 
+// 用 clip-path 只裁纵向，不用 overflow：hidden 会让它成为滚动容器，里面 sticky 的日期标题会改为相对它定位而错位；
+// overflow-y: clip 在 Safari 的合成层里会连横向一起裁（WebKit bug 271457），动画结束后仍切掉两侧的焦点环和阴影
+export const CLIP_Y = 'inset(0 -100vmax)';
+
 export function Collapse({ open, children, className }: { open: boolean; children: ReactNode; className?: string }) {
   return (
     <AnimatePresence initial={false}>
@@ -30,9 +34,8 @@ export function Reveal({
   // 只在过渡中纵向裁切，停住后再裁会切掉阴影和焦点环。按动画中的高度值开关、直接写 DOM 而不走 state：
   // 动画开始时重新渲染会打乱 motion 测量高度时对滚动位置的保存与恢复；
   // transitionEnd 或在完成回调里改 motion 值，motion 都不会重新渲染，样式会一直停在裁切。
-  // 用 clip 而不是 hidden：hidden 会让它成为滚动容器，里面 sticky 的日期标题会改为相对它定位而错位
   const clip = (on: boolean) => {
-    if (node.current) node.current.style.overflowY = on ? 'clip' : '';
+    if (node.current) node.current.style.clipPath = on ? CLIP_Y : '';
   };
   useLayoutEffect(() => clip(entering), []);
   // 收起时直接给出起点高度：只写 height: 0 的话 motion 会先把元素设成 0 去量 auto 的起点，
