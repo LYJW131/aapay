@@ -350,7 +350,7 @@ export class RegistryService {
 
   getLedger(id: string): LedgerInfo {
     const row = first(this.db.all<LedgerInfo>('SELECT id, name, emoji FROM ledgers WHERE id = ?', id));
-    if (!row) throw notFound('账本不存在');
+    if (!row) throw notFound('ledgerNotFound');
     return row;
   }
 
@@ -404,7 +404,7 @@ export class RegistryService {
       // 同名口令过期后可以复用
       this.db.run('DELETE FROM passphrases WHERE code = ? AND valid_until IS NOT NULL AND valid_until <= ?', input.code, now);
       if (first(this.db.all('SELECT 1 FROM passphrases WHERE code = ?', input.code))) {
-        throw conflict('该口令正在使用中，请换一个');
+        throw conflict('passphraseInUse');
       }
       const passphrase: Passphrase = {
         id: newId(),
@@ -431,7 +431,7 @@ export class RegistryService {
   // 通过外键级联，用该口令登录的会话与 AI 授权也会立即失效
   revokePassphrase(id: string): Passphrase {
     const row = first(this.db.all<PassphraseRow>('DELETE FROM passphrases WHERE id = ? RETURNING *', id));
-    if (!row) throw notFound('口令不存在');
+    if (!row) throw notFound('passphraseNotFound');
     this.emit({ type: 'passphrases.changed', ledgerId: row.ledger_id });
     return toPassphrase(row);
   }
@@ -447,7 +447,7 @@ export class RegistryService {
   openLedgerSession(tokenHash: string, ledgerId: string, consoleHash: string): SessionInfo {
     const ledger = this.getLedger(ledgerId);
     const admin = this.resolveConsoleSession(consoleHash);
-    if (!admin) throw new AppError(401, '管理员登录已过期，请重新登录');
+    if (!admin) throw new AppError(401, 'adminSessionExpired');
     this.insertSession(tokenHash, 'ledger', 'admin', ledgerId, null, admin.subject, consoleHash, admin.expiresAt);
     return { ledger, role: 'admin', passphrase: null, subject: admin.subject, expiresAt: admin.expiresAt };
   }
@@ -702,7 +702,7 @@ export class RegistryService {
     const grant = first(
       this.db.all<{ client_id: string }>('DELETE FROM oauth_grants WHERE id = ? AND ledger_id = ? RETURNING client_id', id, ledgerId),
     );
-    if (!grant) throw notFound('该连接不存在或已断开');
+    if (!grant) throw notFound('connectionNotFound');
     this.emit({ type: 'connections.changed', ledgerId });
     return this.clientInfo(grant.client_id);
   }
@@ -713,7 +713,7 @@ export class RegistryService {
 
   revokeAdminConnection(id: string): void {
     if (!first(this.db.all("DELETE FROM oauth_grants WHERE id = ? AND role = 'admin' RETURNING id", id))) {
-      throw notFound('该连接不存在或已断开');
+      throw notFound('connectionNotFound');
     }
     this.emit({ type: 'connections.changed', ledgerId: null });
   }
@@ -786,7 +786,7 @@ export class RegistryService {
             now,
           ),
         );
-        if (!row) throw new AppError(401, '当前浏览器的账本登录已过期，请输入口令');
+        if (!row) throw new AppError(401, 'ledgerSessionExpired');
         return {
           role: 'member',
           ledger: { id: row.ledger_id, name: row.name, emoji: row.emoji },
@@ -809,7 +809,7 @@ export class RegistryService {
       now,
     );
     const p = rows.find((r) => r.valid_from <= now);
-    if (!p) throw new AppError(401, rows.length ? '口令尚未生效' : '口令无效或已过期');
+    if (!p) throw new AppError(401, rows.length ? 'passphraseNotYetValid' : 'passphraseInvalid');
     return p;
   }
 
@@ -849,7 +849,7 @@ export class RegistryService {
 
   private assertLedgerNameFree(name: string, exceptId = '') {
     if (first(this.db.all('SELECT 1 FROM ledgers WHERE name = ? AND id != ?', name, exceptId))) {
-      throw conflict(`账本「${name}」已存在`);
+      throw conflict('ledgerExists', { name });
     }
   }
 }

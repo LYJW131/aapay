@@ -6,9 +6,12 @@ import type { Member } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
+import { connect } from '../../i18n/connect.ts';
 import { api, errorMessage } from '../../lib/api.ts';
 import { useLedger } from './context.tsx';
 import { MemberChip, saveDefaultPayer } from './ExpenseForm.tsx';
+
+const t = connect.welcome;
 
 export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { snapshot, store, key } = useLedger();
@@ -21,7 +24,7 @@ export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => 
 
   function pick(id: string, label: string) {
     saveDefaultPayer(key('payer'), id);
-    toast.success(`记账时默认由 ${label} 付款`);
+    toast.success(t.defaultPayer(label));
     onClose();
   }
 
@@ -42,11 +45,11 @@ export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => 
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title={`欢迎加入「${snapshot.ledger.name}」`} description="你是哪一位？之后记账会默认由你付款">
+    <Sheet open={open} onClose={onClose} title={t.title(snapshot.ledger.name)} description={t.description}>
       <div className="space-y-5 pb-4">
         {members.length > 0 && (
           <div>
-            <Label>我是</Label>
+            <Label>{t.iAm}</Label>
             <div className="flex flex-wrap gap-2">
               {members.map((m) => (
                 <MemberChip key={m.id} member={m} active={false} onClick={() => pick(m.id, m.name)} />
@@ -56,23 +59,23 @@ export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => 
         )}
         {!full && (
           <form onSubmit={add}>
-            <Label>{members.length > 0 ? '不在里面？把自己加进来' : '先把自己加进来'}</Label>
+            <Label>{members.length > 0 ? t.notListed : t.addYourself}</Label>
             <div className="flex gap-2">
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 maxLength={LIMITS.memberName}
-                placeholder="你的名字"
+                placeholder={t.namePlaceholder}
                 className="field"
               />
               <Button type="submit" variant="primary" loading={adding} disabled={!name.trim()} icon={<UserPlus className="size-4" />}>
-                添加
+                {t.add}
               </Button>
             </div>
           </form>
         )}
         <Button variant="ghost" className="w-full" onClick={onClose}>
-          跳过
+          {t.skip}
         </Button>
       </div>
     </Sheet>

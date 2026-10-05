@@ -1,17 +1,19 @@
 import { z } from 'zod';
 import { LIMITS } from '../shared/limits.ts';
 import { MAX_AMOUNT } from '../shared/money.ts';
+import type { Locale } from '../shared/i18n.ts';
 import { isoDate } from '../shared/schema.ts';
 import type { BillDraft } from '../shared/types.ts';
 import { AppError } from './core/errors.ts';
 
 export const MAX_BILLS = 30;
 
-const instructions = (today: string) =>
+const instructions = (today: string, locale: Locale) =>
   [
     '你是记账助手，从用户上传的图片中提取支出记录。图片可能是购物小票、付款详情、外卖或打车订单，也可能是微信、支付宝等 App 的账单列表，里面有多笔交易。',
     '每笔支出输出一项：',
     '- title：这笔钱花在哪，2 到 8 个字，优先用商家简称或消费类别，如「瑞幸咖啡」「超市购物」「外卖」「打车」。',
+    ...(locale === 'en' ? ['  用户使用英文界面：title 用简短的英文，如 "Luckin Coffee" "Groceries" "Takeout" "Taxi"。'] : []),
     '- amount：这笔实际支付的金额，单位元，正数；是扣除优惠、红包后的实付数，不是原价、小计或单个商品的价格。',
     `- date：消费日期，格式 YYYY-MM-DD；图片上没有年份时按今天（${today}）推断，看不出日期时为 null。`,
     '只提取支出：收入、退款、转入不要；月度或分类的合计、统计数字不是交易，也不要。',
@@ -54,13 +56,13 @@ export interface Recognizer {
 type GeminiReply = { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
 type ChatReply = { choices?: { message?: { content?: string | null } }[] };
 
-async function askGemini({ apiKey, model }: Recognizer, image: string, today: string) {
+async function askGemini({ apiKey, model }: Recognizer, image: string, today: string, locale: Locale) {
   const [, mimeType, data] = image.match(/^data:(image\/\w+);base64,(.*)$/)!;
   const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: instructions(today) }] },
+      systemInstruction: { parts: [{ text: instructions(today, locale) }] },
       contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data } }, { text: '识别这张图片里的支出' }] }],
       generationConfig: {
         responseMimeType: 'application/json',
@@ -78,14 +80,14 @@ async function askGemini({ apiKey, model }: Recognizer, image: string, today: st
     .join('');
 }
 
-async function askDeepSeek({ apiKey, model }: Recognizer, image: string, today: string) {
+async function askDeepSeek({ apiKey, model }: Recognizer, image: string, today: string, locale: Locale) {
   const res = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: `${instructions(today)}\n只输出 JSON：{"items":[{"title":"…","amount":0,"date":"YYYY-MM-DD"}]}` },
+        { role: 'system', content: `${instructions(today, locale)}\n只输出 JSON：{"items":[{"title":"…","amount":0,"date":"YYYY-MM-DD"}]}` },
         {
           role: 'user',
           content: [
@@ -113,19 +115,24 @@ function parseJson(text: string | null | undefined): unknown {
   }
 }
 
-export async function recognizeBills(recognizer: Recognizer, image: string, today: string): Promise<{ items: BillDraft[] }> {
+export async function recognizeBills(
+  recognizer: Recognizer,
+  image: string,
+  today: string,
+  locale: Locale,
+): Promise<{ items: BillDraft[] }> {
   let text: string | null | undefined;
   try {
-    text = await (recognizer.provider === 'deepseek' ? askDeepSeek : askGemini)(recognizer, image, today);
+    text = await (recognizer.provider === 'deepseek' ? askDeepSeek : askGemini)(recognizer, image, today, locale);
   } catch (err) {
     console.error('recognize failed', err);
-    throw new AppError(502, '识别服务暂时不可用，请稍后再试');
+    throw new AppError(502, 'recognizeUnavailable');
   }
 
   const parsed = reply.safeParse(parseJson(text));
   if (!parsed.success) {
     console.error('recognize unexpected output', text?.slice(0, 500));
-    throw new AppError(502, '没能识别这张图片，请换一张再试');
+    throw new AppError(502, 'recognizeFailed');
   }
 
   const items = parsed.data.items
@@ -139,6 +146,6 @@ export async function recognizeBills(recognizer: Recognizer, image: string, toda
       };
     })
     .filter((item) => item.title || item.amount);
-  if (items.length === 0) throw new AppError(422, '没有在图片里找到账单信息');
+  if (items.length === 0) throw new AppError(422, 'recognizeEmpty');
   return { items };
 }

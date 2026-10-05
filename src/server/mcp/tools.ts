@@ -3,6 +3,8 @@ import { byNewest } from '../../shared/ledger.ts';
 import { MAX_AMOUNT, type Cents } from '../../shared/money.ts';
 import { actorLabel, describeAudit } from '../../shared/audit-text.ts';
 import { parseAudit, type AuditActor } from '../../shared/audit.ts';
+import { isPlainErrorKey, translateError } from '../../shared/errors.ts';
+import { DEFAULT_LOCALE } from '../../shared/i18n.ts';
 import { randomPassphrase } from '../../shared/passphrase.ts';
 import {
   expenseInput,
@@ -26,7 +28,7 @@ import type {
   Settlement,
 } from '../../shared/types.ts';
 import { adminActions } from '../admin.ts';
-import { AppError, badRequest, forbidden, notFound } from '../core/errors.ts';
+import { AppError, notFound } from '../core/errors.ts';
 import type { LedgerService, MutationContext } from '../core/ledger.ts';
 import type { GrantRole } from '../core/registry.ts';
 import type { Remote } from '../core/remote.ts';
@@ -66,10 +68,15 @@ const memberRef = z.string().trim().min(1).max(64);
 const date = isoDate.describe('日期 YYYY-MM-DD');
 const recordId = z.string().trim().min(1).max(64);
 
+class ToolError extends Error {}
+
+const issueText = (message: string | undefined) =>
+  message === undefined ? translateError(DEFAULT_LOCALE, 'invalidParams') : isPlainErrorKey(message) ? translateError(DEFAULT_LOCALE, message) : message;
+
 // 复用网页端的 zod 校验，错误信息保持一致
 function validate<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const result = schema.safeParse(value);
-  if (!result.success) throw badRequest(result.error.issues[0]?.message ?? '参数错误');
+  if (!result.success) throw new ToolError(issueText(result.error.issues[0]?.message));
   return result.data;
 }
 
@@ -78,7 +85,7 @@ function resolveMember(members: readonly Member[], ref: string): Member {
   const found = members.find((m) => m.id === key) ?? members.find((m) => m.name.toLowerCase() === key.toLowerCase());
   if (found) return found;
   const names = members.map((m) => m.name).join('、');
-  throw badRequest(`找不到成员「${ref}」。${names ? `现有成员：${names}` : '账本还没有成员，请先用 add_member 添加'}`);
+  throw new ToolError(`找不到成员「${ref}」。${names ? `现有成员：${names}` : '账本还没有成员，请先用 add_member 添加'}`);
 }
 
 function viewer(data: LedgerData) {
@@ -210,8 +217,8 @@ const listActivity = tool({
       signed: page.publicKey !== null,
       entries: page.records.map((r) => {
         const { seq, at, actor, action } = parseAudit(r);
-        const { summary, details } = describeAudit(action);
-        return { seq, at: new Date(at).toISOString(), actor: actorLabel(actor), summary, details };
+        const { summary, details } = describeAudit(action, DEFAULT_LOCALE);
+        return { seq, at: new Date(at).toISOString(), actor: actorLabel(actor, DEFAULT_LOCALE), summary, details };
       }),
     };
   },
@@ -264,7 +271,7 @@ const updateExpense = tool({
   async run(args, ctx) {
     const data = await ctx.ledger.snapshot();
     const current = data.expenses.find((e) => e.id === args.id);
-    if (!current) throw notFound('这笔支出不存在或已被删除');
+    if (!current) throw notFound('expenseNotFound');
     const input = validate(expenseInput, {
       title: args.title ?? current.title,
       amount: args.amount === undefined ? current.amount : toCents(args.amount),
@@ -291,7 +298,7 @@ const deleteExpense = tool({
   async run(args, ctx) {
     const data = await ctx.ledger.snapshot();
     const current = data.expenses.find((e) => e.id === args.id);
-    if (!current) throw notFound('这笔支出不存在或已被删除');
+    if (!current) throw notFound('expenseNotFound');
     await ctx.ledger.deleteExpense(args.id, ctx.mutation);
     return { deleted: viewer(data).expense(current) };
   },
@@ -371,7 +378,7 @@ const deleteSettlement = tool({
   async run(args, ctx) {
     const data = await ctx.ledger.snapshot();
     const current = data.settlements.find((s) => s.id === args.id);
-    if (!current) throw notFound('这笔还款不存在或已被删除');
+    if (!current) throw notFound('settlementNotFound');
     await ctx.ledger.deleteSettlement(args.id, ctx.mutation);
     return { deleted: viewer(data).settlement(current) };
   },
@@ -425,14 +432,14 @@ async function resolveLedger(platform: Platform, ref: string | undefined): Promi
   if (found) return { id: found.id, name: found.name, emoji: found.emoji };
   const names = ledgers.map((l) => `「${l.name}」`).join('');
   const hint = names ? `现有账本：${names}` : '还没有任何账本，可以用 create_ledger 创建';
-  throw key ? notFound(`找不到账本「${ref}」。${hint}`) : badRequest(`管理员授权需要用 ledger 参数指定账本。${hint}`);
+  throw new ToolError(key ? `找不到账本「${ref}」。${hint}` : `管理员授权需要用 ledger 参数指定账本。${hint}`);
 }
 
 async function targetLedger(session: McpSession, ref: string | undefined): Promise<LedgerInfo> {
   if (session.role === 'admin') return resolveLedger(session.platform, ref);
   const bound = session.ledger!;
   if (ref !== undefined && ref !== bound.id && ref.toLowerCase() !== bound.name.toLowerCase()) {
-    throw forbidden(`当前连接只授权了账本「${bound.name}」，不能访问「${ref}」`);
+    throw new ToolError(`当前连接只授权了账本「${bound.name}」，不能访问「${ref}」`);
   }
   return bound;
 }
@@ -535,7 +542,7 @@ const deleteLedger = adminTool({
   async run(args, ctx) {
     const target = await resolveLedger(ctx.session.platform, args.ledger);
     if (args.confirm_name.trim() !== target.name) {
-      throw badRequest(`确认名称不一致：要删除的账本叫「${target.name}」。请向用户确认后，把 confirm_name 设为该名称`);
+      throw new ToolError(`确认名称不一致：要删除的账本叫「${target.name}」。请向用户确认后，把 confirm_name 设为该名称`);
     }
     return { deleted: await ctx.actions.deleteLedger(target.id) };
   },
@@ -582,7 +589,7 @@ const revokePassphrase = adminTool({
     const target = await resolveLedger(ctx.session.platform, args.ledger);
     const list = await ctx.session.platform.registry.listPassphrases(target.id);
     const found = list.find((p) => p.code.toLowerCase() === args.code.toLowerCase());
-    if (!found) throw notFound(`账本「${target.name}」没有口令「${args.code}」`);
+    if (!found) throw new ToolError(`账本「${target.name}」没有口令「${args.code}」`);
     await ctx.actions.revokePassphrase(found.id);
     return { revoked: found.code, ledger: target.name };
   },
@@ -644,7 +651,7 @@ export async function callTool(name: string, args: unknown, session: McpSession)
   const parsed = entry.input.safeParse(args ?? {});
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
-    return fail(`参数错误：${issue?.path.join('.') || '参数'} ${issue?.message ?? ''}`.trim());
+    return fail(`参数错误：${issue?.path.join('.') || '参数'} ${issue ? issueText(issue.message) : ''}`.trim());
   }
   try {
     let result: object;
@@ -662,7 +669,7 @@ export async function callTool(name: string, args: unknown, session: McpSession)
     }
     return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result };
   } catch (err) {
-    if (err instanceof AppError) return fail(err.message);
+    if (err instanceof AppError || err instanceof ToolError) return fail(err.message);
     throw err;
   }
 }

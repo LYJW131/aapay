@@ -2,6 +2,7 @@ import { X } from 'lucide-react';
 import { AnimatePresence, motion, useDragControls } from 'motion/react';
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { common } from '../i18n/common.ts';
 import { cn } from '../lib/cn.ts';
 import { useMediaQuery } from '../lib/hooks.ts';
 
@@ -103,7 +104,7 @@ export function Sheet({ open, onClose, title, description, children, className }
                 <button
                   onClick={onClose}
                   className="-mr-1.5 rounded-full p-1.5 text-zinc-400 transition hover:bg-zinc-900/5 hover:text-zinc-600 dark:hover:bg-white/8"
-                  aria-label="关闭"
+                  aria-label={common.close}
                 >
                   <X className="size-5" />
                 </button>

@@ -82,21 +82,23 @@ export interface AuditCheckpoint {
 
 export type AuditVerdict =
   | { ok: true; checkpoint: AuditCheckpoint | null; signed: boolean }
-  | { ok: false; seq: number; reason: string };
+  | { ok: false; seq: number; reason: AuditFailure };
+
+export type AuditFailure = 'key-changed' | 'seq-gap' | 'prev-mismatch' | 'hash-mismatch' | 'seq-mismatch' | 'bad-signature';
 
 export function verifyAudit(records: readonly AuditRecord[], publicKey: string | null, from: AuditCheckpoint | null): AuditVerdict {
   if (from && from.publicKey && from.publicKey !== publicKey) {
-    return { ok: false, seq: from.seq, reason: '签名公钥与上次校验时不同' };
+    return { ok: false, seq: from.seq, reason: 'key-changed' };
   }
   let seq = from?.seq ?? 0;
   let hash = from?.hash ?? AUDIT_GENESIS;
   const key = publicKey ? hexToBytes(publicKey) : null;
   for (const r of records) {
-    if (r.seq !== seq + 1) return { ok: false, seq: r.seq, reason: `序号不连续（期望 ${seq + 1}）` };
-    if (r.prev !== hash) return { ok: false, seq: r.seq, reason: '与上一条记录的哈希不衔接' };
-    if (auditHash(r.prev, r.payload) !== r.hash) return { ok: false, seq: r.seq, reason: '内容与哈希不一致' };
-    if (parseAudit(r).seq !== r.seq) return { ok: false, seq: r.seq, reason: '内容中的序号不一致' };
-    if (key && (!r.sig || !safeVerify(r.sig, r.hash, key))) return { ok: false, seq: r.seq, reason: '签名无效' };
+    if (r.seq !== seq + 1) return { ok: false, seq: r.seq, reason: 'seq-gap' };
+    if (r.prev !== hash) return { ok: false, seq: r.seq, reason: 'prev-mismatch' };
+    if (auditHash(r.prev, r.payload) !== r.hash) return { ok: false, seq: r.seq, reason: 'hash-mismatch' };
+    if (parseAudit(r).seq !== r.seq) return { ok: false, seq: r.seq, reason: 'seq-mismatch' };
+    if (key && (!r.sig || !safeVerify(r.sig, r.hash, key))) return { ok: false, seq: r.seq, reason: 'bad-signature' };
     seq = r.seq;
     hash = r.hash;
   }

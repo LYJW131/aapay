@@ -70,6 +70,11 @@ describe('API (isolated mode)', () => {
     const b = (await call('POST', '/ledger/members', { name: '小雨' })).data.event.member;
     const bad = await call('POST', '/ledger/expenses', { title: '', amount: 1, payerId: a.id, date: '2026-10-01', participantIds: [a.id] });
     expect(bad).toEqual({ status: 400, data: { error: '用途不能为空' } });
+    const english = { 'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8' };
+    const badEn = await call('POST', '/ledger/expenses', { title: '', amount: 1, payerId: a.id, date: '2026-10-01', participantIds: [a.id] }, english);
+    expect(badEn.data.error).toBe('Description is required');
+    expect((await call('POST', '/ledger/members', { name: '阿杰' }, english)).data.error).toBe('A member named “阿杰” already exists');
+    expect((await call('POST', '/ledger/members', { name: '阿杰' })).data.error).toBe('成员「阿杰」已存在');
 
     const msg = (
       await call(

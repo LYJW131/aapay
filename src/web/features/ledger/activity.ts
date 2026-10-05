@@ -1,11 +1,13 @@
-import { AUDIT_GENESIS, verifyAudit, type AuditCheckpoint, type AuditRecord } from '../../../shared/audit.ts';
+import { AUDIT_GENESIS, verifyAudit, type AuditCheckpoint, type AuditFailure, type AuditRecord } from '../../../shared/audit.ts';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { load, save } from '../../lib/storage.ts';
+
+export type ActivityFailure = AuditFailure | 'truncated' | 'unlinked';
 
 export type AuditStatus =
   | { state: 'verifying' }
   | { state: 'ok'; count: number; signed: boolean }
-  | { state: 'failed'; seq: number; reason: string }
+  | { state: 'failed'; seq: number; reason: ActivityFailure }
   | { state: 'error'; message: string };
 
 export interface ActivityState {
@@ -21,7 +23,7 @@ const PAGE = 30;
 class Broken extends Error {
   constructor(
     readonly seq: number,
-    readonly reason: string,
+    readonly reason: ActivityFailure,
   ) {
     super(reason);
   }
@@ -115,7 +117,7 @@ export class ActivityLog {
         fresh.push(...page.records);
         if (page.records.length < VERIFY_PAGE) {
           if (page.head?.seq !== checkpoint?.seq || page.head?.hash !== checkpoint?.hash) {
-            throw new Broken(checkpoint?.seq ?? 0, '服务器上的记录比上次校验时少，或已被改写');
+            throw new Broken(checkpoint?.seq ?? 0, 'truncated');
           }
           break;
         }
@@ -156,7 +158,7 @@ export class ActivityLog {
     const verdict = verifyAudit(ascending, null, { seq: oldest.seq - 1, hash: oldest.seq === 1 ? AUDIT_GENESIS : oldest.prev, publicKey: null });
     if (!verdict.ok) throw new Broken(verdict.seq, verdict.reason);
     const newest = ascending.at(-1)!;
-    if (newest.seq !== before - 1 || newest.hash !== newestHash) throw new Broken(newest.seq, '与已校验的记录对不上');
+    if (newest.seq !== before - 1 || newest.hash !== newestHash) throw new Broken(newest.seq, 'unlinked');
     return page.records;
   }
 

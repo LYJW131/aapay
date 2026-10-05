@@ -2,12 +2,14 @@ import { CalendarDays, Check, ImagePlus } from 'lucide-react';
 import { LIMITS } from '../../../shared/limits.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
+import { common } from '../../i18n/common.ts';
+import { expense as t } from '../../i18n/expense.ts';
 import { cn } from '../../lib/cn.ts';
 import { dayLabel } from '../../lib/dates.ts';
 
 function rowDate(date: string) {
   const { title, sub } = dayLabel(date);
-  return title === '今天' || title === '昨天' ? title : `${title} ${sub}`;
+  return title === common.today || title === common.yesterday ? title : `${title} ${sub}`;
 }
 
 export interface BillRow {
@@ -42,15 +44,15 @@ export function BillBatch({
         aside={
           <span className="flex gap-1">
             <Button variant="soft" size="sm" loading={scanning} icon={<ImagePlus className="size-4" />} onClick={onAddImages}>
-              {scanning ? '识别中' : '加图片'}
+              {scanning ? t.batch.scanning : t.batch.addImages}
             </Button>
             <Button variant="ghost" size="sm" onClick={onCancel}>
-              取消
+              {t.batch.cancel}
             </Button>
           </span>
         }
       >
-        识别到 {rows.length} 笔 · 已选 {checked}
+        {t.batch.summary(rows.length, checked)}
       </Label>
       <ul className="space-y-2">
         {rows.map((row) => (
@@ -59,7 +61,7 @@ export function BillBatch({
               type="button"
               role="checkbox"
               aria-checked={row.checked}
-              aria-label={`记入 ${row.title || '这笔'}`}
+              aria-label={t.batch.include(row.title)}
               onClick={() => update(row.key, { checked: !row.checked })}
               className="flex size-11 shrink-0 items-center justify-center rounded-xl"
             >
@@ -79,8 +81,8 @@ export function BillBatch({
                 value={row.title}
                 onChange={(e) => update(row.key, { title: e.target.value })}
                 maxLength={LIMITS.title}
-                placeholder="用途"
-                aria-label="用途"
+                placeholder={t.title}
+                aria-label={t.title}
                 className="-ml-1.5 w-full rounded-lg bg-transparent px-1.5 py-0.5 text-[15px] font-medium outline-none placeholder:text-zinc-400 focus:bg-white focus:ring-2 focus:ring-brand-500/50 pointer-coarse:text-base dark:focus:bg-white/8"
               />
               <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
@@ -93,12 +95,12 @@ export function BillBatch({
                     max="9999-12-31"
                     onChange={(e) => e.target.value && update(row.key, { date: e.target.value })}
                     onClick={(e) => e.currentTarget.showPicker?.()}
-                    aria-label="日期"
+                    aria-label={t.date}
                     className="absolute inset-0 cursor-pointer text-base opacity-0"
                   />
                 </label>
                 {row.duplicate && (
-                  <span className="rounded-full bg-amber-500/12 px-2 py-0.5 text-xs whitespace-nowrap text-amber-700 dark:text-amber-300">可能已记过</span>
+                  <span className="rounded-full bg-amber-500/12 px-2 py-0.5 text-xs whitespace-nowrap text-amber-700 dark:text-amber-300">{t.batch.duplicate}</span>
                 )}
               </div>
             </div>
@@ -114,7 +116,7 @@ export function BillBatch({
                 onChange={(e) => update(row.key, { amount: e.target.value })}
                 inputMode="decimal"
                 placeholder="0.00"
-                aria-label="金额"
+                aria-label={t.amount}
                 className="tabular min-w-0 flex-1 bg-transparent text-right text-[15px] font-semibold outline-none placeholder:text-zinc-400 pointer-coarse:text-base"
               />
             </label>
