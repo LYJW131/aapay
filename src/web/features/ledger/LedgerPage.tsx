@@ -163,7 +163,7 @@ export function LedgerPage({
         )}
         <aside className="space-y-4">
           {desktop && (
-            <Card title="记一笔" icon={<Plus />}>
+            <Card id="compose" title="记一笔" icon={<Plus />}>
               <ExpenseForm />
             </Card>
           )}

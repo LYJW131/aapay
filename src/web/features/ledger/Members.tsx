@@ -35,37 +35,39 @@ export function MembersCard() {
   }
 
   return (
-    <Card title="成员" icon={<Users />} action={<span className="tabular text-xs text-zinc-400">{snapshot.members.length} 人</span>}>
-      <AutoHeight className="-mx-1 px-1">
-        {snapshot.members.length > 0 && (
-          <div className="-mx-1 mb-4 flex flex-wrap gap-1">
-            {snapshot.members.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setEditing(m)}
-                className="group flex w-[60px] flex-col items-center gap-1 rounded-2xl py-1.5 transition hover:bg-zinc-900/4 dark:hover:bg-white/5"
-                title={`编辑 ${m.name}`}
-              >
-                <Avatar member={m} className="transition group-active:scale-90" />
-                <span className="w-full truncate px-0.5 text-center text-xs text-zinc-600 dark:text-zinc-300">{m.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </AutoHeight>
-      <form onSubmit={add} className="flex gap-2">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          maxLength={LIMITS.memberName}
-          placeholder={snapshot.members.length ? '添加新成员' : '先添加一起记账的人'}
-          className="field"
-          aria-label="新成员名字"
-        />
-        <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={adding} aria-label="添加成员" icon={<Plus className="size-5" />} />
-      </form>
+    <>
+      <Card id="members" defaultCollapsed title="成员" icon={<Users />} action={<span className="tabular text-xs text-zinc-400">{snapshot.members.length} 人</span>}>
+        <AutoHeight className="-mx-1 px-1">
+          {snapshot.members.length > 0 && (
+            <div className="-mx-1 mb-4 flex flex-wrap gap-1">
+              {snapshot.members.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setEditing(m)}
+                  className="group flex w-[60px] flex-col items-center gap-1 rounded-2xl py-1.5 transition hover:bg-zinc-900/4 dark:hover:bg-white/5"
+                  title={`编辑 ${m.name}`}
+                >
+                  <Avatar member={m} className="transition group-active:scale-90" />
+                  <span className="w-full truncate px-0.5 text-center text-xs text-zinc-600 dark:text-zinc-300">{m.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </AutoHeight>
+        <form onSubmit={add} className="flex gap-2">
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            maxLength={LIMITS.memberName}
+            placeholder={snapshot.members.length ? '添加新成员' : '先添加一起记账的人'}
+            className="field"
+            aria-label="新成员名字"
+          />
+          <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={adding} aria-label="添加成员" icon={<Plus className="size-5" />} />
+        </form>
+      </Card>
       <MemberSheet member={editing} onClose={() => setEditing(null)} />
-    </Card>
+    </>
   );
 }
 

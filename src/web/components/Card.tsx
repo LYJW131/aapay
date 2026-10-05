@@ -1,31 +1,54 @@
+import { ChevronDown } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
+import { usePersistentState } from '../lib/hooks.ts';
 
 export function Card({
+  id,
   title,
   icon,
   action,
   children,
   className,
+  defaultCollapsed = false,
 }: {
-  title?: ReactNode;
+  id: string;
+  title: ReactNode;
   icon?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
+  defaultCollapsed?: boolean;
 }) {
+  const [collapsed, setCollapsed] = usePersistentState(`aapay:card:${id}:collapsed`, defaultCollapsed);
   return (
     <section className={cn('card animate-fade-in p-5', className)}>
-      {(title || action) && (
-        <header className="mb-4 flex min-h-8 items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-[15px] font-semibold tracking-tight">
-            {icon && <span className="text-brand-500 dark:text-brand-300 [&>svg]:size-[18px]">{icon}</span>}
-            {title}
-          </h2>
-          {action}
-        </header>
-      )}
-      {children}
+      <header
+        className="flex min-h-8 cursor-pointer items-center justify-between gap-3 select-none"
+        onClick={() => setCollapsed(!collapsed)}
+      >
+        <h2 className="flex min-w-0 items-center gap-2 text-[15px] font-semibold tracking-tight">
+          {icon && <span className="text-brand-500 dark:text-brand-300 [&>svg]:size-[18px]">{icon}</span>}
+          {title}
+          <motion.span animate={{ rotate: collapsed ? -90 : 0 }} transition={{ duration: 0.2 }} className="text-zinc-400">
+            <ChevronDown className="size-4" />
+          </motion.span>
+        </h2>
+        {action && <div onClick={(e) => e.stopPropagation()}>{action}</div>}
+      </header>
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <motion.div
+            initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
+            animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
+            exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
+            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <div className="pt-4">{children}</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </section>
   );
 }

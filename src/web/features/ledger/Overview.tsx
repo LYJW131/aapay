@@ -92,7 +92,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
   }, [expenses, resolved.from, resolved.to, memberId]);
 
   return (
-    <Card title="账本概览" icon={<ChartColumnBig />}>
+    <Card id="overview" title="账本概览" icon={<ChartColumnBig />}>
       <div ref={rangeBar} className="relative">
         <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
           {RANGE_OPTIONS.map((o) => (
