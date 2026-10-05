@@ -7,6 +7,7 @@ import { keyFingerprint, parseAudit, type AuditActor, type AuditRecord } from '.
 import { Button } from '../../components/Button.tsx';
 import { Empty } from '../../components/Card.tsx';
 import { Reveal } from '../../components/Collapse.tsx';
+import { Hint } from '../../components/Hint.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { formatDateTime, relativeTime } from '../../lib/dates.ts';
 import { useDelayed } from '../../lib/hooks.ts';
@@ -74,7 +75,7 @@ function VerifyStatus({ status, onRetry }: { status: AuditStatus; onRetry: () =>
         <div className="min-w-0 flex-1">
           <p className="font-medium">{failed ? `第 ${status.seq} 条记录校验失败` : '动态加载失败'}</p>
           <p className="mt-0.5 text-rose-600/80 dark:text-rose-300/80">
-            {failed ? `${status.reason}。记录可能被篡改，请联系管理员。` : status.message}
+            {failed ? `${status.reason}，可能被篡改` : status.message}
           </p>
         </div>
         {!failed && (
@@ -94,13 +95,12 @@ function VerifyStatus({ status, onRetry }: { status: AuditStatus; onRetry: () =>
         <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-zinc-400">{spinning && <Spinner className="size-3.5" />}</span>
       )}
       <div className="min-w-0">
-        <p className={cn('font-medium', ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500')}>
-          {ok ? `已校验${status.publicKey ? ' · 签名有效' : ''} · 共 ${status.count} 条` : '正在校验…'}
-        </p>
-        <p className="mt-0.5 text-zinc-500 dark:text-zinc-400">
-          {ok && !status.publicKey
-            ? '每条动态都串成哈希链，你的浏览器会逐条核对，任何删改都会被发现。服务器未配置签名密钥，记录没有签名。'
-            : '每条动态都由服务器签名并串成哈希链，你的浏览器会逐条核对，任何删改都会被发现。'}
+        <p className={cn('flex items-center gap-1.5 font-medium', ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500')}>
+          {ok ? `已校验${status.publicKey ? ' · 签名有效' : ' · 未签名'} · 共 ${status.count} 条` : '正在校验…'}
+          <Hint>
+            动态串成哈希链，浏览器逐条核对，任何删改都会被发现。
+            {ok && !status.publicKey ? '服务器未配置签名密钥，记录没有签名。' : '每条记录还带有服务器签名。'}
+          </Hint>
         </p>
         {ok && status.publicKey && <KeyFingerprint publicKey={status.publicKey} />}
       </div>
@@ -121,7 +121,7 @@ function KeyFingerprint({ publicKey }: { publicKey: string }) {
     <button
       onClick={copy}
       title={`复制完整公钥 ${publicKey}`}
-      className="mt-1.5 inline-flex items-center gap-1.5 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+      className="mt-1 inline-flex items-center gap-1.5 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
     >
       公钥指纹 <span className="font-mono">{keyFingerprint(publicKey)}</span>
       <Copy className="size-3.5" />

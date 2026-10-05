@@ -2,6 +2,7 @@ import { ExternalLink, Info, RefreshCw, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '../../components/Button.tsx';
 import { Card } from '../../components/Card.tsx';
+import { Hint } from '../../components/Hint.tsx';
 import { formatDateTime } from '../../lib/dates.ts';
 import { clearAll } from '../../lib/storage.ts';
 import { BUILD, REPO_URL, useDeployedUpdate } from '../../lib/version.ts';
@@ -101,8 +102,9 @@ function ClearLocalData() {
 
   return (
     <div className="mt-2 flex items-center gap-3 border-t border-zinc-900/5 pt-3 dark:border-white/5">
-      <p className="min-w-0 flex-1 text-[13px] text-zinc-500 dark:text-zinc-400">
-        {armed ? '面板状态、筛选、默认付款人和动态校验记录都会清空，不会退出登录' : '清除这台设备上保存的偏好与校验记录'}
+      <p className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] text-zinc-500 dark:text-zinc-400">
+        {armed ? '再点一次确认' : '本机保存的偏好'}
+        <Hint>面板展开状态、筛选、默认付款人、分摊人和动态校验记录都会清空，不会退出登录。</Hint>
       </p>
       <Button size="sm" variant="danger" icon={<Trash2 className="size-3.5" />} onClick={clear}>
         {armed ? '确认清除' : '清除本地数据'}

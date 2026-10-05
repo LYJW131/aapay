@@ -209,7 +209,7 @@ function Ledgers({
       const ledger = await call(api.admin.ledgers.$post({ json: { name: name.trim() } }));
       setName('');
       onChanged();
-      toast.success(`已创建「${ledger.name}」，接下来为它生成一个分享口令吧`);
+      toast.success(`已创建「${ledger.name}」`);
       await enter(ledger.id);
     } catch (err) {
       toast.error(errorMessage(err));
@@ -407,7 +407,7 @@ function DeleteLedger({ ledger, onClose, onDeleted }: { ledger: LedgerOverview |
     <Sheet open={!!ledger} onClose={onClose} title={`删除「${ledger?.name ?? ''}」？`}>
       <div className="space-y-4 pb-1">
         <p className="text-sm text-zinc-500 dark:text-zinc-400">
-          账本内的所有成员、支出和还款记录都会被永久删除，所有口令与 AI 连接立即失效，在线成员会被移出。此操作不可恢复。
+          成员、账目、口令和 AI 连接将一并删除，无法恢复。
         </p>
         <div className="flex gap-2">
           <Button className="flex-1" onClick={onClose}>
@@ -439,7 +439,7 @@ function Passphrases({
     setBusy(p.id);
     try {
       await call(api.admin.passphrases[':id'].$delete({ param: { id: p.id } }));
-      toast.success(`已撤销口令 ${p.code}，使用它加入的成员已被移出`);
+      toast.success(`已撤销口令 ${p.code}`);
       onChanged();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -465,7 +465,7 @@ function Passphrases({
         </Collapse>
         <Collapse open={passphrases?.length === 0}>
           <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500 dark:bg-white/3">
-            还没有口令，生成后把它或邀请链接发给大家即可加入
+            还没有口令
           </p>
         </Collapse>
         <ul>

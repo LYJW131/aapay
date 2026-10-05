@@ -42,7 +42,7 @@ export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => 
   }
 
   return (
-    <Sheet open={open} onClose={onClose} title={`欢迎加入「${snapshot.ledger.name}」`} description="你是哪一位？之后记账会默认由你付款">
+    <Sheet open={open} onClose={onClose} title={`欢迎加入「${snapshot.ledger.name}」`} description="你是哪一位？记账时默认由你付款">
       <div className="space-y-5 pb-4">
         {members.length > 0 && (
           <div>

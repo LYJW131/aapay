@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { LIMITS } from '../../../shared/limits.ts';
 import type { AdminIdentity, AuthorizeInfo, PublicConfig } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
+import { Hint } from '../../components/Hint.tsx';
 import { AppIcon } from '../../components/Logo.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { Switch } from '../../components/Switch.tsx';
@@ -293,10 +294,12 @@ function Consent({
         </button>
       )}
 
-      <p className="mt-5 px-2 text-center text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
-        {target === 'admin'
-          ? '应用名称由对方自行声明，请确认跳转地址是你信任的应用。管理员授权 30 天内有效，可随时在账本页的「连接 AI」中断开；关闭管理后台或移出管理员名单后立即失效。'
-          : '应用名称由对方自行声明，请确认跳转地址是你信任的应用。授权只对这一个账本有效，可随时在账本的「连接 AI」中断开；口令被撤销时也会自动失效。'}
+      <p className="mt-5 flex items-center justify-center gap-1.5 px-2 text-xs text-zinc-400 dark:text-zinc-500">
+        {target === 'admin' ? '管理员授权 30 天内有效，可随时断开' : '只对这个账本有效，可随时断开'}
+        <Hint>
+          应用名称由对方自行声明，请确认跳转地址是你信任的应用。可在账本页的「连接 AI」中断开；
+          {target === 'admin' ? '关闭管理后台或移出管理员名单后立即失效。' : '口令被撤销时也会自动失效。'}
+        </Hint>
       </p>
     </Shell>
   );

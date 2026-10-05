@@ -28,7 +28,7 @@ const LazyAdminCard = lazy(() => import('../admin/AdminCard.tsx').then((m) => ({
 
 const CLOSE_MESSAGES: Record<CloseReason, string> = {
   deleted: '这个账本已被管理员删除',
-  revoked: '分享口令已被撤销，请向管理员索取新口令',
+  revoked: '口令已被撤销，请向管理员索取新口令',
   unauthorized: '登录已过期，请重新输入口令',
 };
 

@@ -145,7 +145,7 @@ function ShareContent({
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast.error('复制失败，请长按链接手动复制');
+      toast.error('复制失败，请长按链接复制');
     }
   }
 
@@ -198,7 +198,7 @@ function ShareContent({
         </div>
       ) : (
         <p className="rounded-2xl bg-zinc-50 px-4 py-3 text-sm text-zinc-500 dark:bg-white/4">
-          你以管理员身份进入此账本，在页面顶部的「管理员」卡片里生成分享口令即可邀请成员。
+          在顶部「管理员」卡片生成口令来邀请成员
         </p>
       )}
 

@@ -78,7 +78,7 @@ export function SettlementCard() {
         }
       >
         <Collapse open={!hasActivity}>
-          <Empty icon={<HandCoins />} title="还没有需要结算的账目" hint="记账后，这里会自动算出谁该给谁多少钱" />
+          <Empty icon={<HandCoins />} title="还没有需要结算的账目" hint="记账后自动算出谁该给谁多少" />
         </Collapse>
         <Collapse open={hasActivity}>
           <p className="mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
@@ -176,7 +176,7 @@ export function SettlementCard() {
         </Collapse>
       </Card>
 
-      <Sheet open={!!draft} onClose={() => setDraft(null)} title="记录还款" description="记下谁向谁支付了多少，结算会自动更新">
+      <Sheet open={!!draft} onClose={() => setDraft(null)} title="记录还款" description="记下谁转给了谁多少钱">
         {draft && <SettlementForm draft={draft} onDone={() => setDraft(null)} />}
       </Sheet>
     </>

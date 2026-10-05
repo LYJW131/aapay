@@ -93,9 +93,9 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
         <div className="-mb-5">
           <Collapse open={days.length === 0} className="pb-5">
             {needle ? (
-              <Empty icon={<Search />} title={`没有找到与「${query.trim()}」相关的账目`} hint="换个关键词，或调整上方的时间范围与成员筛选" />
+              <Empty icon={<Search />} title={`没有找到与「${query.trim()}」相关的账目`} hint="换个关键词或筛选条件" />
             ) : (
-              <Empty icon={<ReceiptText />} title="这段时间还没有账目" hint="换个时间范围看看，或者记一笔吧" />
+              <Empty icon={<ReceiptText />} title="这段时间还没有账目" hint="换个时间范围，或者记一笔" />
             )}
           </Collapse>
           <AnimatePresence initial={false}>

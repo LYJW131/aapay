@@ -5,15 +5,16 @@ import type { Connection } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { ConnectionList } from '../../components/ConnectionList.tsx';
+import { Hint } from '../../components/Hint.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { useLedger } from './context.tsx';
 
 export const mcpUrl = () => `${window.location.origin}/mcp`;
 
 const STEPS = [
-  { app: 'Claude', how: '设置 → 连接器 → 添加自定义连接器，粘贴上面的地址' },
-  { app: 'ChatGPT', how: '设置 → 应用与连接器 → 高级设置中打开开发者模式，再创建连接器并粘贴地址' },
-  { app: '其他应用', how: 'Cursor、VS Code 等支持远程 MCP（OAuth）的客户端同样可用' },
+  { app: 'Claude', how: '设置 → 连接器 → 添加自定义连接器' },
+  { app: 'ChatGPT', how: '设置 → 应用与连接器 → 开发者模式 → 创建' },
+  { app: '其他', how: 'Cursor、VS Code 等远程 MCP 客户端' },
 ];
 
 // 授权通常在另一个标签页完成，回到这里时刷新
@@ -76,7 +77,7 @@ export function ConnectAI({ admin }: { admin: boolean }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast.error('复制失败，请手动选择地址复制');
+      toast.error('复制失败，请手动复制');
     }
   }
 
@@ -105,10 +106,13 @@ export function ConnectAI({ admin }: { admin: boolean }) {
             </li>
           ))}
         </ol>
-        <p className="mt-3 rounded-2xl bg-brand-500/8 px-4 py-3 text-[13px] leading-relaxed text-brand-700 dark:text-brand-200">
-          {admin
-            ? '连接时会打开授权页：选「全部账本」，AI 就能以管理员身份管理所有账本（建账本、生成口令、记账查账）；也可以只授权当前账本。'
-            : '连接时会打开授权页：在已打开本账本的浏览器里可一键授权，否则输入本账本的分享口令即可。之后就能直接让 AI 记账、查账和算结算了。'}
+        <p className="mt-3 flex items-center gap-1.5 rounded-2xl bg-brand-500/8 px-4 py-3 text-[13px] text-brand-700 dark:text-brand-200">
+          {admin ? '授权时选「全部账本」即可管理所有账本' : '连接时在授权页确认即可'}
+          <Hint>
+            {admin
+              ? 'AI 能以管理员身份建账本、生成口令、记账查账；也可以只授权当前账本。'
+              : '在已打开本账本的浏览器里可一键授权，否则输入分享口令。之后就能让 AI 记账、查账、算结算。'}
+          </Hint>
         </p>
       </div>
 
