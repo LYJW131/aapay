@@ -122,9 +122,9 @@ const ledgerRoutes = new Hono<AppEnv>()
   )
   .post('/recognize', body(recognizeInput), async (c) => {
     const { platform, config, session } = c.var;
-    if (!config.gemini) throw notFound('未启用账单识别');
+    if (!config.recognizer) throw notFound('未启用账单识别');
     if (!(await platform.rateLimit('recognize', session.ledger.id))) throw new AppError(429, '识别太频繁了，请稍后再试');
-    return c.json(await recognizeBills(config.gemini, c.req.valid('json').image, todayIn(config.timezone)));
+    return c.json(await recognizeBills(config.recognizer, c.req.valid('json').image, todayIn(config.timezone)));
   })
   .get('/audit', query(auditQuery), async (c) =>
     c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.auditLog(c.req.valid('query'))),
@@ -203,7 +203,7 @@ function buildApi() {
         mode: c.var.config.mode,
         adminAuth: c.var.config.adminAuth,
         mcp: c.var.config.mcp,
-        recognize: c.var.config.gemini !== null,
+        recognize: c.var.config.recognizer !== null,
       } satisfies PublicConfig),
     )
     .get('/session', async (c) => c.json(await findSession(c)))

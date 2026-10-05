@@ -45,52 +45,86 @@ const replySchema = {
   required: ['items'],
 };
 
-type Reply = { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
+export interface Recognizer {
+  provider: 'deepseek' | 'gemini';
+  apiKey: string;
+  model: string;
+}
 
-function contentOf(output: Reply): unknown {
-  const text = output.candidates?.[0]?.content?.parts
+type GeminiReply = { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
+type ChatReply = { choices?: { message?: { content?: string | null } }[] };
+
+async function askGemini({ apiKey, model }: Recognizer, image: string, today: string) {
+  const [, mimeType, data] = image.match(/^data:(image\/\w+);base64,(.*)$/)!;
+  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: instructions(today) }] },
+      contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data } }, { text: '识别这张图片里的支出' }] }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: replySchema,
+        temperature: 0,
+        maxOutputTokens: 2000,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const output = (await res.json()) as GeminiReply;
+  return output.candidates?.[0]?.content?.parts
     ?.filter((part) => !part.thought)
     .map((part) => part.text ?? '')
     .join('');
+}
+
+async function askDeepSeek({ apiKey, model }: Recognizer, image: string, today: string) {
+  const res = await fetch('https://api.deepseek.com/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: `${instructions(today)}\n只输出 JSON：{"items":[{"title":"…","amount":0,"date":"YYYY-MM-DD"}]}` },
+        {
+          role: 'user',
+          content: [
+            { type: 'image_url', image_url: { url: image } },
+            { type: 'text', text: '识别这张图片里的支出' },
+          ],
+        },
+      ],
+      response_format: { type: 'json_object' },
+      thinking: { type: 'disabled' },
+      temperature: 0,
+      max_tokens: 2000,
+    }),
+  });
+  if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const output = (await res.json()) as ChatReply;
+  return output.choices?.[0]?.message?.content;
+}
+
+function parseJson(text: string | null | undefined): unknown {
   try {
-    return JSON.parse(text ?? '');
+    return JSON.parse(text?.match(/\{[\s\S]*\}/)?.[0] ?? '');
   } catch {
     return null;
   }
 }
 
-export async function recognizeBills(
-  gemini: { apiKey: string; model: string },
-  image: string,
-  today: string,
-): Promise<{ items: BillDraft[] }> {
-  const [, mimeType, data] = image.match(/^data:(image\/\w+);base64,(.*)$/)!;
-  let output: Reply;
+export async function recognizeBills(recognizer: Recognizer, image: string, today: string): Promise<{ items: BillDraft[] }> {
+  let text: string | null | undefined;
   try {
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gemini.model}:generateContent`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': gemini.apiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: instructions(today) }] },
-        contents: [{ role: 'user', parts: [{ inlineData: { mimeType, data } }, { text: '识别这张图片里的支出' }] }],
-        generationConfig: {
-          responseMimeType: 'application/json',
-          responseSchema: replySchema,
-          temperature: 0,
-          maxOutputTokens: 2000,
-        },
-      }),
-    });
-    if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    output = (await res.json()) as Reply;
+    text = await (recognizer.provider === 'deepseek' ? askDeepSeek : askGemini)(recognizer, image, today);
   } catch (err) {
     console.error('recognize failed', err);
     throw new AppError(502, '识别服务暂时不可用，请稍后再试');
   }
 
-  const parsed = reply.safeParse(contentOf(output));
+  const parsed = reply.safeParse(parseJson(text));
   if (!parsed.success) {
-    console.error('recognize unexpected output', JSON.stringify(output).slice(0, 500));
+    console.error('recognize unexpected output', text?.slice(0, 500));
     throw new AppError(502, '没能识别这张图片，请换一张再试');
   }
 

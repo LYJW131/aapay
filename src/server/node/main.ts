@@ -48,7 +48,7 @@ if (existsSync(clientDir)) {
 const server = serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, (info) => {
   console.log(`AAPay 已启动 → http://localhost:${info.port}`);
   console.log(`  模式 ${config.mode} · 管理员认证 ${config.adminAuth} · 数据目录 ${dataDir}`);
-  console.log(`  账单识别 ${config.gemini ? `已启用（${config.gemini.model}）` : '未启用'}`);
+  console.log(`  账单识别 ${config.recognizer ? `已启用（${config.recognizer.model}）` : '未启用'}`);
 });
 injectWebSocket(server);
 

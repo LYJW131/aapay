@@ -185,6 +185,31 @@ describe('API (bill recognition)', () => {
     expect(seen[0]!.body.contents[0].parts[0].inlineData).toEqual({ mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' });
   });
 
+  it('uses DeepSeek when DEEPSEEK_API_KEY is set', async () => {
+    const seen: { url: string; body: any; auth: string }[] = [];
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+      seen.push({ url, body: JSON.parse(init.body as string), auth: (init.headers as Record<string, string>).authorization! });
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify({ items: [{ title: '瑞幸咖啡', amount: 16.9, date: '2026-10-04' }] }) } }],
+      });
+    });
+    const { call } = await joined({ DEEPSEEK_API_KEY: 'ds-key', GEMINI_API_KEY: 'test-key' });
+    expect((await call('GET', '/config')).data.recognize).toBe(true);
+    expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
+      items: [{ title: '瑞幸咖啡', amount: 1690, date: '2026-10-04' }],
+    });
+    expect(seen[0]).toMatchObject({
+      url: 'https://api.deepseek.com/chat/completions',
+      auth: 'Bearer ds-key',
+      body: { model: 'deepseek-flash', thinking: { type: 'disabled' }, response_format: { type: 'json_object' } },
+    });
+    expect(seen[0]!.body.messages[1].content[0].image_url.url).toBe(image);
+
+    const other = await joined({ DEEPSEEK_API_KEY: 'ds-key', DEEPSEEK_MODEL: 'deepseek-v4-pro' });
+    await other.call('POST', '/ledger/recognize', { image });
+    expect(seen[1]!.body.model).toBe('deepseek-v4-pro');
+  });
+
   it('drops fields the model got wrong and rejects non-bills', async () => {
     let reply: unknown = completion({
       items: [

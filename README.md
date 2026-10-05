@@ -91,7 +91,7 @@ node scripts/seed.mjs            # 可选：生成演示账本（口令 demo2026
 
 也可以用 **Workers Builds** 自动部署：在 Worker 的 Settings → Builds 关联 GitHub 仓库，构建命令 `npm run typecheck && npm test && npm run build`，部署命令 `npx wrangler deploy`，环境变量 `NODE_VERSION=24`。之后推送到监听的分支就会自动测试并上线（本项目监听 `v2`，只改 `*.md` / `docs/` 不触发）。
 
-Durable Objects 与限流由 `wrangler.jsonc` 自动创建，无需手动建数据库。「识别账单」调用 Gemini API（默认模型 `gemini-flash-lite-latest`，可用 `GEMINI_MODEL` 更换），需用 `npx wrangler secret put GEMINI_API_KEY` 配置密钥，每个账本每分钟最多 10 次。Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），即使绕过 Access 直连 Worker 也无法访问管理接口。
+Durable Objects 与限流由 `wrangler.jsonc` 自动创建，无需手动建数据库。「识别账单」调用 DeepSeek 或 Gemini 的视觉模型，用 `npx wrangler secret put DEEPSEEK_API_KEY`（或 `GEMINI_API_KEY`）配置密钥，每个账本每分钟最多 10 次。Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），即使绕过 Access 直连 Worker 也无法访问管理接口。
 
 ## 部署到 Docker
 
@@ -125,7 +125,9 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 | `PUBLIC_URL` | 可选，对外访问地址（如 `https://aapay.example.com`），作为 OAuth issuer 与 MCP 资源标识；不填则按请求推断（信任 `X-Forwarded-Proto/Host`），反向代理后建议填写 | — |
 | `TIMEZONE` | 可选，AI 记账未指定日期时按此时区取「今天」 | `Asia/Shanghai` |
 | `AUDIT_SIGNING_KEY` | 可选，操作动态的 Ed25519 签名私钥（32 字节随机数的 base64url，可用 `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"` 生成；Cloudflare 上请用 secret）。不填则只有哈希链没有签名；设置后不要更换，否则成员的浏览器会提示签名公钥变化 | — |
-| `GEMINI_API_KEY` | 可选，Gemini API 密钥（Cloudflare 上用 secret 配置），填写后开启「识别账单」 | — |
+| `DEEPSEEK_API_KEY` | 可选，DeepSeek API 密钥（Cloudflare 上用 secret 配置），填写后「识别账单」使用 DeepSeek | — |
+| `DEEPSEEK_MODEL` | 可选，识别账单使用的 DeepSeek 模型 | `deepseek-flash` |
+| `GEMINI_API_KEY` | 可选，Gemini API 密钥（Cloudflare 上用 secret 配置），未配置 `DEEPSEEK_API_KEY` 时「识别账单」使用 Gemini | — |
 | `GEMINI_MODEL` | 可选，识别账单使用的 Gemini 模型 | `gemini-flash-lite-latest` |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
 
