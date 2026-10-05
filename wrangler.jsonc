@@ -35,5 +35,28 @@
 
   "routes": [{ "pattern": "aapay.lyjw.dev", "custom_domain": true }],
   "workers_dev": false,
-  "preview_urls": false
+  "preview_urls": true,
+
+  // 非 v2 分支由 Workers Builds 跑 wrangler preview：每个 Preview 的 DO 存储独立，与生产数据隔离。
+  // *-aapay.lyjw.workers.dev 整个域名在 Access 应用「AAPay Previews」后面，ACCESS_AUD 用的是那个应用的
+  "previews": {
+    "durable_objects": {
+      "bindings": [
+        { "name": "LEDGER", "class_name": "LedgerRoom" },
+        { "name": "REGISTRY", "class_name": "RegistryRoom" }
+      ]
+    },
+    "ratelimits": [
+      { "name": "JOIN_LIMITER", "namespace_id": "5101", "simple": { "limit": 10, "period": 60 } },
+      { "name": "LOGIN_LIMITER", "namespace_id": "5102", "simple": { "limit": 5, "period": 60 } },
+      { "name": "RECOGNIZE_LIMITER", "namespace_id": "5103", "simple": { "limit": 10, "period": 60 } }
+    ],
+    "vars": {
+      "MODE": "isolated",
+      "ADMIN_AUTH": "access",
+      "ACCESS_TEAM_DOMAIN": "lyjw2007.cloudflareaccess.com",
+      "ACCESS_AUD": "76c8c6b24d58e44c36849899271c9f26fbd152ca0a651ffd4d05f57771d16377",
+      "ADMIN_EMAILS": "lyjw2007@gmail.com"
+    }
+  }
 }
