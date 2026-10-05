@@ -62,7 +62,7 @@ node scripts/seed.mjs http://127.0.0.1:5173                     # 写入演示�
 - 前端用 `hono/client` 拿到 `ApiType` 的端到端类型；新增接口时把路由链在 `buildApi()` 里，前端就能类型安全地调用。
 - 管理功能是账本页顶部的「管理员卡片」（`src/web/features/admin/AdminCard.tsx`，按需加载）；`/admin` 只是登录入口页。
 - 管理员认证：外部身份（Access JWT / 代理头 / none）只在 `GET /api/admin/login` 校验一次，password 模式用 `POST /api/admin/login`，都换成本站的 console 会话（`aapay_console`，24 小时）。其余 `/api/admin/*` 只认 console 会话并每次用 `stillAdmin` 重新确认白名单，过期返回 401；Access 应用只能保护 `/api/admin/login`，不能覆盖其他 API（Access 会把过期的 fetch 重定向成网络错误）。管理员进入账本的会话（`role: 'admin'`）绑定签发它的 console 会话，随之失效。前端从 `/api/session` 的 `admin` 字段得知管理员身份，管理接口返回 401 时由 `onAdminExpired`（`lib/api.ts`）统一清掉管理员状态。
-- 国际化（`zh-CN` / `en`）：前端文案在 `src/web/i18n/`，按功能分文件，用 `messages({ 'zh-CN': {...}, en: {...} })` 定义（en 的结构由类型约束与 zh 一致），带参数或复数的文案写成函数。语言在页面加载时确定（localStorage `aapay:locale`，否则按浏览器语言），切换语言直接刷新页面，所以模块顶层可以直接取文案。前端请求带 `Accept-Language`，服务端据此翻译错误：`AppError` 只携带 `src/shared/errors.ts` 里的错误键和参数，zod 的 message 也写错误键（`schema.ts` 的 `msg()`），在 HTTP 出口（`app.ts` 的 `onError`、`validate.ts`）按请求语言翻译。`describeAudit` / `actorLabel` 需要传语言。MCP 的工具描述、instructions 与工具错误固定中文。新增界面文案或错误时两种语言都要写。
+- 国际化（`zh-CN` / `en`）：前端文案在 `src/web/i18n/`，按功能分文件，用 `messages({ 'zh-CN': {...}, en: {...} })` 定义（en 的结构由类型约束与 zh 一致），带参数或复数的文案写成函数。语言在页面加载时确定（localStorage `aapay:locale`，否则按浏览器语言），切换语言直接刷新页面，所以模块顶层可以直接取文案。前端请求带 `Accept-Language`，服务端据此翻译错误：`AppError` 只携带 `src/shared/errors.ts` 里的错误键和参数，zod 的 message 也写错误键（`schema.ts` 的 `msg()`），在 HTTP 出口（`app.ts` 的 `onError`、`validate.ts`）按请求语言翻译。`describeAudit` / `actorLabel` 需要传语言。MCP 面向模型，工具描述、instructions、工具错误与 `list_activity` 的文本固定英文（`tools.ts` 的 `LOCALE`）。新增界面文案或错误时两种语言都要写。
 - 管理端的组合操作（重命名后通知在线成员、删除时销毁账本数据、撤销口令时断开连接）集中在 `src/server/admin.ts`，HTTP 接口与 MCP 工具共用。
 
 ## MCP 与 OAuth
