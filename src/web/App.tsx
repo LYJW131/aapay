@@ -11,6 +11,7 @@ import { usePathname } from './lib/router.ts';
 
 const AdminPage = lazy(() => import('./features/admin/AdminPage.tsx').then((m) => ({ default: m.AdminPage })));
 const AuthorizePage = lazy(() => import('./features/oauth/AuthorizePage.tsx').then((m) => ({ default: m.AuthorizePage })));
+const LazyAdminHome = lazy(() => import('./features/admin/AdminHome.tsx').then((m) => ({ default: m.AdminHome })));
 
 type Ready = {
   state: 'ready';
@@ -121,11 +122,15 @@ export function App() {
         onExit={(notice) => setApp({ ...app, session: null, snapshot: null, notice })}
       />
     );
-  } else if (app.admin) {
-    const AdminHome = adminModules()?.AdminHome;
-    page = AdminHome ? <AdminHome admin={app.admin} notice={app.notice} onEnter={open} /> : <Pending />;
-  } else {
+  } else if (pathname === '/join' || !app.admin) {
     page = <JoinPage config={app.config} notice={app.notice} onJoined={open} />;
+  } else {
+    const AdminHome = adminModules()?.AdminHome ?? LazyAdminHome;
+    page = (
+      <Suspense fallback={<Pending />}>
+        <AdminHome admin={app.admin} notice={app.notice} onEnter={open} />
+      </Suspense>
+    );
   }
 
   return (
