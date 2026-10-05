@@ -36,7 +36,7 @@ export function MembersCard() {
 
   return (
     <>
-      <Card id="members" defaultCollapsed title="成员" icon={<Users />} action={<span className="tabular text-xs text-zinc-400">{snapshot.members.length} 人</span>}>
+      <Card id="member-list" title="成员" icon={<Users />} action={<span className="tabular text-xs text-zinc-400">{snapshot.members.length} 人</span>}>
         <AutoHeight className="-mx-1 px-1">
           {snapshot.members.length > 0 && (
             <div className="-mx-1 mb-4 flex flex-wrap gap-1">

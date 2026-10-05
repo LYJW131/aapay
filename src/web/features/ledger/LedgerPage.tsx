@@ -11,6 +11,7 @@ import { Spinner } from '../../components/Spinner.tsx';
 import { useMediaQuery, useMinuteTick, usePersistentState } from '../../lib/hooks.ts';
 import { load } from '../../lib/storage.ts';
 import { adminModules } from '../admin/preload.ts';
+import { AboutCard } from './About.tsx';
 import { ActivityLog } from './activity.ts';
 import { LedgerContext, type LedgerContextValue } from './context.tsx';
 import { ExpenseForm } from './ExpenseForm.tsx';
@@ -181,6 +182,7 @@ export function LedgerPage({
             </Card>
           )}
           <MembersCard />
+          {desktop && <AboutCard />}
         </aside>
         <div className="mt-4 space-y-4 lg:mt-0">
           <OverviewCard
@@ -192,6 +194,7 @@ export function LedgerPage({
           />
           <SettlementCard />
           <Timeline expenses={filtered.expenses} settlements={filtered.settlements} range={range} />
+          {!desktop && <AboutCard />}
         </div>
       </main>
 

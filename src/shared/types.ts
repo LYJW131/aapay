@@ -95,6 +95,12 @@ export interface SessionInfo {
 export type Mode = 'isolated' | 'shared';
 export type AdminAuthMode = 'access' | 'password' | 'proxy' | 'none' | 'disabled';
 
+export interface BuildInfo {
+  commit: string;
+  message: string;
+  builtAt: Timestamp;
+}
+
 export interface PublicConfig {
   mode: Mode;
   adminAuth: AdminAuthMode;
