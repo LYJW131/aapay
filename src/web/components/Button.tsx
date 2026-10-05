@@ -32,20 +32,28 @@ interface Props extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 export function Button({ variant = 'secondary', size = 'md', loading = false, icon, className, children, disabled, ...rest }: Props) {
   const spinning = useDelayed(loading);
+  // 转圈叠在图标上，没有图标就盖住文字：加载前后按钮宽度和文字位置都不变
+  const spinner = spinning && <Spinner className="absolute size-4" />;
   return (
     <button
       type="button"
       {...rest}
       disabled={disabled || loading}
       className={cn(
-        'inline-flex shrink-0 select-none items-center justify-center font-medium whitespace-nowrap transition duration-150 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100',
+        'relative inline-flex shrink-0 select-none items-center justify-center font-medium whitespace-nowrap transition duration-150 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100',
         variants[variant],
         sizes[size],
         className,
       )}
     >
-      {spinning ? <Spinner className="size-4" /> : icon}
-      {children}
+      {icon && (
+        <span className="relative inline-flex items-center justify-center">
+          <span className={cn('contents', spinning && 'invisible')}>{icon}</span>
+          {spinner}
+        </span>
+      )}
+      <span className={cn('contents', spinning && !icon && 'invisible')}>{children}</span>
+      {!icon && spinner}
     </button>
   );
 }

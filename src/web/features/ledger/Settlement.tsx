@@ -6,6 +6,7 @@ import { centsToInput, formatMoney, parseAmount } from '../../../shared/money.ts
 import { LIMITS } from '../../../shared/limits.ts';
 import { computeBalances, suggestTransfers, type Transfer } from '../../../shared/settle.ts';
 import type { Settlement } from '../../../shared/types.ts';
+import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Card, Empty, Label } from '../../components/Card.tsx';
@@ -219,13 +220,15 @@ function SettlementForm({ draft, onDone }: { draft: Partial<Transfer>; onDone: (
       </div>
       <div>
         <Label>付给了谁</Label>
-        <div className="flex flex-wrap gap-2">
-          {snapshot.members
-            .filter((m) => m.id !== fromId)
-            .map((m) => (
-              <MemberChip key={m.id} member={m} active={toId === m.id} onClick={() => setToId(m.id)} />
-            ))}
-        </div>
+        <AutoHeight className="-m-1 p-1">
+          <div className="flex flex-wrap gap-2">
+            {snapshot.members
+              .filter((m) => m.id !== fromId)
+              .map((m) => (
+                <MemberChip key={m.id} member={m} active={toId === m.id} onClick={() => setToId(m.id)} />
+              ))}
+          </div>
+        </AutoHeight>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

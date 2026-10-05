@@ -1,10 +1,11 @@
 import { History, RotateCw, ShieldAlert, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence } from 'motion/react';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { actorLabel, describeAudit } from '../../../shared/audit-text.ts';
 import { parseAudit, type AuditActor, type AuditRecord } from '../../../shared/audit.ts';
 import { Button } from '../../components/Button.tsx';
 import { Empty } from '../../components/Card.tsx';
+import { Reveal } from '../../components/Collapse.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { formatDateTime, relativeTime } from '../../lib/dates.ts';
 import { useDelayed } from '../../lib/hooks.ts';
@@ -105,12 +106,7 @@ function Entry({ record }: { record: AuditRecord }) {
   const { at, actor, action } = useMemo(() => parseAudit(record), [record]);
   const { summary, details } = describeAudit(action);
   return (
-    <motion.li
-      layout="position"
-      initial={{ opacity: 0, height: 0 }}
-      animate={{ opacity: 1, height: 'auto' }}
-      transition={{ duration: 0.22 }}
-    >
+    <Reveal as="li" layout="position">
       <div className="flex gap-3 rounded-2xl px-2 py-2.5">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 dark:bg-white/6 dark:text-zinc-400 [&>svg]:size-4">
           {ACTOR_ICON[actor.kind]}
@@ -129,6 +125,6 @@ function Entry({ record }: { record: AuditRecord }) {
           </p>
         </div>
       </div>
-    </motion.li>
+    </Reveal>
   );
 }

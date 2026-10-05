@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { LIMITS } from '../../../shared/limits.ts';
 import type { PublicConfig, SessionInfo } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
+import { Collapse } from '../../components/Collapse.tsx';
 import { AppIcon } from '../../components/Logo.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { navigate } from '../../lib/router.ts';
@@ -21,7 +22,6 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
 
   async function join(value: string, fromLink = false) {
     setLoading(true);
-    setError('');
     try {
       const session = await call(api.join.$post({ json: { code: value } }));
       await onJoined(session, fromLink);
@@ -74,23 +74,27 @@ export function JoinPage({ config, notice, onJoined }: { config: PublicConfig; n
           <label htmlFor="code" className="block text-sm font-medium text-zinc-600 dark:text-zinc-300">
             输入分享口令加入账本
           </label>
-          <input
-            id="code"
-            value={code}
-            onChange={(e) => {
-              setCode(e.target.value);
-              setError('');
-            }}
-            maxLength={LIMITS.codeMax}
-            placeholder="口令"
-            autoFocus
-            autoComplete="off"
-            autoCapitalize="off"
-            autoCorrect="off"
-            spellCheck={false}
-            className="field h-13 text-center font-mono text-lg tracking-[0.25em]"
-          />
-          {error && <p className="text-center text-sm text-rose-500">{error}</p>}
+          <div>
+            <input
+              id="code"
+              value={code}
+              onChange={(e) => {
+                setCode(e.target.value);
+                setError('');
+              }}
+              maxLength={LIMITS.codeMax}
+              placeholder="口令"
+              autoFocus
+              autoComplete="off"
+              autoCapitalize="off"
+              autoCorrect="off"
+              spellCheck={false}
+              className="field h-13 text-center font-mono text-lg tracking-[0.25em]"
+            />
+            <Collapse open={!!error} className="pt-3">
+              <p className="text-center text-sm text-rose-500">{error}</p>
+            </Collapse>
+          </div>
           <Button type="submit" variant="primary" size="lg" className="w-full" loading={loading} disabled={code.trim().length < LIMITS.codeMin}>
             进入账本
             <ArrowRight className="size-4" />

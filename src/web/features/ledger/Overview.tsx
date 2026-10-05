@@ -5,6 +5,7 @@ import { formatMoney } from '../../../shared/money.ts';
 import type { Expense, IsoDate } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Card } from '../../components/Card.tsx';
+import { Collapse } from '../../components/Collapse.tsx';
 import { cn } from '../../lib/cn.ts';
 import { addDays, daysBetween, parseIsoDate, shortDate, today } from '../../lib/dates.ts';
 import { useLedger } from './context.tsx';
@@ -159,8 +160,8 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
         </AnimatePresence>
       </div>
 
-      {snapshot.members.length > 1 && (
-        <div className="mt-2 -mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
+      <Collapse open={snapshot.members.length > 1} className="pt-2">
+        <div className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]">
           <Chip active={!memberId} onClick={() => onMember(null)}>
             全部成员
           </Chip>
@@ -171,7 +172,7 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
             </Chip>
           ))}
         </div>
-      )}
+      </Collapse>
 
       <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>

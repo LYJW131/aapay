@@ -68,7 +68,8 @@ export function Header({
           </h1>
           <p className="flex items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
             <span className={cn('size-1.5 rounded-full', status.dot)} />
-            {status.label}
+            {/* 按最长的「实时同步」留宽，状态切换时后面的管理员标记不左右挪 */}
+            <span className="min-w-[4em]">{status.label}</span>
             {session.role === 'admin' && <span className="rounded bg-brand-500/12 px-1 text-brand-600 dark:text-brand-300">管理员</span>}
           </p>
         </div>

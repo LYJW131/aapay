@@ -9,6 +9,7 @@ import { randomPassphrase } from '../../../shared/passphrase.ts';
 import type { AdminIdentity, LedgerOverview, Passphrase, RegistryEvent, SessionInfo } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
+import { Collapse, Reveal } from '../../components/Collapse.tsx';
 import { QrCode } from '../../components/QrCode.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
@@ -221,24 +222,20 @@ function Ledgers({
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={LIMITS.ledgerName} placeholder="新账本名称" className="field" />
         <Button type="submit" variant="soft" size="icon" className="size-11 rounded-2xl" loading={busy === 'create'} aria-label="创建账本" icon={<Plus className="size-5" />} />
       </form>
-      {!ledgers ? (
-        <div className="flex justify-center py-6 text-zinc-400">
-          <Spinner className="size-5" />
-        </div>
-      ) : ledgers.length === 0 ? (
-        <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500 dark:bg-white/3">还没有账本，先创建一个吧</p>
-      ) : (
-        <ul className="space-y-1">
+      {/* 每块自带 pb-1 作间距（随增删动画一起伸缩），最后一块多出的 pb-1 由 -mb-1 抵掉 */}
+      <div className="-mb-1">
+        <Collapse open={!ledgers} className="pb-1">
+          <div className="flex justify-center py-6 text-zinc-400">
+            <Spinner className="size-5" />
+          </div>
+        </Collapse>
+        <Collapse open={ledgers?.length === 0} className="pb-1">
+          <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500 dark:bg-white/3">还没有账本，先创建一个吧</p>
+        </Collapse>
+        <ul>
           <AnimatePresence initial={false}>
-            {ledgers.map((l) => (
-              <motion.li
-                key={l.id}
-                layout
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.2 }}
-              >
+            {ledgers?.map((l) => (
+              <Reveal as="li" key={l.id} layout="position" className="pb-1">
                 <LedgerRow
                   ledger={l}
                   current={l.id === currentId}
@@ -247,11 +244,11 @@ function Ledgers({
                   onEdit={() => setEditing(l)}
                   onDelete={() => onDelete(l)}
                 />
-              </motion.li>
+              </Reveal>
             ))}
           </AnimatePresence>
         </ul>
-      )}
+      </div>
       <Sheet open={!!editing} onClose={() => setEditing(null)} title="编辑账本">
         {editing && <LedgerEditor key={editing.id} ledger={editing} onDone={() => (setEditing(null), onChanged())} />}
       </Sheet>
@@ -454,31 +451,25 @@ function Passphrases({
       </Label>
       <PassphraseForm ledgerId={ledgerId} onCreated={(p) => (onChanged(), onQr(p))} />
       <div className="mt-3">
-        {!passphrases ? (
+        <Collapse open={!passphrases}>
           <div className="flex justify-center py-6 text-zinc-400">
             <Spinner className="size-5" />
           </div>
-        ) : passphrases.length === 0 ? (
+        </Collapse>
+        <Collapse open={passphrases?.length === 0}>
           <p className="rounded-2xl bg-zinc-50 px-4 py-6 text-center text-sm text-zinc-500 dark:bg-white/3">
             还没有口令，生成后把它或邀请链接发给大家即可加入
           </p>
-        ) : (
-          <ul className="divide-y divide-zinc-100 dark:divide-white/5">
-            <AnimatePresence initial={false}>
-              {passphrases.map((p) => (
-                <motion.li
-                  key={p.id}
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <PassphraseRow passphrase={p} busy={busy === p.id} onQr={() => onQr(p)} onRevoke={() => revoke(p)} />
-                </motion.li>
-              ))}
-            </AnimatePresence>
-          </ul>
-        )}
+        </Collapse>
+        <ul className="divide-y divide-zinc-100 dark:divide-white/5">
+          <AnimatePresence initial={false}>
+            {passphrases?.map((p) => (
+              <Reveal as="li" key={p.id}>
+                <PassphraseRow passphrase={p} busy={busy === p.id} onQr={() => onQr(p)} onRevoke={() => revoke(p)} />
+              </Reveal>
+            ))}
+          </AnimatePresence>
+        </ul>
       </div>
     </div>
   );
@@ -526,51 +517,53 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
   }
 
   return (
-    <form onSubmit={submit} className="space-y-2.5">
-      <div className="flex gap-2">
-        <div className="relative flex-1">
-          <input
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            maxLength={LIMITS.codeMax}
-            placeholder={`口令（${LIMITS.codeMin}-${LIMITS.codeMax} 位字母或数字）`}
-            autoCapitalize="off"
-            spellCheck={false}
-            className="field pr-11 font-mono tracking-wider"
-          />
-          <button
-            type="button"
-            onClick={() => setCode(randomPassphrase())}
-            className="absolute top-1/2 right-2 -translate-y-1/2 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-900/5 hover:text-brand-600"
-            aria-label="随机生成"
-            title="随机生成"
-          >
-            <Dices className="size-4" />
-          </button>
+    <form onSubmit={submit}>
+      <div className="space-y-2.5">
+        <div className="flex gap-2">
+          <div className="relative flex-1">
+            <input
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              maxLength={LIMITS.codeMax}
+              placeholder={`口令（${LIMITS.codeMin}-${LIMITS.codeMax} 位字母或数字）`}
+              autoCapitalize="off"
+              spellCheck={false}
+              className="field pr-11 font-mono tracking-wider"
+            />
+            <button
+              type="button"
+              onClick={() => setCode(randomPassphrase())}
+              className="absolute top-1/2 right-2 -translate-y-1/2 rounded-lg p-1.5 text-zinc-400 transition hover:bg-zinc-900/5 hover:text-brand-600"
+              aria-label="随机生成"
+              title="随机生成"
+            >
+              <Dices className="size-4" />
+            </button>
+          </div>
+          <Button type="submit" variant="primary" loading={saving} icon={<Plus className="size-4" />}>
+            生成
+          </Button>
         </div>
-        <Button type="submit" variant="primary" loading={saving} icon={<Plus className="size-4" />}>
-          生成
-        </Button>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs text-zinc-500">有效期</span>
+          {VALIDITY.map((v) => (
+            <button
+              key={v.key}
+              type="button"
+              onClick={() => setValidity(v.key)}
+              className={cn(
+                'h-7 rounded-full px-3 text-xs font-medium transition',
+                validity === v.key
+                  ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                  : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-white/6 dark:text-zinc-300',
+              )}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-xs text-zinc-500">有效期</span>
-        {VALIDITY.map((v) => (
-          <button
-            key={v.key}
-            type="button"
-            onClick={() => setValidity(v.key)}
-            className={cn(
-              'h-7 rounded-full px-3 text-xs font-medium transition',
-              validity === v.key
-                ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
-                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-white/6 dark:text-zinc-300',
-            )}
-          >
-            {v.label}
-          </button>
-        ))}
-      </div>
-      {validity === 'custom' && (
+      <Collapse open={validity === 'custom'} className="pt-2.5">
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label>
             <Label>开始</Label>
@@ -581,7 +574,7 @@ function PassphraseForm({ ledgerId, onCreated }: { ledgerId: string; onCreated: 
             <input type="datetime-local" value={until} onChange={(e) => setUntil(e.target.value)} className="field tabular px-3" />
           </label>
         </div>
-      )}
+      </Collapse>
     </form>
   );
 }

@@ -8,6 +8,7 @@ import type { BillDraft, Expense } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
 import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Button } from '../../components/Button.tsx';
+import { Collapse } from '../../components/Collapse.tsx';
 import { Label } from '../../components/Card.tsx';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
@@ -112,8 +113,11 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         await store.mutate(api.ledger.expenses.$post({ json: input }));
         save(key('expense-defaults'), { participantIds, at: Date.now() } satisfies Remembered);
         toast.success(`已记录 ${input.title} ${formatMoney(cents)}`);
-        setAmount('');
-        setTitle('');
+        // 在弹窗里时表单随弹窗关掉，这时清空会让退场动画里的内容先变一下
+        if (!onDone) {
+          setAmount('');
+          setTitle('');
+        }
       }
       onDone?.();
     } catch (err) {
@@ -219,10 +223,6 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     }
   }
 
-  if (members.length === 0) {
-    return <p className="py-6 text-center text-sm text-zinc-500">先添加成员，才能开始记账 👇</p>;
-  }
-
   const yesterday = addDays(today(), -1);
   const batch = drafts
     ? drafts.reduce(
@@ -232,169 +232,182 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     : { count: 0, total: 0 };
 
   return (
-    <form onSubmit={submit} className="space-y-5 pb-1">
-      {recognize && !expense && <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={scan} />}
-      {drafts ? (
-        <BillBatch rows={drafts} onChange={setDrafts} onAddImages={pickImages} onCancel={() => setDrafts(null)} scanning={scanning} />
-      ) : (
-        <>
-          <div className="flex items-baseline gap-2 rounded-2xl bg-zinc-100/80 px-4 py-3 ring-brand-500/60 transition focus-within:bg-white focus-within:ring-2 dark:bg-white/6 dark:focus-within:bg-white/8">
-            <span className="text-2xl font-semibold text-zinc-400">¥</span>
-            <input
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              inputMode="decimal"
-              placeholder="0.00"
-              aria-label="金额"
-              autoFocus={!expense && window.matchMedia('(min-width: 1024px)').matches}
-              className="tabular min-w-0 flex-1 bg-transparent text-[32px] leading-tight font-semibold tracking-tight outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
-            />
-            {recognize && !expense && (
-              <>
-                <Button
-                  variant="soft"
-                  size="sm"
-                  className="self-center"
-                  loading={scanning}
-                  icon={<ScanLine className="size-4" />}
-                  onClick={pickImages}
+    <>
+      <Collapse open={members.length === 0}>
+        <p className="py-6 text-center text-sm text-zinc-500">先添加成员，才能开始记账 👇</p>
+      </Collapse>
+      <Collapse open={members.length > 0}>
+        <form onSubmit={submit} className="space-y-5 pb-1">
+          {recognize && !expense && <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={scan} />}
+          <div>
+            <AutoHeight className="-m-1 p-1">
+              {drafts ? (
+                <BillBatch rows={drafts} onChange={setDrafts} onAddImages={pickImages} onCancel={() => setDrafts(null)} scanning={scanning} />
+              ) : (
+                <div className="space-y-5">
+                  <div className="flex items-baseline gap-2 rounded-2xl bg-zinc-100/80 px-4 py-3 ring-brand-500/60 transition focus-within:bg-white focus-within:ring-2 dark:bg-white/6 dark:focus-within:bg-white/8">
+                    <span className="text-2xl font-semibold text-zinc-400">¥</span>
+                    <input
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      inputMode="decimal"
+                      placeholder="0.00"
+                      aria-label="金额"
+                      autoFocus={!expense && window.matchMedia('(min-width: 1024px)').matches}
+                      className="tabular min-w-0 flex-1 bg-transparent text-[32px] leading-tight font-semibold tracking-tight outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
+                    />
+                    {recognize && !expense && (
+                      <>
+                        <Button
+                          variant="soft"
+                          size="sm"
+                          className="self-center"
+                          loading={scanning}
+                          icon={<ScanLine className="size-4" />}
+                          onClick={pickImages}
+                        >
+                          {scanning ? '识别中' : '识别账单'}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+
+                  <div>
+                    <Label aside={<span className="tabular text-xs text-zinc-400">{title.length}/{LIMITS.title}</span>}>用途</Label>
+                    <input
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      maxLength={LIMITS.title}
+                      placeholder="例如：午饭"
+                      className="field"
+                    />
+                    <AutoHeight className="-m-1 p-1">
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {suggestions.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => setTitle(s)}
+                            className={cn(
+                              'rounded-full px-2.5 py-1 text-xs transition',
+                              title === s
+                                ? 'bg-brand-500 text-white'
+                                : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-white/6 dark:text-zinc-300 dark:hover:bg-white/10',
+                            )}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    </AutoHeight>
+                  </div>
+
+                  <div>
+                    <Label>日期</Label>
+                    <div className="flex gap-2">
+                      {[
+                        [today(), '今天'],
+                        [yesterday, '昨天'],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setDate(value!)}
+                          className={cn(
+                            'h-11 rounded-2xl px-4 text-sm font-medium transition',
+                            date === value
+                              ? 'bg-brand-500/12 text-brand-600 ring-1 ring-brand-500/40 dark:text-brand-300'
+                              : 'bg-zinc-100/80 text-zinc-600 hover:bg-zinc-200/70 dark:bg-white/6 dark:text-zinc-300',
+                          )}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <input
+                        type="date"
+                        value={date}
+                        max="9999-12-31"
+                        onChange={(e) => e.target.value && setDate(e.target.value)}
+                        className="field tabular min-w-0 flex-1 px-3 text-center"
+                        aria-label="选择日期"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </AutoHeight>
+          </div>
+
+          <div>
+            <Label>谁付的钱</Label>
+            <AutoHeight className="-m-1 p-1">
+              <div className="flex flex-wrap gap-2">
+                {members.map((m) => (
+                  <MemberChip key={m.id} active={payerId === m.id} onClick={() => choosePayer(m.id)} member={m} />
+                ))}
+              </div>
+            </AutoHeight>
+          </div>
+
+          <div>
+            <Label
+              aside={
+                <button
+                  type="button"
+                  onClick={() => setSelected(new Set(allSelected ? [] : members.map((m) => m.id)))}
+                  className="rounded-full px-2 py-0.5 text-xs text-brand-600 hover:bg-brand-500/10 dark:text-brand-300"
                 >
-                  {scanning ? '识别中' : '识别账单'}
-                </Button>
+                  {allSelected ? '全不选' : '全选'}
+                </button>
+              }
+            >
+              谁一起分摊 · {participantIds.length}/{members.length}
+            </Label>
+            <AutoHeight className="-m-1 p-1">
+              <div className="flex flex-wrap gap-2">
+                {members.map((m) => (
+                  <MemberChip key={m.id} active={selected.has(m.id)} onClick={() => toggle(m.id)} member={m} multi />
+                ))}
+              </div>
+            </AutoHeight>
+          </div>
+
+          <div className="flex items-center justify-between rounded-2xl bg-brand-500/6 px-4 py-3 text-sm dark:bg-brand-400/8">
+            {drafts ? (
+              <>
+                <span className="text-zinc-500 dark:text-zinc-400">
+                  {batch.count} 笔合计{participantIds.length > 0 && `，每笔 ${participantIds.length} 人平摊`}
+                </span>
+                <span className="tabular font-semibold text-brand-600 dark:text-brand-300">{formatMoney(batch.total)}</span>
+              </>
+            ) : (
+              <>
+                <span className="text-zinc-500 dark:text-zinc-400">
+                  {participantIds.length > 0 ? `${participantIds.length} 人平摊，每人` : '请选择参与者'}
+                </span>
+                <span className="tabular font-semibold text-brand-600 dark:text-brand-300">
+                  {shares.length ? formatMoney(shares[shares.length - 1]!.amount) : '—'}
+                  {shares.length > 1 && shares[0]!.amount !== shares[shares.length - 1]!.amount && (
+                    <span className="ml-1 text-xs font-normal text-zinc-400">起</span>
+                  )}
+                </span>
               </>
             )}
           </div>
 
-          <div>
-            <Label aside={<span className="tabular text-xs text-zinc-400">{title.length}/{LIMITS.title}</span>}>用途</Label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              maxLength={LIMITS.title}
-              placeholder="例如：午饭"
-              className="field"
-            />
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setTitle(s)}
-                  className={cn(
-                    'rounded-full px-2.5 py-1 text-xs transition',
-                    title === s
-                      ? 'bg-brand-500 text-white'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-white/6 dark:text-zinc-300 dark:hover:bg-white/10',
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+          <div className="flex gap-2">
+            {expense && (
+              <Button variant="danger" size="lg" onClick={remove} loading={deleting} icon={<Trash2 className="size-4" />}>
+                删除
+              </Button>
+            )}
+            <Button type="submit" variant="primary" size="lg" className="flex-1" loading={saving} icon={<Check className="size-4" />}>
+              {expense ? '保存修改' : drafts ? `记 ${batch.count} 笔` : '记一笔'}
+            </Button>
           </div>
-
-          <div>
-            <Label>日期</Label>
-            <div className="flex gap-2">
-              {[
-                [today(), '今天'],
-                [yesterday, '昨天'],
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setDate(value!)}
-                  className={cn(
-                    'h-11 rounded-2xl px-4 text-sm font-medium transition',
-                    date === value
-                      ? 'bg-brand-500/12 text-brand-600 ring-1 ring-brand-500/40 dark:text-brand-300'
-                      : 'bg-zinc-100/80 text-zinc-600 hover:bg-zinc-200/70 dark:bg-white/6 dark:text-zinc-300',
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-              <input
-                type="date"
-                value={date}
-                max="9999-12-31"
-                onChange={(e) => e.target.value && setDate(e.target.value)}
-                className="field tabular min-w-0 flex-1 px-3 text-center"
-                aria-label="选择日期"
-              />
-            </div>
-          </div>
-        </>
-      )}
-
-      <div>
-        <Label>谁付的钱</Label>
-        <AutoHeight className="-m-1 p-1">
-          <div className="flex flex-wrap gap-2">
-            {members.map((m) => (
-              <MemberChip key={m.id} active={payerId === m.id} onClick={() => choosePayer(m.id)} member={m} />
-            ))}
-          </div>
-        </AutoHeight>
-      </div>
-
-      <div>
-        <Label
-          aside={
-            <button
-              type="button"
-              onClick={() => setSelected(new Set(allSelected ? [] : members.map((m) => m.id)))}
-              className="rounded-full px-2 py-0.5 text-xs text-brand-600 hover:bg-brand-500/10 dark:text-brand-300"
-            >
-              {allSelected ? '全不选' : '全选'}
-            </button>
-          }
-        >
-          谁一起分摊 · {participantIds.length}/{members.length}
-        </Label>
-        <AutoHeight className="-m-1 p-1">
-          <div className="flex flex-wrap gap-2">
-            {members.map((m) => (
-              <MemberChip key={m.id} active={selected.has(m.id)} onClick={() => toggle(m.id)} member={m} multi />
-            ))}
-          </div>
-        </AutoHeight>
-      </div>
-
-      <div className="flex items-center justify-between rounded-2xl bg-brand-500/6 px-4 py-3 text-sm dark:bg-brand-400/8">
-        {drafts ? (
-          <>
-            <span className="text-zinc-500 dark:text-zinc-400">
-              {batch.count} 笔合计{participantIds.length > 0 && `，每笔 ${participantIds.length} 人平摊`}
-            </span>
-            <span className="tabular font-semibold text-brand-600 dark:text-brand-300">{formatMoney(batch.total)}</span>
-          </>
-        ) : (
-          <>
-            <span className="text-zinc-500 dark:text-zinc-400">
-              {participantIds.length > 0 ? `${participantIds.length} 人平摊，每人` : '请选择参与者'}
-            </span>
-            <span className="tabular font-semibold text-brand-600 dark:text-brand-300">
-              {shares.length ? formatMoney(shares[shares.length - 1]!.amount) : '—'}
-              {shares.length > 1 && shares[0]!.amount !== shares[shares.length - 1]!.amount && (
-                <span className="ml-1 text-xs font-normal text-zinc-400">起</span>
-              )}
-            </span>
-          </>
-        )}
-      </div>
-
-      <div className="flex gap-2">
-        {expense && (
-          <Button variant="danger" size="lg" onClick={remove} loading={deleting} icon={<Trash2 className="size-4" />}>
-            删除
-          </Button>
-        )}
-        <Button type="submit" variant="primary" size="lg" className="flex-1" loading={saving} icon={<Check className="size-4" />}>
-          {expense ? '保存修改' : drafts ? `记 ${batch.count} 笔` : '记一笔'}
-        </Button>
-      </div>
-    </form>
+        </form>
+      </Collapse>
+    </>
   );
 }
 

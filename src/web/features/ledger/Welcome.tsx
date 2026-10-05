@@ -2,6 +2,7 @@ import { UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
 import { LIMITS } from '../../../shared/limits.ts';
+import type { Member } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
@@ -13,7 +14,9 @@ export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => 
   const { snapshot, store, key } = useLedger();
   const [name, setName] = useState('');
   const [adding, setAdding] = useState(false);
-  const { members } = snapshot;
+  // 新成员会先进 snapshot 再关弹窗，添加期间沿用原列表，免得退场动画里先冒出一行「我是」
+  const [frozen, setFrozen] = useState<Member[] | null>(null);
+  const members = frozen ?? snapshot.members;
   const full = members.length >= LIMITS.members;
 
   function pick(id: string, label: string) {
@@ -26,6 +29,7 @@ export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => 
     e.preventDefault();
     if (!name.trim()) return;
     setAdding(true);
+    setFrozen(snapshot.members);
     try {
       const message = await store.mutate(api.ledger.members.$post({ json: { name: name.trim() } }));
       if (message.event.type === 'member.saved') pick(message.event.member.id, message.event.member.name);
@@ -33,6 +37,7 @@ export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => 
       toast.error(errorMessage(err));
     } finally {
       setAdding(false);
+      setFrozen(null);
     }
   }
 

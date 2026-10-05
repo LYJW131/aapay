@@ -35,6 +35,8 @@
 @layer base {
   :root {
     color-scheme: light dark;
+    /* 弹窗打开时锁住 body 滚动，经典滚动条（Windows 等）会消失，页面随之左右挪一下 */
+    scrollbar-gutter: stable;
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
