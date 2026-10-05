@@ -211,7 +211,7 @@ function Ledgers({
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <Label aside={ledgers && <span className="tabular">{ledgers.length} 个</span>}>
         <span className="flex items-center gap-1.5">
           <FolderOpen className="size-3.5" />
@@ -442,7 +442,7 @@ function Passphrases({
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <Label>
         <span className="flex items-center gap-1.5">
           <KeyRound className="size-3.5" />
@@ -461,10 +461,11 @@ function Passphrases({
             还没有口令，生成后把它或邀请链接发给大家即可加入
           </p>
         </Collapse>
-        <ul className="divide-y divide-zinc-100 dark:divide-white/5">
+        <ul>
           <AnimatePresence initial={false}>
-            {passphrases?.map((p) => (
-              <Reveal as="li" key={p.id}>
+            {passphrases?.map((p, i) => (
+              // 分隔线放在行里随行高一起过渡；divide-y 的边框不参与动画，增删收尾时会跳 1px
+              <Reveal as="li" key={p.id} className={i > 0 ? 'border-t border-zinc-100 dark:border-white/5' : undefined}>
                 <PassphraseRow passphrase={p} busy={busy === p.id} onQr={() => onQr(p)} onRevoke={() => revoke(p)} />
               </Reveal>
             ))}
