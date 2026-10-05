@@ -18,6 +18,7 @@ function git(...args: string[]) {
 }
 
 const build: BuildInfo = {
+  runtime: target,
   commit: git('rev-parse', 'HEAD') || process.env.WORKERS_CI_COMMIT_SHA || '',
   message: git('log', '-1', '--format=%s'),
   builtAt: Date.now(),

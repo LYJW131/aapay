@@ -1,8 +1,9 @@
-import { History, RotateCw, ShieldAlert, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
+import { Copy, History, RotateCw, ShieldAlert, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import { actorLabel, describeAudit } from '../../../shared/audit-text.ts';
-import { parseAudit, type AuditActor, type AuditRecord } from '../../../shared/audit.ts';
+import { keyFingerprint, parseAudit, type AuditActor, type AuditRecord } from '../../../shared/audit.ts';
 import { Button } from '../../components/Button.tsx';
 import { Empty } from '../../components/Card.tsx';
 import { Reveal } from '../../components/Collapse.tsx';
@@ -94,11 +95,33 @@ function VerifyStatus({ status, onRetry }: { status: AuditStatus; onRetry: () =>
       )}
       <div className="min-w-0">
         <p className={cn('font-medium', ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500')}>
-          {ok ? `已校验${status.signed ? ' · 签名有效' : ''} · 共 ${status.count} 条` : '正在校验…'}
+          {ok ? `已校验${status.publicKey ? ' · 签名有效' : ''} · 共 ${status.count} 条` : '正在校验…'}
         </p>
         <p className="mt-0.5 text-zinc-500 dark:text-zinc-400">每条动态都由服务器签名并串成哈希链，你的浏览器会逐条核对，任何删改都会被发现。</p>
+        {ok && status.publicKey && <KeyFingerprint publicKey={status.publicKey} />}
       </div>
     </div>
+  );
+}
+
+function KeyFingerprint({ publicKey }: { publicKey: string }) {
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(publicKey);
+      toast.success('已复制签名公钥');
+    } catch {
+      toast.error('复制失败');
+    }
+  }
+  return (
+    <button
+      onClick={copy}
+      title={`复制完整公钥 ${publicKey}`}
+      className="mt-1.5 inline-flex items-center gap-1.5 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+    >
+      公钥指纹 <span className="font-mono">{keyFingerprint(publicKey)}</span>
+      <Copy className="size-3.5" />
+    </button>
   );
 }
 

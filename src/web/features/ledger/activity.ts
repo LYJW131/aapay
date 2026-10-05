@@ -4,7 +4,7 @@ import { load, save } from '../../lib/storage.ts';
 
 export type AuditStatus =
   | { state: 'verifying' }
-  | { state: 'ok'; count: number; signed: boolean }
+  | { state: 'ok'; count: number; publicKey: string | null }
   | { state: 'failed'; seq: number; reason: string }
   | { state: 'error'; message: string };
 
@@ -142,7 +142,7 @@ export class ActivityLog {
     const top = entries[0]?.seq ?? 0;
     this.set({
       entries: [...ascending.filter((r) => r.seq > top).reverse(), ...entries],
-      status: { state: 'ok', count, signed: !!this.publicKey },
+      status: { state: 'ok', count, publicKey: this.publicKey },
       unread: this.seen !== null && count > this.seen,
     });
   }

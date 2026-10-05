@@ -84,6 +84,10 @@ export type AuditVerdict =
   | { ok: true; checkpoint: AuditCheckpoint | null; signed: boolean }
   | { ok: false; seq: number; reason: string };
 
+export function keyFingerprint(publicKey: string) {
+  return bytesToHex(sha256(hexToBytes(publicKey)).slice(0, 8)).match(/.{4}/g)!.join(' ');
+}
+
 export function verifyAudit(records: readonly AuditRecord[], publicKey: string | null, from: AuditCheckpoint | null): AuditVerdict {
   if (from && from.publicKey && from.publicKey !== publicKey) {
     return { ok: false, seq: from.seq, reason: '签名公钥与上次校验时不同' };

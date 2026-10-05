@@ -1,9 +1,12 @@
-import { ExternalLink, Info, RefreshCw } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { ExternalLink, Info, RefreshCw, Trash2 } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '../../components/Button.tsx';
 import { Card } from '../../components/Card.tsx';
 import { formatDateTime } from '../../lib/dates.ts';
+import { clearAll } from '../../lib/storage.ts';
 import { BUILD, REPO_URL, useDeployedUpdate } from '../../lib/version.ts';
+
+const RUNTIME = { cloudflare: 'Cloudflare Workers', node: 'Docker / Node' } as const;
 
 const link = 'inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-300';
 
@@ -66,6 +69,7 @@ export function AboutCard() {
             <span className="text-zinc-400">未知</span>
           )}
         </Row>
+        <Row label="运行环境">{RUNTIME[BUILD.runtime]}</Row>
         <Row label="构建时间">
           <span className="tabular">{formatDateTime(BUILD.builtAt)}</span>
         </Row>
@@ -76,6 +80,33 @@ export function AboutCard() {
           </a>
         </Row>
       </dl>
+      <ClearLocalData />
     </Card>
+  );
+}
+
+function ClearLocalData() {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(timer);
+  }, [armed]);
+
+  function clear() {
+    if (!armed) return setArmed(true);
+    clearAll();
+    window.location.reload();
+  }
+
+  return (
+    <div className="mt-2 flex items-center gap-3 border-t border-zinc-900/5 pt-3 dark:border-white/5">
+      <p className="min-w-0 flex-1 text-[13px] text-zinc-500 dark:text-zinc-400">
+        {armed ? '面板状态、筛选、默认付款人和动态校验记录都会清空，不会退出登录' : '清除这台设备上保存的偏好与校验记录'}
+      </p>
+      <Button size="sm" variant="danger" icon={<Trash2 className="size-3.5" />} onClick={clear}>
+        {armed ? '确认清除' : '清除本地数据'}
+      </Button>
+    </div>
   );
 }
