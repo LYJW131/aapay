@@ -6,7 +6,6 @@ import { centsToInput, formatMoney, parseAmount } from '../../../shared/money.ts
 import { LIMITS } from '../../../shared/limits.ts';
 import { computeBalances, suggestTransfers, type Transfer } from '../../../shared/settle.ts';
 import type { Settlement } from '../../../shared/types.ts';
-import { AutoHeight } from '../../components/AutoHeight.tsx';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Button } from '../../components/Button.tsx';
 import { Card, Empty, Label } from '../../components/Card.tsx';
@@ -150,17 +149,19 @@ export function SettlementCard() {
                       </span>
                       <span className="relative h-2 rounded-full bg-zinc-100 dark:bg-white/6" aria-hidden>
                         <span className="absolute inset-y-0 left-1/2 w-px bg-zinc-300 dark:bg-white/20" />
+                        {/* 正负各一条：应收应付翻转时一条缩回、另一条长出，而不是整条瞬间跳到中线另一侧 */}
                         <span
-                          className={cn(
-                            'absolute inset-y-0 rounded-full transition-[width] duration-300',
-                            b.net > 0 ? 'left-1/2 bg-emerald-500' : 'right-1/2 bg-rose-500',
-                          )}
-                          style={{ width: `${pct}%` }}
+                          className="absolute inset-y-0 left-1/2 rounded-full bg-emerald-500 transition-[width] duration-300"
+                          style={{ width: `${b.net > 0 ? pct : 0}%` }}
+                        />
+                        <span
+                          className="absolute inset-y-0 right-1/2 rounded-full bg-rose-500 transition-[width] duration-300"
+                          style={{ width: `${b.net < 0 ? pct : 0}%` }}
                         />
                       </span>
                       <span
                         className={cn(
-                          'tabular w-24 text-right text-[13px] font-medium',
+                          'tabular w-28 text-right text-[13px] font-medium whitespace-nowrap',
                           b.net > 0 ? 'text-emerald-600 dark:text-emerald-400' : b.net < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-400',
                         )}
                       >
@@ -214,21 +215,26 @@ function SettlementForm({ draft, onDone }: { draft: Partial<Transfer>; onDone: (
         <Label>谁付的钱</Label>
         <div className="flex flex-wrap gap-2">
           {snapshot.members.map((m) => (
-            <MemberChip key={m.id} member={m} active={fromId === m.id} onClick={() => setFromId(m.id)} />
+            <MemberChip
+              key={m.id}
+              member={m}
+              active={fromId === m.id}
+              onClick={() => {
+                setFromId(m.id);
+                if (toId === m.id) setToId('');
+              }}
+            />
           ))}
         </div>
       </div>
       <div>
         <Label>付给了谁</Label>
-        <AutoHeight className="-m-1 p-1">
-          <div className="flex flex-wrap gap-2">
-            {snapshot.members
-              .filter((m) => m.id !== fromId)
-              .map((m) => (
-                <MemberChip key={m.id} member={m} active={toId === m.id} onClick={() => setToId(m.id)} />
-              ))}
-          </div>
-        </AutoHeight>
+        {/* 付款人置灰而不是从列表里拿掉，换付款人时其余成员不会重新换行挪位置 */}
+        <div className="flex flex-wrap gap-2">
+          {snapshot.members.map((m) => (
+            <MemberChip key={m.id} member={m} active={toId === m.id} disabled={m.id === fromId} onClick={() => setToId(m.id)} />
+          ))}
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>

@@ -79,12 +79,15 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   const shares = cents ? splitEvenly(cents, participantIds) : [];
   const allSelected = members.length > 0 && participantIds.length === members.length;
 
-  const suggestions = useMemo(() => {
+  const liveSuggestions = useMemo(() => {
     const counts = new Map<string, number>();
     for (const e of snapshot.expenses.slice(0, 200)) counts.set(e.title, (counts.get(e.title) ?? 0) + 1);
     const recent = [...counts].sort((a, b) => b[1] - a[1]).map(([t]) => t);
     return [...new Set([...recent, '早餐', '午饭', '晚饭', '打车', '超市', '咖啡'])].slice(0, 6);
   }, [snapshot.expenses]);
+  // 弹窗里提交后表单随弹窗关掉，而账目更新常先于弹窗退场到达，建议跟着重排会在关闭时闪一下
+  const [openedSuggestions] = useState(liveSuggestions);
+  const suggestions = onDone ? openedSuggestions : liveSuggestions;
 
   const toggle = (id: string) =>
     setSelected((prev) => {
@@ -266,7 +269,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                           icon={<ScanLine className="size-4" />}
                           onClick={pickImages}
                         >
-                          {scanning ? '识别中' : '识别账单'}
+                          识别账单
                         </Button>
                       </>
                     )}
@@ -427,19 +430,22 @@ export function MemberChip({
   active,
   onClick,
   multi,
+  disabled,
 }: {
   member: { id: string; name: string; avatar: string };
   active: boolean;
   onClick: () => void;
   multi?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={active}
       className={cn(
-        'flex h-10 items-center gap-1.5 rounded-full py-1 pr-3.5 pl-1 text-sm font-medium transition active:scale-95',
+        'flex h-10 items-center gap-1.5 rounded-full py-1 pr-3.5 pl-1 text-sm font-medium transition active:scale-95 disabled:opacity-30 disabled:active:scale-100',
         active
           ? 'bg-brand-500 text-white shadow-[0_4px_12px_-4px] shadow-brand-500/60'
           : 'bg-zinc-100/80 text-zinc-700 hover:bg-zinc-200/70 dark:bg-white/6 dark:text-zinc-200 dark:hover:bg-white/10',

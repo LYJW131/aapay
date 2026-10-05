@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
 
 export function AutoHeight({ children, className }: { children: ReactNode; className?: string }) {
+  const outer = useRef<HTMLDivElement>(null);
   const inner = useRef<HTMLDivElement>(null);
   const [height, setHeight] = useState<number | 'auto'>('auto');
   const [animating, setAnimating] = useState(false);
@@ -11,7 +12,11 @@ export function AutoHeight({ children, className }: { children: ReactNode; class
     let last: number | null = null;
     const observer = new ResizeObserver(([entry]) => {
       const next = entry!.contentRect.height;
-      if (last !== null && last !== next) setAnimating(true);
+      if (last !== null && last !== next) {
+        // 状态更新要到这一帧画完才生效，先同步裁切，免得变高的内容溢出一帧压在下方元素上
+        outer.current!.style.overflowY = 'clip';
+        setAnimating(true);
+      }
       last = next;
       setHeight(next);
     });
@@ -21,6 +26,7 @@ export function AutoHeight({ children, className }: { children: ReactNode; class
 
   return (
     <motion.div
+      ref={outer}
       initial={false}
       animate={{ height }}
       // 首次测量直接定高：从 auto 过渡到同一个高度也会逐帧写 height，弹窗滑入时每帧都要重排重绘
@@ -28,8 +34,8 @@ export function AutoHeight({ children, className }: { children: ReactNode; class
       onAnimationComplete={() => setAnimating(false)}
       // 定高只量内容，padding（如给阴影和焦点环留余量的 -m-1 p-1）要加在外面，否则定高后比 auto 时矮一截
       className={cn('box-content', className)}
-      // 只在高度真正变化的过渡中裁切（首次测量不算），避免切掉子元素的阴影和焦点环；clip 不像 hidden 会成为滚动容器
-      style={{ overflow: animating ? 'clip' : 'visible' }}
+      // 只在高度真正变化的过渡中纵向裁切（首次测量不算），避免切掉子元素的阴影和焦点环；clip 不像 hidden 会成为滚动容器
+      style={{ overflowY: animating ? 'clip' : 'visible' }}
     >
       <div ref={inner} className="flow-root">
         {children}

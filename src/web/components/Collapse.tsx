@@ -27,15 +27,17 @@ export function Reveal({
   // 随 AnimatePresence 首次渲染出现的元素不播放进入动画，不需要裁切
   const entering = useContext(PresenceContext)?.initial !== false;
   const node = useRef<HTMLElement | null>(null);
-  // 只在过渡中裁切，停住后再裁会切掉阴影和焦点环。直接写 DOM 而不走 state：
+  // 只在过渡中纵向裁切，停住后再裁会切掉阴影和焦点环。按动画中的高度值开关、直接写 DOM 而不走 state：
+  // 动画开始时重新渲染会打乱 motion 测量高度时对滚动位置的保存与恢复；
   // transitionEnd 或在完成回调里改 motion 值，motion 都不会重新渲染，样式会一直停在裁切。
-  // 收起时要等动画第一帧（高度已是数值）再裁：motion 量 auto 高度时会先把元素设成 0，
-  // 这时若已裁切页面会瞬间变短，滚动位置被钳住且恢复不回来，整页跳一下。
   // 用 clip 而不是 hidden：hidden 会让它成为滚动容器，里面 sticky 的日期标题会改为相对它定位而错位
   const clip = (on: boolean) => {
-    if (node.current) node.current.style.overflow = on ? 'clip' : '';
+    if (node.current) node.current.style.overflowY = on ? 'clip' : '';
   };
   useLayoutEffect(() => clip(entering), []);
+  // 收起时直接给出起点高度：只写 height: 0 的话 motion 会先把元素设成 0 去量 auto 的起点，
+  // 量的那一刻页面瞬间变短，滚动位置被钳住且恢复不回来（搜索时一次收起很多块尤其明显）
+  const from = !present && node.current ? parseFloat(getComputedStyle(node.current).height) : null;
   const Element = motion[as];
   return (
     <Element
@@ -45,7 +47,7 @@ export function Reveal({
       layout={layout}
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: 'auto', opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
+      exit={{ height: from === null ? 0 : [from, 0], opacity: 0 }}
       transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
       onUpdate={(latest) => clip(typeof latest.height === 'number')}
       onAnimationComplete={() => present && clip(false)}

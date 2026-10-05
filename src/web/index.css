@@ -37,6 +37,8 @@
     color-scheme: light dark;
     /* 弹窗打开时锁住 body 滚动，经典滚动条（Windows 等）会消失，页面随之左右挪一下 */
     scrollbar-gutter: stable;
+    /* 滚动锚定在上方内容做高度过渡时会整行补偿滚动位置，视口内容反而跳一下（iOS Safari 本就没有这个特性） */
+    overflow-anchor: none;
     -webkit-tap-highlight-color: transparent;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
