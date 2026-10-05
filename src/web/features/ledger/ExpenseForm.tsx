@@ -1,5 +1,5 @@
 import { Check, ScanLine, Trash2 } from 'lucide-react';
-import { useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { centsToInput, formatMoney, parseAmount, splitEvenly } from '../../../shared/money.ts';
 import { LIMITS } from '../../../shared/limits.ts';
@@ -21,6 +21,7 @@ import { load, save } from '../../lib/storage.ts';
 import { useLedger } from './context.tsx';
 
 const MAX_IMAGES = 6;
+const MAX_SUGGESTIONS = 20;
 
 const payerListeners = new Set<() => void>();
 
@@ -76,7 +77,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     const counts = new Map<string, number>();
     for (const e of snapshot.expenses.slice(0, 200)) counts.set(e.title, (counts.get(e.title) ?? 0) + 1);
     const recent = [...counts].sort((a, b) => b[1] - a[1]).map(([title]) => title);
-    return [...new Set([...recent, ...t.form.suggestions])].slice(0, 6);
+    return [...new Set([...recent, ...t.form.suggestions])].slice(0, MAX_SUGGESTIONS);
   }, [snapshot.expenses]);
   // 弹窗里提交后表单随弹窗关掉，而账目更新常先于弹窗退场到达，建议跟着重排会在关闭时闪一下
   const [openedSuggestions] = useState(liveSuggestions);
@@ -275,7 +276,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                       className="field"
                     />
                     <AutoHeight className="-m-1 p-1">
-                      <div className="mt-2 flex flex-wrap gap-1.5">
+                      <TwoLines className="mt-2 flex flex-wrap gap-1.5" items={suggestions}>
                         {suggestions.map((s) => (
                           <button
                             key={s}
@@ -291,7 +292,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                             {s}
                           </button>
                         ))}
-                      </div>
+                      </TwoLines>
                     </AutoHeight>
                   </div>
 
@@ -445,5 +446,30 @@ export function MemberChip({
       <Avatar member={member} size="sm" className={active ? 'bg-white/90 text-zinc-800 dark:bg-white/90 dark:text-zinc-800' : undefined} />
       {member.name}
     </button>
+  );
+}
+
+function TwoLines({ items, className, children }: { items: readonly string[]; className?: string; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current!;
+    let width = -1;
+    const fit = () => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      const chips = [...el.children] as HTMLElement[];
+      for (const c of chips) c.hidden = false;
+      const second = [...new Set(chips.map((c) => c.offsetTop))].sort((a, b) => a - b)[1];
+      for (const c of chips) c.hidden = second !== undefined && c.offsetTop > second;
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [items]);
+  return (
+    <div ref={box} className={className}>
+      {children}
+    </div>
   );
 }
