@@ -8,6 +8,8 @@ import { Button } from '../../components/Button.tsx';
 import { Card } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
+import { common } from '../../i18n/common.ts';
+import { ledger } from '../../i18n/ledger.ts';
 import { useMediaQuery, useMinuteTick, usePersistentState } from '../../lib/hooks.ts';
 import { load } from '../../lib/storage.ts';
 import { adminModules } from '../admin/preload.ts';
@@ -20,38 +22,34 @@ import { MembersCard } from './Members.tsx';
 import { OverviewCard } from './Overview.tsx';
 import { inRange, involves, resolveRange, type RangeFilter } from './range.ts';
 import { SettlementCard } from './Settlement.tsx';
-import { LedgerStore, type CloseReason } from './store.ts';
+import { LedgerStore } from './store.ts';
 import { Timeline } from './Timeline.tsx';
 import { WelcomeSheet } from './Welcome.tsx';
 
 const LazyAdminCard = lazy(() => import('../admin/AdminCard.tsx').then((m) => ({ default: m.AdminCard })));
 
-const CLOSE_MESSAGES: Record<CloseReason, string> = {
-  deleted: '这个账本已被管理员删除',
-  revoked: '口令已被撤销，请向管理员索取新口令',
-  unauthorized: '登录已过期，请重新输入口令',
-};
+const t = ledger.page;
 
 function describe({ event }: LiveMessage, before: Snapshot, after: Snapshot): string | null {
-  const name = (id: string) => after.members.find((m) => m.id === id)?.name ?? before.members.find((m) => m.id === id)?.name ?? '某人';
+  const name = (id: string) => after.members.find((m) => m.id === id)?.name ?? before.members.find((m) => m.id === id)?.name ?? t.someone;
   switch (event.type) {
     case 'expense.saved': {
       const existed = before.expenses.some((e) => e.id === event.expense.id);
       const { title, amount, payerId } = event.expense;
-      return existed ? `修改了「${title}」` : `${name(payerId)} 付了 ${title} ${formatMoney(amount)}`;
+      return existed ? t.expenseEdited(title) : t.expenseAdded(name(payerId), title, formatMoney(amount));
     }
     case 'expense.deleted': {
       const e = before.expenses.find((x) => x.id === event.id);
-      return e ? `删除了「${e.title}」${formatMoney(e.amount)}` : null;
+      return e ? t.expenseDeleted(e.title, formatMoney(e.amount)) : null;
     }
     case 'settlement.saved':
-      return `${name(event.settlement.fromId)} 向 ${name(event.settlement.toId)} 还款 ${formatMoney(event.settlement.amount)}`;
+      return t.settlementAdded(name(event.settlement.fromId), name(event.settlement.toId), formatMoney(event.settlement.amount));
     case 'settlement.deleted':
-      return '删除了一笔还款记录';
+      return t.settlementDeleted;
     case 'member.saved':
-      return before.members.some((m) => m.id === event.member.id) ? null : `新成员 ${event.member.name} 加入`;
+      return before.members.some((m) => m.id === event.member.id) ? null : t.memberJoined(event.member.name);
     case 'member.deleted':
-      return `移除了成员 ${name(event.id)}`;
+      return t.memberRemoved(name(event.id));
     default:
       return null;
   }
@@ -83,7 +81,7 @@ export function LedgerPage({
       new LedgerStore({
         onAudit: (record, own) => activity.receive(record, own),
         onClosed: (reason) =>
-          onExit(reason === 'unauthorized' && session.role === 'admin' ? '管理员登录已过期，请重新登录' : CLOSE_MESSAGES[reason]),
+          onExit(reason === 'unauthorized' && session.role === 'admin' ? common.adminExpired : t.closed[reason]),
         onRemote: (message, before) => {
           const after = store.getState().snapshot;
           const text = after && describe(message, before, after);
@@ -148,7 +146,7 @@ export function LedgerPage({
         <Spinner className="size-7" />
         {state.error && (
           <p className="text-sm">
-            {state.error} · <button className="underline" onClick={() => void store.refresh()}>重试</button>
+            {state.error} · <button className="underline" onClick={() => void store.refresh()}>{t.retry}</button>
           </p>
         )}
       </div>
@@ -169,15 +167,15 @@ export function LedgerPage({
         {!admin && adminExpired && (
           <div className="card mb-4 flex items-center gap-3 px-5 py-4 lg:col-span-2 lg:mb-0">
             <ShieldAlert className="size-[18px] shrink-0 text-amber-500" />
-            <span className="flex-1 text-sm">管理员登录已过期</span>
+            <span className="flex-1 text-sm">{t.adminExpired}</span>
             <Button size="sm" variant="soft" onClick={() => window.location.assign('/admin')}>
-              重新登录
+              {t.signInAgain}
             </Button>
           </div>
         )}
         <aside className="space-y-4">
           {desktop && (
-            <Card id="compose" title="记一笔" icon={<Plus />}>
+            <Card id="compose" title={t.addExpense} icon={<Plus />}>
               <ExpenseForm />
             </Card>
           )}
@@ -209,13 +207,13 @@ export function LedgerPage({
             className="fixed right-5 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-20 flex h-14 items-center gap-2 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 pr-6 pl-5 font-semibold text-white shadow-[0_12px_32px_-8px] shadow-brand-500/70"
           >
             <Plus className="size-5" strokeWidth={2.5} />
-            记一笔
+            {t.addExpense}
           </motion.button>
         )}
       </AnimatePresence>
       <WelcomeSheet open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
       {!desktop && (
-        <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title="记一笔">
+        <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title={t.addExpense}>
           <ExpenseForm onDone={() => setComposerOpen(false)} />
         </Sheet>
       )}

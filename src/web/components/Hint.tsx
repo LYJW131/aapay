@@ -1,13 +1,14 @@
 import { CircleHelp } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { common } from '../i18n/common.ts';
 import { cn } from '../lib/cn.ts';
 
 const GAP = 6;
 const MARGIN = 12;
 const WIDTH = 280;
 
-export function Hint({ children, label = '详细说明', className }: { children: ReactNode; label?: string; className?: string }) {
+export function Hint({ children, label = common.details, className }: { children: ReactNode; label?: string; className?: string }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<{ left: number; top: number; width: number } | null>(null);
   const button = useRef<HTMLButtonElement>(null);

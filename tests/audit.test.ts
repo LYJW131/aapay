@@ -57,8 +57,8 @@ describe('audit log (service)', () => {
     expect(messages.at(-1)!.audit!.hash).toBe(records.at(-1)!.hash);
 
     const update = parseAudit(records[3]!);
-    expect(actorLabel(update.actor)).toBe('成员（口令 trip）');
-    expect(describeAudit(update.action).details).toEqual(['金额：¥120.00 → ¥150.00', '付款人：阿杰 → 小雨']);
+    expect(actorLabel(update.actor, 'zh-CN')).toBe('成员（口令 trip）');
+    expect(describeAudit(update.action, 'zh-CN').details).toEqual(['金额：¥120.00 → ¥150.00', '付款人：阿杰 → 小雨']);
   });
 
   it('rolls back the log when the change fails, and keeps names after members are gone', () => {
@@ -97,7 +97,7 @@ describe('audit log (service)', () => {
     const forged = allRecords(svc).map((r) => ({ ...r }));
     const target = forged[2]!;
     target.payload = target.payload.replace('12000', '1200');
-    expect(verifyAudit(forged, signer.publicKey, null)).toMatchObject({ ok: false, seq: 3, reason: '内容与哈希不一致' });
+    expect(verifyAudit(forged, signer.publicKey, null)).toMatchObject({ ok: false, seq: 3, reason: 'hash-mismatch' });
 
     let prev = AUDIT_GENESIS;
     for (const r of forged) {
@@ -105,7 +105,7 @@ describe('audit log (service)', () => {
       r.hash = auditHash(prev, r.payload);
       prev = r.hash;
     }
-    expect(verifyAudit(forged, signer.publicKey, null)).toMatchObject({ ok: false, seq: 3, reason: '签名无效' });
+    expect(verifyAudit(forged, signer.publicKey, null)).toMatchObject({ ok: false, seq: 3, reason: 'bad-signature' });
     expect(verifyAudit(forged, null, null).ok).toBe(true);
   });
 
@@ -124,11 +124,11 @@ describe('audit log (service)', () => {
       rewritten.push({ ...r, payload, prev, hash, sig: null });
       prev = hash;
     }
-    expect(verifyAudit(rewritten.slice(3), null, checkpoint)).toMatchObject({ ok: false, seq: 4, reason: '与上一条记录的哈希不衔接' });
+    expect(verifyAudit(rewritten.slice(3), null, checkpoint)).toMatchObject({ ok: false, seq: 4, reason: 'prev-mismatch' });
     expect(verifyAudit(allRecords(svc).slice(3), signer.publicKey, checkpoint).ok).toBe(true);
     expect(verifyAudit(allRecords(svc).slice(3), signer.publicKey, { ...checkpoint!, publicKey: 'ff'.repeat(32) })).toMatchObject({
       ok: false,
-      reason: '签名公钥与上次校验时不同',
+      reason: 'key-changed',
     });
   });
 
@@ -175,7 +175,7 @@ describe('audit log (app)', () => {
     const page = await call('GET', '/api/ledger/audit?limit=10');
     expect(page.publicKey).toBe(signer.publicKey);
     const entries = (page.records as AuditRecord[]).map(parseAudit).reverse();
-    expect(entries.map((e) => [e.action.type, actorLabel(e.actor)])).toEqual([
+    expect(entries.map((e) => [e.action.type, actorLabel(e.actor, 'zh-CN')])).toEqual([
       ['ledger.create', '管理员 developer'],
       ['passphrase.create', '管理员 developer'],
       ['ledger.update', '管理员 developer'],

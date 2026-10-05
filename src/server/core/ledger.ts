@@ -164,7 +164,7 @@ export class LedgerService {
 
   createMember(input: MemberInput, ctx: MutationContext) {
     return this.commit(ctx, () => {
-      if (this.count('members') >= LIMITS.members) throw badRequest(`成员最多 ${LIMITS.members} 位`);
+      if (this.count('members') >= LIMITS.members) throw badRequest('memberLimit');
       this.assertNameFree(input.name);
       const member: Member = {
         id: newId(),
@@ -220,7 +220,7 @@ export class LedgerService {
           id,
         ),
       );
-      if (used) throw conflict('该成员已有相关账目，无法删除');
+      if (used) throw conflict('memberInUse');
       this.db.run('DELETE FROM members WHERE id = ?', id);
       return { event: { type: 'member.deleted', id }, audit: { type: 'member.delete', name: member.name } };
     });
@@ -309,7 +309,7 @@ export class LedgerService {
   deleteSettlement(id: string, ctx: MutationContext) {
     return this.commit(ctx, () => {
       const row = first(this.db.all<SettlementRow>('SELECT * FROM settlements WHERE id = ?', id));
-      if (!row) throw notFound('这笔还款不存在或已被删除');
+      if (!row) throw notFound('settlementNotFound');
       this.db.run('DELETE FROM settlements WHERE id = ?', id);
       return {
         event: { type: 'settlement.deleted', id },
@@ -388,7 +388,7 @@ export class LedgerService {
 
   private expense(id: string): Expense {
     const found = this.expenses().find((e) => e.id === id);
-    if (!found) throw notFound('这笔支出不存在或已被删除');
+    if (!found) throw notFound('expenseNotFound');
     return found;
   }
 
@@ -406,13 +406,13 @@ export class LedgerService {
 
   private member(id: string): Member {
     const row = first(this.db.all<MemberRow>('SELECT * FROM members WHERE id = ?', id));
-    if (!row) throw notFound('成员不存在');
+    if (!row) throw notFound('memberNotFound');
     return toMember(row);
   }
 
   private assertNameFree(name: string, exceptId = '') {
     if (first(this.db.all('SELECT 1 FROM members WHERE name = ? AND id != ?', name, exceptId))) {
-      throw conflict(`成员「${name}」已存在`);
+      throw conflict('memberExists', { name });
     }
   }
 
@@ -440,9 +440,9 @@ export class LedgerService {
   private buildExpense(id: string, input: ExpenseInput, createdAt: number, updatedAt: number): Expense {
     const members = this.members();
     const known = new Set(members.map((m) => m.id));
-    if (!known.has(input.payerId)) throw badRequest('付款人不存在');
+    if (!known.has(input.payerId)) throw badRequest('payerNotFound');
     const selected = new Set(input.participantIds);
-    for (const pid of selected) if (!known.has(pid)) throw badRequest('参与者不存在');
+    for (const pid of selected) if (!known.has(pid)) throw badRequest('participantNotFound');
     // 按成员加入顺序排列，保证零头的归属稳定
     const ordered = members.sort(byMemberOrder).filter((m) => selected.has(m.id)).map((m) => m.id);
     return {

@@ -79,8 +79,8 @@ const httpUrl = z
 
 const clientMetadata = z.looseObject({
   redirect_uris: z
-    .array(z.string().max(512).refine(isValidRedirect, '回调地址必须是 https、回环地址或应用私有 scheme'))
-    .min(1, '至少需要一个回调地址')
+    .array(z.string().max(512).refine(isValidRedirect, 'redirect_uris must use https, a loopback address or a private-use scheme'))
+    .min(1, 'at least one redirect_uri is required')
     .max(10),
   client_name: z.string().trim().max(100).optional().catch(undefined),
   client_uri: httpUrl.optional().catch(undefined),
@@ -91,11 +91,11 @@ const clientMetadata = z.looseObject({
   grant_types: z
     .array(z.string())
     .optional()
-    .refine((g) => !g || g.includes('authorization_code'), '必须支持 authorization_code'),
+    .refine((g) => !g || g.includes('authorization_code'), 'grant_types must include authorization_code'),
   response_types: z
     .array(z.string())
     .optional()
-    .refine((r) => !r || r.includes('code'), '必须支持 code'),
+    .refine((r) => !r || r.includes('code'), 'response_types must include code'),
 });
 
 // 服务端会主动请求的地址：只允许 https 域名，不允许 IP 或本机，减小请求伪造风险
@@ -205,13 +205,13 @@ async function parseAuthorize(
   params: URLSearchParams,
 ): Promise<{ request: AuthorizeRequest } | { redirect: string }> {
   const clientId = params.get('client_id');
-  if (!clientId) throw new AppError(400, '授权请求缺少 client_id');
+  if (!clientId) throw new AppError(400, 'oauthMissingClientId');
   const client = await findClient(c, clientId);
-  if (!client) throw new AppError(400, '未知的客户端，请在 AI 应用中重新添加连接');
+  if (!client) throw new AppError(400, 'oauthUnknownClient');
 
   const redirectUri = params.get('redirect_uri') ?? (client.redirectUris.length === 1 ? client.redirectUris[0]! : null);
   if (!redirectUri || !matchRedirect(client.redirectUris, redirectUri)) {
-    throw new AppError(400, '回调地址与客户端注册的不一致');
+    throw new AppError(400, 'oauthRedirectMismatch');
   }
 
   const state = params.get('state');
@@ -310,7 +310,7 @@ async function s256(verifier: string) {
 const NO_STORE = { 'Cache-Control': 'no-store', Pragma: 'no-cache' };
 
 export const requireMcp = createMiddleware<AppEnv>(async (c, next) => {
-  if (!c.var.config.mcp) throw notFound('MCP 未启用');
+  if (!c.var.config.mcp) throw notFound('mcpDisabled');
   await next();
 });
 
@@ -511,17 +511,17 @@ export async function approveAuthorization(c: Context<AppEnv>, input: ApproveInp
     const session = (await findSession(c))!;
     source = { kind: 'ledger', ledgerId: session.ledger.id, subject: 'shared' };
   } else if (input.code) {
-    if (!(await platform.rateLimit('join', clientIp(c)))) throw new AppError(429, '尝试过于频繁，请稍后再试');
+    if (!(await platform.rateLimit('join', clientIp(c)))) throw new AppError(429, 'tooManyAttempts');
     source = { kind: 'passphrase', code: input.code };
   } else {
     const token = getCookie(c, SESSION_COOKIE);
-    if (!token) throw new AppError(401, '请输入账本口令');
-    if (!(await findSession(c))) throw new AppError(401, '当前浏览器的账本登录已过期，请输入口令');
+    if (!token) throw new AppError(401, 'passphraseRequired');
+    if (!(await findSession(c))) throw new AppError(401, 'ledgerSessionExpired');
     source = { kind: 'session', tokenHash: await sha256(token) };
   }
 
   const scopes = input.write ? request.scopes : request.scopes.filter((s) => s === 'ledger:read');
-  if (!scopes.length) throw new AppError(400, '至少需要查看权限');
+  if (!scopes.length) throw new AppError(400, 'oauthScopeRequired');
   const code = newToken();
   const ledger = await platform.registry.createAuthCode(source, {
     codeHash: await sha256(code),

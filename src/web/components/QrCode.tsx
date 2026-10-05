@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { encode } from 'uqr';
+import { common } from '../i18n/common.ts';
 
 // 中间嵌入图标，所以用 H 级纠错
 export function QrCode({ value, className }: { value: string; className?: string }) {
@@ -30,7 +31,7 @@ export function QrCode({ value, className }: { value: string; className?: string
 
   return (
     <div className={className}>
-      <svg viewBox={`-1 -1 ${size + 2} ${size + 2}`} className="size-full" role="img" aria-label="二维码">
+      <svg viewBox={`-1 -1 ${size + 2} ${size + 2}`} className="size-full" role="img" aria-label={common.qrCode}>
         <path d={path} fill="currentColor" />
         {eye(0, 0)}
         {eye(size - 7, 0)}

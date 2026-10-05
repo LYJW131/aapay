@@ -8,9 +8,9 @@ export function load<T>(key: string, fallback: T): T {
   }
 }
 
-export function clearAll() {
+export function clearAll(keep: string[] = []) {
   try {
-    for (const key of Object.keys(localStorage)) if (key.startsWith('aapay:')) localStorage.removeItem(key);
+    for (const key of Object.keys(localStorage)) if (key.startsWith('aapay:') && !keep.includes(key)) localStorage.removeItem(key);
   } catch {
   }
 }

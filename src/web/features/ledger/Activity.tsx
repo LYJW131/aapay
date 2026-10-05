@@ -9,11 +9,15 @@ import { Empty } from '../../components/Card.tsx';
 import { Reveal } from '../../components/Collapse.tsx';
 import { Hint } from '../../components/Hint.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
+import { ledger } from '../../i18n/ledger.ts';
+import { locale } from '../../i18n/locale.ts';
 import { formatDateTime, relativeTime } from '../../lib/dates.ts';
 import { useDelayed } from '../../lib/hooks.ts';
 import { cn } from '../../lib/cn.ts';
 import type { AuditStatus } from './activity.ts';
 import { useLedger } from './context.tsx';
+
+const t = ledger.activity;
 
 const ACTOR_ICON: Record<AuditActor['kind'], ReactNode> = {
   member: <UserRound />,
@@ -39,7 +43,7 @@ export function ActivityPanel() {
       {state.entries === null ? (
         <Loading />
       ) : state.entries.length === 0 ? (
-        <Empty icon={<History />} title="还没有动态" hint="记账、改账、加成员等操作都会出现在这里" />
+        <Empty icon={<History />} title={t.empty} hint={t.emptyHint} />
       ) : (
         <>
           <ul className="-mx-2">
@@ -51,7 +55,7 @@ export function ActivityPanel() {
           </ul>
           {hasMore && (
             <Button variant="ghost" className="w-full" loading={state.loadingMore} onClick={() => void activity.loadMore()}>
-              加载更早的动态
+              {t.loadMore}
             </Button>
           )}
         </>
@@ -73,13 +77,13 @@ function VerifyStatus({ status, onRetry }: { status: AuditStatus; onRetry: () =>
       <div className="flex items-start gap-2.5 rounded-2xl bg-rose-500/10 px-3.5 py-3 text-[13px] text-rose-700 dark:text-rose-300">
         <ShieldAlert className="mt-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1">
-          <p className="font-medium">{failed ? `第 ${status.seq} 条记录校验失败` : '动态加载失败'}</p>
+          <p className="font-medium">{failed ? t.failedTitle(status.seq) : t.loadFailed}</p>
           <p className="mt-0.5 text-rose-600/80 dark:text-rose-300/80">
-            {failed ? `${status.reason}，可能被篡改` : status.message}
+            {failed ? t.failedDetail(t.failures[status.reason]) : status.message}
           </p>
         </div>
         {!failed && (
-          <button onClick={onRetry} className="-m-1 rounded-full p-1 hover:bg-rose-500/10" aria-label="重试">
+          <button onClick={onRetry} className="-m-1 rounded-full p-1 hover:bg-rose-500/10" aria-label={t.retry}>
             <RotateCw className="size-4" />
           </button>
         )}
@@ -96,11 +100,8 @@ function VerifyStatus({ status, onRetry }: { status: AuditStatus; onRetry: () =>
       )}
       <div className="min-w-0">
         <p className={cn('flex items-center gap-1.5 font-medium', ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500')}>
-          {ok ? `已校验${status.publicKey ? ' · 签名有效' : ' · 未签名'} · 共 ${status.count} 条` : '正在校验…'}
-          <Hint>
-            动态串成哈希链，浏览器逐条核对，任何删改都会被发现。
-            {ok && !status.publicKey ? '服务器未配置签名密钥，记录没有签名。' : '每条记录还带有服务器签名。'}
-          </Hint>
+          {ok ? t.verified(!!status.publicKey, status.count) : t.verifying}
+          <Hint>{t.explain(!ok || !!status.publicKey)}</Hint>
         </p>
         {ok && status.publicKey && <KeyFingerprint publicKey={status.publicKey} />}
       </div>
@@ -112,18 +113,18 @@ function KeyFingerprint({ publicKey }: { publicKey: string }) {
   async function copy() {
     try {
       await navigator.clipboard.writeText(publicKey);
-      toast.success('已复制签名公钥');
+      toast.success(t.keyCopied);
     } catch {
-      toast.error('复制失败');
+      toast.error(t.copyFailed);
     }
   }
   return (
     <button
       onClick={copy}
-      title={`复制完整公钥 ${publicKey}`}
+      title={t.copyKey(publicKey)}
       className="mt-1 inline-flex items-center gap-1.5 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
     >
-      公钥指纹 <span className="font-mono">{keyFingerprint(publicKey)}</span>
+      {t.fingerprint} <span className="font-mono">{keyFingerprint(publicKey)}</span>
       <Copy className="size-3.5" />
     </button>
   );
@@ -131,7 +132,7 @@ function KeyFingerprint({ publicKey }: { publicKey: string }) {
 
 function Entry({ record }: { record: AuditRecord }) {
   const { at, actor, action } = useMemo(() => parseAudit(record), [record]);
-  const { summary, details } = describeAudit(action);
+  const { summary, details } = describeAudit(action, locale);
   return (
     <Reveal as="li" layout="position">
       <div className="flex gap-3 rounded-2xl px-2 py-2.5">
@@ -148,7 +149,7 @@ function Entry({ record }: { record: AuditRecord }) {
             </ul>
           )}
           <p className="mt-1 truncate text-xs text-zinc-400">
-            {actorLabel(actor)} · <time title={formatDateTime(at)}>{relativeTime(at)}</time>
+            {actorLabel(actor, locale)} · <time title={formatDateTime(at)}>{relativeTime(at)}</time>
           </p>
         </div>
       </div>

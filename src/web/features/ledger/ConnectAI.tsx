@@ -6,16 +6,11 @@ import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { ConnectionList } from '../../components/ConnectionList.tsx';
 import { Hint } from '../../components/Hint.tsx';
+import { connect as t } from '../../i18n/connect.ts';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { useLedger } from './context.tsx';
 
 export const mcpUrl = () => `${window.location.origin}/mcp`;
-
-const STEPS = [
-  { app: 'Claude', how: '设置 → 连接器 → 添加自定义连接器' },
-  { app: 'ChatGPT', how: '设置 → 应用与连接器 → 开发者模式 → 创建' },
-  { app: '其他', how: 'Cursor、VS Code 等远程 MCP 客户端' },
-];
 
 // 授权通常在另一个标签页完成，回到这里时刷新
 const cache = new Map<string, Connection[]>();
@@ -50,7 +45,7 @@ function useConnections(cacheKey: string, list: () => Promise<Connection[]>, rem
         if (next) cache.set(cacheKey, next);
         return next;
       });
-      toast.success(`已断开 ${c.clientName ?? c.clientHost ?? 'AI 应用'}`);
+      toast.success(t.ai.disconnected(c.clientName ?? c.clientHost ?? t.ai.fallbackApp));
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -77,27 +72,27 @@ export function ConnectAI({ admin }: { admin: boolean }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1800);
     } catch {
-      toast.error('复制失败，请手动复制');
+      toast.error(t.ai.copyFailed);
     }
   }
 
   return (
     <div className="space-y-6 pb-1">
       <div>
-        <Label>MCP 服务器地址</Label>
+        <Label>{t.ai.serverUrl}</Label>
         <div className="flex gap-2">
           <input readOnly value={mcpUrl()} onFocus={(e) => e.currentTarget.select()} className="field font-mono" />
           <Button
             variant="primary"
             size="icon"
             className="size-11 rounded-2xl"
-            aria-label="复制地址"
+            aria-label={t.ai.copyUrl}
             onClick={copy}
             icon={copied ? <Check className="size-4" /> : <Copy className="size-4" />}
           />
         </div>
         <ol className="mt-3 space-y-2">
-          {STEPS.map((s) => (
+          {t.ai.steps.map((s) => (
             <li key={s.app} className="flex gap-2.5 text-[13px] leading-relaxed text-zinc-500 dark:text-zinc-400">
               <span className="mt-0.5 h-fit shrink-0 rounded-md bg-zinc-100 px-1.5 text-[11px] font-medium text-zinc-600 dark:bg-white/8 dark:text-zinc-300">
                 {s.app}
@@ -107,18 +102,14 @@ export function ConnectAI({ admin }: { admin: boolean }) {
           ))}
         </ol>
         <p className="mt-3 flex items-center gap-1.5 rounded-2xl bg-brand-500/8 px-4 py-3 text-[13px] text-brand-700 dark:text-brand-200">
-          {admin ? '授权时选「全部账本」即可管理所有账本' : '连接时在授权页确认即可'}
-          <Hint>
-            {admin
-              ? 'AI 能以管理员身份建账本、生成口令、记账查账；也可以只授权当前账本。'
-              : '在已打开本账本的浏览器里可一键授权，否则输入分享口令。之后就能让 AI 记账、查账、算结算。'}
-          </Hint>
+          {admin ? t.ai.hintAdmin : t.ai.hintMember}
+          <Hint>{admin ? t.ai.detailAdmin : t.ai.detailMember}</Hint>
         </p>
       </div>
 
       <div>
         <Label aside={ledger.connections && ledger.connections.length > 0 && <span className="tabular">{ledger.connections.length}</span>}>
-          已连接本账本的应用
+          {t.ai.ledgerConnections}
         </Label>
         <ConnectionList connections={ledger.connections} busy={ledger.busy} onDisconnect={ledger.disconnect} />
       </div>
@@ -132,8 +123,8 @@ function AdminConnections() {
   const { connections, busy, disconnect } = useConnections('admin', adminConnections, removeAdminConnection);
   return (
     <div>
-      <Label aside={connections && connections.length > 0 && <span className="tabular">{connections.length}</span>}>管理员连接（全部账本）</Label>
-      <ConnectionList connections={connections} busy={busy} onDisconnect={disconnect} empty="还没有以管理员身份连接的应用" />
+      <Label aside={connections && connections.length > 0 && <span className="tabular">{connections.length}</span>}>{t.ai.adminConnections}</Label>
+      <ConnectionList connections={connections} busy={busy} onDisconnect={disconnect} empty={t.ai.adminEmpty} />
     </div>
   );
 }

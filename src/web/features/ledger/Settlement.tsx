@@ -11,9 +11,11 @@ import { Button } from '../../components/Button.tsx';
 import { Card, Empty, Label } from '../../components/Card.tsx';
 import { Collapse, Reveal } from '../../components/Collapse.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
+import { common } from '../../i18n/common.ts';
+import { expense } from '../../i18n/expense.ts';
 import { api, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
-import { dayLabel, formatDateTime, today } from '../../lib/dates.ts';
+import { formatDateTime, today } from '../../lib/dates.ts';
 import { useLedger } from './context.tsx';
 import { MemberChip } from './ExpenseForm.tsx';
 
@@ -43,10 +45,10 @@ export function SettlementCard() {
         api.ledger.settlements.$post({ json: { fromId: t.fromId, toId: t.toId, amount: t.amount, date: today() } }),
       );
       const id = message.event.type === 'settlement.saved' ? message.event.settlement.id : null;
-      toast.success(`已记录 ${memberById.get(t.fromId)?.name} → ${memberById.get(t.toId)?.name} ${formatMoney(t.amount)}`, {
+      toast.success(expense.recorded(memberById.get(t.fromId)?.name ?? '', memberById.get(t.toId)?.name ?? '', formatMoney(t.amount)), {
         action: id
           ? {
-              label: '撤销',
+              label: expense.settle.undo,
               onClick: () =>
                 void store.mutate(api.ledger.settlements[':id'].$delete({ param: { id } })).catch((err) =>
                   toast.error(errorMessage(err)),
@@ -67,27 +69,27 @@ export function SettlementCard() {
     <>
       <Card
         id="settlement"
-        title="结算"
+        title={expense.settle.card}
         icon={<HandCoins />}
         action={
           snapshot.members.length > 1 && (
             <Button size="sm" variant="soft" icon={<Plus className="size-3.5" />} onClick={() => setDraft({})}>
-              记录还款
+              {expense.settle.record}
             </Button>
           )
         }
       >
         <Collapse open={!hasActivity}>
-          <Empty icon={<HandCoins />} title="还没有需要结算的账目" hint="记账后自动算出谁该给谁多少" />
+          <Empty icon={<HandCoins />} title={expense.settle.emptyTitle} hint={expense.settle.emptyHint} />
         </Collapse>
         <Collapse open={hasActivity}>
           <p className="mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
-            {transfers.length ? `只需 ${transfers.length} 笔转账即可结清` : '每个人都已结清'}
+            {transfers.length ? expense.settle.transfersNeeded(transfers.length) : expense.settle.everyoneSettled}
           </p>
           <Collapse open={transfers.length === 0} className="pb-2">
             <div className="flex items-center gap-3 rounded-2xl bg-emerald-500/8 px-4 py-4 text-emerald-700 dark:text-emerald-300">
               <PartyPopper className="size-5 shrink-0" />
-              <span className="text-sm font-medium">账已算清，没有待结算的转账</span>
+              <span className="text-sm font-medium">{expense.settle.allSettled}</span>
             </div>
           </Collapse>
           <ul>
@@ -113,7 +115,7 @@ export function SettlementCard() {
                         <button
                           onClick={() => setDraft({ ...t })}
                           className="tabular text-base font-semibold hover:underline"
-                          title="修改金额后记录"
+                          title={expense.settle.editAmount}
                         >
                           {formatMoney(t.amount)}
                         </button>
@@ -125,7 +127,7 @@ export function SettlementCard() {
                         onClick={() => markPaid(t)}
                         icon={<Check className="size-3.5" />}
                       >
-                        已付
+                        {expense.settle.paid}
                       </Button>
                     </div>
                   </Reveal>
@@ -134,7 +136,7 @@ export function SettlementCard() {
             </AnimatePresence>
           </ul>
 
-          <p className="mt-3 mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">每人净额</p>
+          <p className="mt-3 mb-2 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">{expense.settle.balances}</p>
           <ul className="-mb-1.5">
             <AnimatePresence initial={false}>
               {balances.map((b) => {
@@ -165,7 +167,7 @@ export function SettlementCard() {
                           b.net > 0 ? 'text-emerald-600 dark:text-emerald-400' : b.net < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-zinc-400',
                         )}
                       >
-                        {b.net > 0 ? `应收 ${formatMoney(b.net)}` : b.net < 0 ? `应付 ${formatMoney(-b.net)}` : '已结清'}
+                        {b.net > 0 ? expense.settle.owed(formatMoney(b.net)) : b.net < 0 ? expense.settle.owes(formatMoney(-b.net)) : expense.settle.settled}
                       </span>
                     </div>
                   </Reveal>
@@ -176,7 +178,7 @@ export function SettlementCard() {
         </Collapse>
       </Card>
 
-      <Sheet open={!!draft} onClose={() => setDraft(null)} title="记录还款" description="记下谁转给了谁多少钱">
+      <Sheet open={!!draft} onClose={() => setDraft(null)} title={expense.settle.record} description={expense.settle.sheetDescription}>
         {draft && <SettlementForm draft={draft} onDone={() => setDraft(null)} />}
       </Sheet>
     </>
@@ -195,13 +197,13 @@ function SettlementForm({ draft, onDone }: { draft: Partial<Transfer>; onDone: (
   async function submit(e: FormEvent) {
     e.preventDefault();
     const cents = parseAmount(amount);
-    if (!fromId || !toId) return toast.error('请选择付款人和收款人');
-    if (fromId === toId) return toast.error('付款人和收款人不能是同一个人');
-    if (!cents) return toast.error('请输入有效金额');
+    if (!fromId || !toId) return toast.error(expense.settle.partiesRequired);
+    if (fromId === toId) return toast.error(expense.settle.samePerson);
+    if (!cents) return toast.error(expense.settle.invalidAmount);
     setSaving(true);
     try {
       await store.mutate(api.ledger.settlements.$post({ json: { fromId, toId, amount: cents, date, note: note.trim() || null } }));
-      toast.success(`已记录 ${memberById.get(fromId)?.name} → ${memberById.get(toId)?.name} ${formatMoney(cents)}`);
+      toast.success(expense.recorded(memberById.get(fromId)?.name ?? '', memberById.get(toId)?.name ?? '', formatMoney(cents)));
       onDone();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -212,7 +214,7 @@ function SettlementForm({ draft, onDone }: { draft: Partial<Transfer>; onDone: (
   return (
     <form onSubmit={submit} className="space-y-5 pb-1">
       <div>
-        <Label>谁付的钱</Label>
+        <Label>{expense.paidBy}</Label>
         <div className="flex flex-wrap gap-2">
           {snapshot.members.map((m) => (
             <MemberChip
@@ -228,7 +230,7 @@ function SettlementForm({ draft, onDone }: { draft: Partial<Transfer>; onDone: (
         </div>
       </div>
       <div>
-        <Label>付给了谁</Label>
+        <Label>{expense.settle.paidTo}</Label>
         {/* 付款人置灰而不是从列表里拿掉，换付款人时其余成员不会重新换行挪位置 */}
         <div className="flex flex-wrap gap-2">
           {snapshot.members.map((m) => (
@@ -238,20 +240,20 @@ function SettlementForm({ draft, onDone }: { draft: Partial<Transfer>; onDone: (
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>金额</Label>
+          <Label>{expense.amount}</Label>
           <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="0.00" className="field tabular" />
         </div>
         <div>
-          <Label>日期</Label>
+          <Label>{expense.date}</Label>
           <input type="date" value={date} onChange={(e) => e.target.value && setDate(e.target.value)} className="field tabular px-3" />
         </div>
       </div>
       <div>
-        <Label>备注（可选）</Label>
-        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={LIMITS.note} placeholder="例如：微信转账" className="field" />
+        <Label>{expense.settle.noteOptional}</Label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={LIMITS.note} placeholder={expense.settle.notePlaceholder} className="field" />
       </div>
       <Button type="submit" variant="primary" size="lg" className="w-full" loading={saving} icon={<Check className="size-4" />}>
-        记录还款
+        {expense.settle.record}
       </Button>
     </form>
   );
@@ -267,7 +269,7 @@ export function SettlementDetail({ settlement, onDone }: { settlement: Settlemen
     setDeleting(true);
     try {
       await store.mutate(api.ledger.settlements[':id'].$delete({ param: { id: settlement.id } }));
-      toast.success('已删除这笔还款');
+      toast.success(expense.settle.deleted);
       onDone();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -293,22 +295,22 @@ export function SettlementDetail({ settlement, onDone }: { settlement: Settlemen
       </div>
       <dl className="divide-y divide-zinc-100 rounded-2xl bg-zinc-50 px-4 text-sm dark:divide-white/5 dark:bg-white/4">
         <div className="flex justify-between py-3">
-          <dt className="text-zinc-500">日期</dt>
-          <dd>{dayLabel(settlement.date).title === '今天' ? '今天' : settlement.date}</dd>
+          <dt className="text-zinc-500">{expense.date}</dt>
+          <dd>{settlement.date === today() ? common.today : settlement.date}</dd>
         </div>
         {settlement.note && (
           <div className="flex justify-between py-3">
-            <dt className="text-zinc-500">备注</dt>
+            <dt className="text-zinc-500">{expense.settle.note}</dt>
             <dd>{settlement.note}</dd>
           </div>
         )}
         <div className="flex justify-between py-3">
-          <dt className="text-zinc-500">记录于</dt>
+          <dt className="text-zinc-500">{expense.settle.recordedAt}</dt>
           <dd className="tabular">{formatDateTime(settlement.createdAt)}</dd>
         </div>
       </dl>
       <Button variant="danger" size="lg" className="w-full" onClick={remove} loading={deleting} icon={<Trash2 className="size-4" />}>
-        删除这笔还款
+        {expense.settle.delete}
       </Button>
     </div>
   );

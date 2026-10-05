@@ -1,5 +1,6 @@
 import { PlugZap, Sparkles, Unplug } from 'lucide-react';
 import type { Connection } from '../../shared/types.ts';
+import { common } from '../i18n/common.ts';
 import { relativeTime } from '../lib/dates.ts';
 import { useDelayed } from '../lib/hooks.ts';
 import { AutoHeight } from './AutoHeight.tsx';
@@ -10,7 +11,7 @@ export function ConnectionList({
   connections,
   busy,
   onDisconnect,
-  empty = '还没有连接的 AI 应用',
+  empty = common.connections.empty,
 }: {
   connections: Connection[] | null;
   busy: string | null;
@@ -57,17 +58,17 @@ function List({
           </span>
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
-              <span className="truncate text-sm font-medium">{c.clientName ?? c.clientHost ?? '未命名应用'}</span>
+              <span className="truncate text-sm font-medium">{c.clientName ?? c.clientHost ?? common.connections.unnamed}</span>
               <span className="shrink-0 rounded bg-zinc-900/5 px-1 text-[10px] text-zinc-500 dark:bg-white/8 dark:text-zinc-400">
-                {c.scopes.includes('ledger:write') ? '可修改' : '只读'}
+                {c.scopes.includes('ledger:write') ? common.connections.readWrite : common.connections.readOnly}
               </span>
             </span>
             <span className="block truncate text-xs text-zinc-500 dark:text-zinc-400">
-              {[c.subject, c.clientHost, `${relativeTime(c.lastUsedAt)}使用`].filter(Boolean).join(' · ')}
+              {[c.subject, c.clientHost, common.connections.lastUsed(relativeTime(c.lastUsedAt))].filter(Boolean).join(' · ')}
             </span>
           </span>
           <Button size="sm" variant="danger" loading={busy === c.id} icon={<Unplug className="size-3.5" />} onClick={() => onDisconnect(c)}>
-            断开
+            {common.connections.disconnect}
           </Button>
         </li>
       ))}

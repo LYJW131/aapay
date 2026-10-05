@@ -1,0 +1,68 @@
+import { messages } from './locale.ts';
+
+export const connect = messages({
+  'zh-CN': {
+    ai: {
+      steps: [
+        { app: 'Claude', how: '设置 → 连接器 → 添加自定义连接器' },
+        { app: 'ChatGPT', how: '设置 → 应用与连接器 → 开发者模式 → 创建' },
+        { app: '其他', how: 'Cursor、VS Code 等远程 MCP 客户端' },
+      ],
+      disconnected: (name: string) => `已断开 ${name}`,
+      fallbackApp: 'AI 应用',
+      copyFailed: '复制失败，请手动复制',
+      serverUrl: 'MCP 服务器地址',
+      copyUrl: '复制地址',
+      hintAdmin: '授权时选「全部账本」即可管理所有账本',
+      hintMember: '连接时在授权页确认即可',
+      detailAdmin: 'AI 能以管理员身份建账本、生成口令、记账查账；也可以只授权当前账本。',
+      detailMember: '在已打开本账本的浏览器里可一键授权，否则输入分享口令。之后就能让 AI 记账、查账、算结算。',
+      ledgerConnections: '已连接本账本的应用',
+      adminConnections: '管理员连接（全部账本）',
+      adminEmpty: '还没有以管理员身份连接的应用',
+    },
+    welcome: {
+      title: (ledger: string) => `欢迎加入「${ledger}」`,
+      description: '你是哪一位？记账时默认由你付款',
+      defaultPayer: (name: string) => `记账时默认由 ${name} 付款`,
+      iAm: '我是',
+      notListed: '不在里面？把自己加进来',
+      addYourself: '先把自己加进来',
+      namePlaceholder: '你的名字',
+      add: '添加',
+      skip: '跳过',
+    },
+  },
+  en: {
+    ai: {
+      steps: [
+        { app: 'Claude', how: 'Settings → Connectors → Add custom connector' },
+        { app: 'ChatGPT', how: 'Settings → Apps & Connectors → Developer mode → Create' },
+        { app: 'Other', how: 'Cursor, VS Code and other remote MCP clients' },
+      ],
+      disconnected: (name) => `Disconnected ${name}`,
+      fallbackApp: 'AI app',
+      copyFailed: "Couldn't copy. Please copy it manually",
+      serverUrl: 'MCP server URL',
+      copyUrl: 'Copy URL',
+      hintAdmin: 'Choose "All ledgers" when authorizing to manage every ledger',
+      hintMember: 'Just confirm on the authorization page',
+      detailAdmin: 'The AI can create ledgers, generate passcodes, and add or review expenses as admin. You can also authorize just this ledger.',
+      detailMember: "In a browser where this ledger is open it's one click; otherwise enter the share passcode. Then the AI can add expenses, look things up and work out settle-ups.",
+      ledgerConnections: 'Apps connected to this ledger',
+      adminConnections: 'Admin connections (all ledgers)',
+      adminEmpty: 'No apps connected as admin yet',
+    },
+    welcome: {
+      title: (ledger) => `Welcome to "${ledger}"`,
+      description: 'Which one are you? You will be the default payer',
+      defaultPayer: (name) => `New expenses will be paid by ${name} by default`,
+      iAm: "I'm",
+      notListed: 'Not on the list? Add yourself',
+      addYourself: 'Add yourself first',
+      namePlaceholder: 'Your name',
+      add: 'Add',
+      skip: 'Skip',
+    },
+  },
+});
