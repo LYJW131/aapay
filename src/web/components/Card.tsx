@@ -1,8 +1,9 @@
 import { ChevronDown } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { motion } from 'motion/react';
 import type { ReactNode } from 'react';
 import { cn } from '../lib/cn.ts';
 import { usePersistentState } from '../lib/hooks.ts';
+import { Collapse } from './Collapse.tsx';
 
 export function Card({
   id,
@@ -37,18 +38,9 @@ export function Card({
         </h2>
         {action && <div onClick={(e) => e.stopPropagation()}>{action}</div>}
       </header>
-      <AnimatePresence initial={false}>
-        {!collapsed && (
-          <motion.div
-            initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
-            animate={{ height: 'auto', opacity: 1, transitionEnd: { overflow: 'visible' } }}
-            exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
-            transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <div className="pt-4">{children}</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <Collapse open={!collapsed} className="pt-4">
+        {children}
+      </Collapse>
     </section>
   );
 }
