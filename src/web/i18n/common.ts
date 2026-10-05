@@ -21,6 +21,7 @@ export const common = messages({
     hoursAgo: (n: number) => `${n} 小时前`,
     daysAgo: (n: number) => `${n} 天前`,
     listSeparator: '、',
+    details: '详细说明',
     connections: {
       empty: '还没有连接的 AI 应用',
       unnamed: '未命名应用',
@@ -50,6 +51,7 @@ export const common = messages({
     hoursAgo: (n) => (n === 1 ? '1 hour ago' : `${n} hours ago`),
     daysAgo: (n) => (n === 1 ? '1 day ago' : `${n} days ago`),
     listSeparator: ', ',
+    details: 'More info',
     connections: {
       empty: 'No AI apps connected yet',
       unnamed: 'Unnamed app',

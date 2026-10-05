@@ -5,6 +5,7 @@ import type { Connection } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { ConnectionList } from '../../components/ConnectionList.tsx';
+import { Hint } from '../../components/Hint.tsx';
 import { connect as t } from '../../i18n/connect.ts';
 import { api, call, errorMessage } from '../../lib/api.ts';
 import { useLedger } from './context.tsx';
@@ -100,8 +101,9 @@ export function ConnectAI({ admin }: { admin: boolean }) {
             </li>
           ))}
         </ol>
-        <p className="mt-3 rounded-2xl bg-brand-500/8 px-4 py-3 text-[13px] leading-relaxed text-brand-700 dark:text-brand-200">
+        <p className="mt-3 flex items-center gap-1.5 rounded-2xl bg-brand-500/8 px-4 py-3 text-[13px] text-brand-700 dark:text-brand-200">
           {admin ? t.ai.hintAdmin : t.ai.hintMember}
+          <Hint>{admin ? t.ai.detailAdmin : t.ai.detailMember}</Hint>
         </p>
       </div>
 

@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { LIMITS } from '../../../shared/limits.ts';
 import type { AdminIdentity, AuthorizeInfo, PublicConfig } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
+import { Hint } from '../../components/Hint.tsx';
 import { LanguageSwitch } from '../../components/LanguageSwitch.tsx';
 import { AppIcon } from '../../components/Logo.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
@@ -301,8 +302,9 @@ function Consent({
         </button>
       )}
 
-      <p className="mt-5 px-2 text-center text-xs leading-relaxed text-zinc-400 dark:text-zinc-500">
+      <p className="mt-5 flex items-center justify-center gap-1.5 px-2 text-xs text-zinc-400 dark:text-zinc-500">
         {target === 'admin' ? t.noteAdmin : t.noteLedger}
+        <Hint>{target === 'admin' ? t.detailAdmin : t.detailLedger}</Hint>
       </p>
     </Shell>
   );

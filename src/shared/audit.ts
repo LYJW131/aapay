@@ -86,6 +86,10 @@ export type AuditVerdict =
 
 export type AuditFailure = 'key-changed' | 'seq-gap' | 'prev-mismatch' | 'hash-mismatch' | 'seq-mismatch' | 'bad-signature';
 
+export function keyFingerprint(publicKey: string) {
+  return bytesToHex(sha256(hexToBytes(publicKey)).slice(0, 8)).match(/.{4}/g)!.join(' ');
+}
+
 export function verifyAudit(records: readonly AuditRecord[], publicKey: string | null, from: AuditCheckpoint | null): AuditVerdict {
   if (from && from.publicKey && from.publicKey !== publicKey) {
     return { ok: false, seq: from.seq, reason: 'key-changed' };

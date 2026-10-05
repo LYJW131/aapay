@@ -2,7 +2,6 @@ node_modules
 dist
 data
 .wrangler
-.git
 .env
 .dev.vars
 *.log

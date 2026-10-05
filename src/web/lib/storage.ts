@@ -8,6 +8,13 @@ export function load<T>(key: string, fallback: T): T {
   }
 }
 
+export function clearAll(keep: string[] = []) {
+  try {
+    for (const key of Object.keys(localStorage)) if (key.startsWith('aapay:') && !keep.includes(key)) localStorage.removeItem(key);
+  } catch {
+  }
+}
+
 export function save(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value));

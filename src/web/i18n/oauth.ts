@@ -34,10 +34,11 @@ export const oauth = messages({
     approve: '允许连接',
     cancel: '取消',
     adminLogin: '以管理员身份登录，授权管理全部账本',
-    noteAdmin:
-      '应用名称由对方自行声明，请确认跳转地址是你信任的应用。管理员授权 30 天内有效，可随时在账本页的「连接 AI」中断开；关闭管理后台或移出管理员名单后立即失效。',
-    noteLedger:
-      '应用名称由对方自行声明，请确认跳转地址是你信任的应用。授权只对这一个账本有效，可随时在账本的「连接 AI」中断开；口令被撤销时也会自动失效。',
+    noteAdmin: '管理员授权 30 天内有效，可随时断开',
+    noteLedger: '只对这个账本有效，可随时断开',
+    detailAdmin:
+      '应用名称由对方自行声明，请确认跳转地址是你信任的应用。可在账本页的「连接 AI」中断开；关闭管理后台或移出管理员名单后立即失效。',
+    detailLedger: '应用名称由对方自行声明，请确认跳转地址是你信任的应用。可在账本页的「连接 AI」中断开；口令被撤销时也会自动失效。',
   },
   en: {
     invalidRequest: 'Invalid authorization request',
@@ -72,9 +73,11 @@ export const oauth = messages({
     approve: 'Allow',
     cancel: 'Cancel',
     adminLogin: 'Sign in as admin to authorize all ledgers',
-    noteAdmin:
-      'The app name is self-declared. Make sure the redirect address belongs to an app you trust. Admin authorization lasts 30 days and can be disconnected anytime under "Connect AI" on a ledger page. It stops working as soon as the admin console is turned off or you are removed from the admin list.',
-    noteLedger:
-      'The app name is self-declared. Make sure the redirect address belongs to an app you trust. Authorization applies to this ledger only and can be disconnected anytime under "Connect AI" in the ledger. It also stops working if the passcode is revoked.',
+    noteAdmin: 'Admin access lasts 30 days. Disconnect anytime',
+    noteLedger: 'This ledger only. Disconnect anytime',
+    detailAdmin:
+      'The app name is self-declared, so make sure the redirect address belongs to an app you trust. Disconnect under "Connect AI" on a ledger page. Access ends as soon as the admin console is turned off or you are removed from the admin list.',
+    detailLedger:
+      'The app name is self-declared, so make sure the redirect address belongs to an app you trust. Disconnect under "Connect AI" on the ledger page. Access also ends if the passcode is revoked.',
   },
 });

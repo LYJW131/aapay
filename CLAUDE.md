@@ -9,8 +9,8 @@ AAPay：多人记账与结算。一套 TypeScript 代码同时部署到 Cloudfla
 - 动手改代码前，先把用户的改动要求理解清楚，整理成条目复述一遍，再开始实现。要求有歧义或会影响已有行为时，复述时一并指出并给出你的理解。
 - 不保留兼容行为：改了接口、数据结构、路由或交互，就直接替换旧实现并删除旧路径，不加兼容分支、旧格式解析、废弃别名或 fallback。线上数据的迁移不属于兼容行为，见下文「数据迁移」。
 - 用中文和用户交流；提交信息用中文，前缀 `feat:` / `fix:` / `refactor:` / `docs:`。
-- 推送 `v2` 分支即发布生产：Cloudflare Workers Builds 会对 `v2` 自动执行 `npm run typecheck && npm test && npm run build`，通过后 `npx wrangler deploy` 到 https://aapay.lyjw.dev（只改 `*.md`、`docs/` 不触发）。所以推送前必须在本地跑通类型检查和测试。
-- 推送其他分支会构建 Worker Preview（`npx wrangler preview`），地址 `<分支名>-aapay.lyjw.workers.dev`，整个域名由 Access 应用「AAPay Previews」保护。Preview 的配置写在 `wrangler.jsonc` 的 `previews` 块（不继承顶层 vars，密钥需单独设置），DO 存储每个 Preview 独立、与生产数据隔离。
+- 推送 `main` 分支即发布生产：Cloudflare Workers Builds 会对 `main` 自动执行 `npm run typecheck && npm test && npm run build`，通过后 `npx wrangler deploy` 到 https://aapay.lyjw.dev（只改 `*.md`、`docs/` 不触发）。所以推送前必须在本地跑通类型检查和测试。
+- 推送其他分支会构建 Worker Preview（`npx wrangler preview`），地址 `<分支名>-aapay.lyjw.workers.dev`，整个域名由 Access 应用「AAPay Previews」保护。Preview 的配置写在 `wrangler.jsonc` 的 `previews` 块（不继承顶层 vars）。`wrangler preview` 每次部署只带配置里的变量，不会沿用之前设置的密钥，所以 Preview 的部署命令用 `--secrets-file` 从构建密钥 `PREVIEW_AUDIT_SIGNING_KEY` 注入 `AUDIT_SIGNING_KEY`，所有 Preview 共用这一把。每个 Preview 的 DO 存储独立、与生产数据隔离。
 
 <EXTREMELY-IMPORTANT>
 
@@ -79,5 +79,6 @@ node scripts/seed.mjs http://127.0.0.1:5173                     # 写入演示�
 - 数据迁移：`registry.ts` 与 `ledger.ts` 的 `MIGRATIONS` 只能在末尾追加，已发布的条目不能修改或删除；生产环境的 DO 里有真实数据，迁移需保留现有行（参考迁移 4 的建新表、拷贝、重命名，`tests/mcp.test.ts` 里有对应的迁移测试）。
 - Cloudflare Workers 的 `fetch` 不支持 `redirect: 'error'`（会直接抛错），需要不跟随跳转时用 `redirect: 'manual'` 并检查状态码。vitest 跑在 Node 平台上，测试里模拟 `fetch` 时要让模拟行为与 Workers 一致。
 - 测试通过 `createNodePlatform` + `app.request()` 直接驱动整个应用；限流按实例计数（每分钟 10 次加入 / 注册），需要大量授权的用例各自新建 `setup()`。
+- 界面文案求短：页面上直接显示的说明、提示、空状态、toast 都只写一句短话，第一眼能看完，不写成段的长句。放不下但仍有用的细节收进 `components/Hint.tsx`（问号图标，桌面悬停、触屏点击展开）；不重要的细节直接删掉。中英两种语言都按此要求，新增或修改文案时检查。
 - iOS Safari 聚焦字号小于 16px 的输入框时会自动放大页面，且不会缩回。所有 `input` / `textarea` / `select` 在触屏上都必须至少 16px：优先用 `index.css` 的 `.field`（已带 `pointer-coarse:text-base`），不要再给它加 `text-sm` / `text-[13px]` 等更小字号；不用 `.field` 的自定义输入框（如 `BillBatch.tsx` 的行内编辑）必须自己加 `pointer-coarse:text-base`。桌面端可以保留小字号。
 - 配置变量在 `src/server/config.ts` 统一解析，Cloudflare（`wrangler.jsonc` vars / secrets）与 Docker（`.env`）共用同一套变量名；新增变量时同步 README 的配置表与 `.env.example`。

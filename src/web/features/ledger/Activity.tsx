@@ -1,11 +1,13 @@
-import { History, RotateCw, ShieldAlert, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
+import { Copy, History, RotateCw, ShieldAlert, ShieldCheck, Sparkles, UserRound, Users } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { toast } from 'sonner';
 import { actorLabel, describeAudit } from '../../../shared/audit-text.ts';
-import { parseAudit, type AuditActor, type AuditRecord } from '../../../shared/audit.ts';
+import { keyFingerprint, parseAudit, type AuditActor, type AuditRecord } from '../../../shared/audit.ts';
 import { Button } from '../../components/Button.tsx';
 import { Empty } from '../../components/Card.tsx';
 import { Reveal } from '../../components/Collapse.tsx';
+import { Hint } from '../../components/Hint.tsx';
 import { Spinner } from '../../components/Spinner.tsx';
 import { ledger } from '../../i18n/ledger.ts';
 import { locale } from '../../i18n/locale.ts';
@@ -97,12 +99,34 @@ function VerifyStatus({ status, onRetry }: { status: AuditStatus; onRetry: () =>
         <span className="mt-0.5 flex size-4 shrink-0 items-center justify-center text-zinc-400">{spinning && <Spinner className="size-3.5" />}</span>
       )}
       <div className="min-w-0">
-        <p className={cn('font-medium', ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500')}>
-          {ok ? t.verified(status.signed, status.count) : t.verifying}
+        <p className={cn('flex items-center gap-1.5 font-medium', ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500')}>
+          {ok ? t.verified(!!status.publicKey, status.count) : t.verifying}
+          <Hint>{t.explain(!ok || !!status.publicKey)}</Hint>
         </p>
-        <p className="mt-0.5 text-zinc-500 dark:text-zinc-400">{t.explain}</p>
+        {ok && status.publicKey && <KeyFingerprint publicKey={status.publicKey} />}
       </div>
     </div>
+  );
+}
+
+function KeyFingerprint({ publicKey }: { publicKey: string }) {
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(publicKey);
+      toast.success(t.keyCopied);
+    } catch {
+      toast.error(t.copyFailed);
+    }
+  }
+  return (
+    <button
+      onClick={copy}
+      title={t.copyKey(publicKey)}
+      className="mt-1 inline-flex items-center gap-1.5 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
+    >
+      {t.fingerprint} <span className="font-mono">{keyFingerprint(publicKey)}</span>
+      <Copy className="size-3.5" />
+    </button>
   );
 }
 
