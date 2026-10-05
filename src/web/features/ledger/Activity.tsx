@@ -97,7 +97,11 @@ function VerifyStatus({ status, onRetry }: { status: AuditStatus; onRetry: () =>
         <p className={cn('font-medium', ok ? 'text-emerald-700 dark:text-emerald-300' : 'text-zinc-500')}>
           {ok ? `已校验${status.publicKey ? ' · 签名有效' : ''} · 共 ${status.count} 条` : '正在校验…'}
         </p>
-        <p className="mt-0.5 text-zinc-500 dark:text-zinc-400">每条动态都由服务器签名并串成哈希链，你的浏览器会逐条核对，任何删改都会被发现。</p>
+        <p className="mt-0.5 text-zinc-500 dark:text-zinc-400">
+          {ok && !status.publicKey
+            ? '每条动态都串成哈希链，你的浏览器会逐条核对，任何删改都会被发现。服务器未配置签名密钥，记录没有签名。'
+            : '每条动态都由服务器签名并串成哈希链，你的浏览器会逐条核对，任何删改都会被发现。'}
+        </p>
         {ok && status.publicKey && <KeyFingerprint publicKey={status.publicKey} />}
       </div>
     </div>

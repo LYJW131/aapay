@@ -18,11 +18,6 @@ import { BillBatch, type BillRow } from './BillBatch.tsx';
 import { load, save } from '../../lib/storage.ts';
 import { useLedger } from './context.tsx';
 
-interface Remembered {
-  participantIds: string[];
-  at: number;
-}
-
 const MAX_IMAGES = 6;
 
 const payerListeners = new Set<() => void>();
@@ -46,19 +41,6 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   const { snapshot, store, key, memberById, recognize } = useLedger();
   const { members } = snapshot;
 
-  const [initialParticipants] = useState(() => {
-    if (expense) return expense.shares.map((s) => s.memberId);
-    const remembered = load<Remembered | null>(key('expense-defaults'), null);
-    const ids = new Set(members.map((m) => m.id));
-    // 上次之后新加入的成员默认也参与
-    return remembered
-      ? [
-          ...remembered.participantIds.filter((id) => ids.has(id)),
-          ...members.filter((m) => m.createdAt > remembered.at).map((m) => m.id),
-        ]
-      : members.map((m) => m.id);
-  });
-
   const [amount, setAmount] = useState(expense ? centsToInput(expense.amount) : '');
   const [title, setTitle] = useState(expense?.title ?? '');
   const [date, setDate] = useState(expense?.date ?? today());
@@ -66,7 +48,16 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   const [editedPayer, setEditedPayer] = useState(expense?.payerId ?? '');
   const payerId = expense ? editedPayer : defaultPayer && memberById.has(defaultPayer) ? defaultPayer : '';
   const choosePayer = (id: string) => (expense ? setEditedPayer(id) : saveDefaultPayer(key('payer'), id));
-  const [selected, setSelected] = useState(() => new Set(initialParticipants));
+  const [picked, setPicked] = useState(() => (expense ? new Set(expense.shares.map((s) => s.memberId)) : null));
+  // 新记一笔时只记住没选的人，之后加入的成员（包括表单打开期间）默认参与
+  const [excluded, setExcluded] = useState(() => new Set(load<string[]>(key('excluded-participants'), [])));
+  const selected = picked ?? new Set(members.filter((m) => !excluded.has(m.id)).map((m) => m.id));
+  const choose = (next: Set<string>) => {
+    if (picked) return setPicked(next);
+    const out = members.filter((m) => !next.has(m.id)).map((m) => m.id);
+    setExcluded(new Set(out));
+    save(key('excluded-participants'), out);
+  };
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -89,13 +80,12 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   const [openedSuggestions] = useState(liveSuggestions);
   const suggestions = onDone ? openedSuggestions : liveSuggestions;
 
-  const toggle = (id: string) =>
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    choose(next);
+  };
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -114,7 +104,6 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         toast.success('已保存修改');
       } else {
         await store.mutate(api.ledger.expenses.$post({ json: input }));
-        save(key('expense-defaults'), { participantIds, at: Date.now() } satisfies Remembered);
         toast.success(`已记录 ${input.title} ${formatMoney(cents)}`);
         // 在弹窗里时表单随弹窗关掉，这时清空会让退场动画里的内容先变一下
         if (!onDone) {
@@ -150,7 +139,6 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         await store.mutate(api.ledger.expenses.$post({ json: input }));
         saved.add(rowKey);
       }
-      save(key('expense-defaults'), { participantIds, at: Date.now() } satisfies Remembered);
       toast.success(`已记录 ${inputs.length} 笔，共 ${formatMoney(inputs.reduce((sum, { input }) => sum + input.amount, 0))}`);
       setDrafts(null);
       onDone?.();
@@ -357,7 +345,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
               aside={
                 <button
                   type="button"
-                  onClick={() => setSelected(new Set(allSelected ? [] : members.map((m) => m.id)))}
+                  onClick={() => choose(new Set(allSelected ? [] : members.map((m) => m.id)))}
                   className="rounded-full px-2 py-0.5 text-xs text-brand-600 hover:bg-brand-500/10 dark:text-brand-300"
                 >
                   {allSelected ? '全不选' : '全选'}
