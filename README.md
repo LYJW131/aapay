@@ -7,10 +7,13 @@
 <p align="center">一起花钱，轻松算账 —— 多人记账、实时同步、一键结算</p>
 
 <p align="center">
+  <img src="docs/screenshots/desktop-assistant.png" width="720" alt="AI 助手生成待确认的变更卡片" />
+</p>
+<p align="center">
   <img src="docs/screenshots/desktop-ledger.png" width="720" alt="桌面端账本" />
 </p>
 <p align="center">
-  <img src="docs/screenshots/mobile-settlement.png" width="240" alt="移动端结算" />
+  <img src="docs/screenshots/mobile-assistant.png" width="240" alt="AI 助手生成的分类图表" />
   <img src="docs/screenshots/mobile-dark.png" width="240" alt="深色模式" />
 </p>
 <p align="center">
@@ -25,8 +28,14 @@
 - **多日账本**：账目按天分组展示，每天带小计；支持「全部 / 今天 / 近 7 天 / 本月 / 自定义」范围与按成员筛选，附每日（或每月）支出柱状图，点击柱子可下钻到当天
 - **结算**：综合全部支出与已记录的还款，计算每人净额并给出**最少转账方案**；点「已付」即记下一笔「谁向谁支付了多少」（可撤销），也可手动记录任意还款
 - **记账**：金额、用途（常用用途一键填入）、日期、分类、付款人、分摊成员；分摊可选均分、按份数（如大人 2 份、小孩 1 份）或按金额（每人填多少，合计等于总额）；付款人一选就记住、下次自动预选，分摊成员沿用上一笔；从邀请链接首次进入时会问「你是哪一位」，选择已有成员或把自己加进来即设为默认付款人；支出可编辑、删除
-- **AI 助手**：账本页底部的输入条，用一句话记账、改账、加成员、记还款，或问「这个月花在哪了」并直接给出余额、转账方案、分类、趋势等卡片；拍照或粘贴小票可识别出多笔支出。AI 的写操作只生成待确认的变更卡片，确认后才写入，执行后可撤销（需配置 `GEMINI_API_KEY`）
-- **分类概览与导出**：概览按分类汇总支出；明细可按分类、成员、关键词与日期范围筛选，并把当前筛选结果导出为 CSV
+- **AI 助手**（需配置 `GEMINI_API_KEY`）：账本页底部的输入条，支持一句话、拍照（或粘贴小票）和语音记账，也能改账、加成员、记还款，或问「这个月花在哪了」
+  - 回复流式输出；一句话里的多笔变更会依次生成卡片，照片识别时每张卡片逐字段生成
+  - 写操作只生成待确认的变更卡片，确认后原子执行；执行后可撤销，撤销后还能重新执行
+  - 确认前可以在对话里继续说「改成 30」「去掉小王」，也可以直接编辑卡片，提议会在原卡片上更新
+  - 查账结果以卡片展示：余额、转账方案、分类、趋势、明细。图表种类由 AI 选择，数字全部由前端用实时账本数据计算，不经过模型；卡片可一键跳到明细查看
+  - AI 助手写入的记录在「动态」里标注「经 AI 助手」，同样进入审计链
+- **分类概览与导出**：支出带分类图标（餐饮、交通、住宿等），概览按分类汇总；明细可按分类、成员、关键词与日期范围筛选，并把当前筛选结果导出为 CSV
+- **撤销**：每次写入都是一个变更集，记账、改账、删除、还款、AI 助手的操作都能撤销，并精确还原原来的份额
 - **金额精确**：全程以「分」为整数存储，均摊的零头按成员加入顺序分配，合计永远等于总额
 - **实时同步**：基于 WebSocket，其他人的操作即时出现并弹出通知；断线自动重连并补齐数据
 - **管理员卡片**：管理员登录后，账本页顶部多一张可折叠的管理卡片——切换 / 新建 / 删除账本，修改账本名称与图标（emoji，显示在账本页标题上），为当前账本生成带有效期的口令（1 天、7 天、30 天、永久或自定义时间段）、二维码邀请；撤销口令后用它登录的成员立即失效。`/admin` 是管理员登录入口
@@ -61,6 +70,8 @@
 
 - **每个账本一个独立数据库**：Cloudflare 上是一个 Durable Object（数据与实时连接在同一个对象里，强一致），Docker 中是一个 SQLite 文件
 - **版本号驱动的同步**：每次变更递增版本号并广播事件，客户端发现缺口时自动重新拉取快照
+- **所有写入都是变更集**：成员、支出、还款的增改删统一表示为一组 `Change`，经 `LedgerService.applyChanges` 在一个事务里原子执行（任何一条失败则全部回滚），逐条写入审计，并返回可直接回放的撤销变更集；`previewChanges` 在草稿上预演同一组变更而不落库。网页、MCP 与 AI 助手共用这一条写路径（`POST /api/ledger/changes`）
+- **AI 助手的数据流**：前端带上对话历史与待确认的修改请求 `POST /api/ledger/assistant`；服务端把待确认修改套在账本草稿上预演，让 Gemini 通过函数调用读账、提议变更；回复用 SSE 推送 `step`（工具调用进度）/ `text`（流式文字）/ `draft`（照片识别中逐字段生成的卡片）/ `pending`（合并后的待确认变更集）/ `view`（查账卡片）/ `done` 事件。AI 不会直接写入，用户在卡片上确认后，前端才经 `/api/ledger/changes` 写入，之后的撤销与重新执行也走同一接口
 - **会话**：口令换取随机会话令牌（HttpOnly Cookie），服务端只存其 SHA-256；撤销口令或删除账本会通过外键级联让会话立即失效
 
 ## 快速开始（本地开发）
@@ -154,7 +165,7 @@ AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`
 
 添加后应用会打开 AAPay 的授权页：已在这个浏览器打开过账本可以一键授权，否则输入该账本的分享口令；还可以关掉「记账、修改与删除」只给只读权限。之后就可以直接说「我付了 128 的晚饭，四个人分」「这周谁花得最多」「怎么转账能结清」。AI 做的修改会实时出现在所有人的页面上，并提示是哪个应用改的。
 
-**提供的工具**：`get_ledger`（成员、余额、分类汇总、最少转账方案）、`list_transactions`（按日期 / 成员 / 分类 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`、`list_activity`（操作动态）。金额以「元」为单位，成员可以直接用名字指代；记账可带分类，可以均分，也可以按金额或份数自定义分摊。工具描述、说明与错误提示都是英文（只给模型看），AI 会用你的语言回复，账本和成员名字保持原样。
+**提供的工具**：`get_ledger`（成员、余额、分类汇总、最少转账方案）、`list_transactions`（按日期 / 成员 / 分类 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`、`list_activity`（操作动态）。金额以「元」为单位，成员可以直接用名字指代；`add_expense` / `update_expense` 可带 `category`（不填则按用途猜测），分摊可用 `participants` 均分，也可用 `shares` 按金额或份数自定义，二者不能同时传。工具描述、说明与错误提示都是英文（只给模型看），AI 会用你的语言回复，账本和成员名字保持原样。
 
 **管理员连接**：已登录的管理员在授权页可以选择「全部账本」，AI 就能管理所有账本：`list_ledgers`、`create_ledger`（默认同时生成口令并返回邀请链接）、`update_ledger`（名称与图标）、`delete_ledger`（需再次输入名称确认）、`list_passphrases` / `create_passphrase` / `revoke_passphrase`；账本内的工具用 `ledger` 参数（名称或 ID）指定账本。管理员授权 30 天有效，在账本页的「连接 AI」中可查看与断开；关闭管理后台或把此人移出 `ADMIN_EMAILS` 后立即失效。还没登录时，授权页有「以管理员身份登录」入口，登录后自动回到授权页。
 
@@ -176,7 +187,7 @@ AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`
 
 ```
 src/
-├── shared/             前后端共用：类型、zod 校验、金额工具、结算算法、事件 reducer
+├── shared/             前后端共用：类型、zod 校验、变更集、AI 助手协议（assistant.ts）、金额工具、结算算法、事件 reducer
 ├── server/
 │   ├── app.ts          Hono API（平台无关）
 │   ├── config.ts       环境变量解析
@@ -184,7 +195,7 @@ src/
 │   ├── core/           RegistryService（账本、口令、会话、OAuth 授权）、LedgerService、SQL 抽象、RPC 信封
 │   ├── mcp/            OAuth 2.1 授权服务器、MCP 端点（JSON-RPC）与管理员工具
 │   ├── tools/          账本工具：读工具与写工具的 plan / describe（MCP 与 AI 助手共用）
-│   ├── ai/             AI 助手：Gemini 流式客户端、对话循环、变更集折叠、票据增量解析
+│   ├── ai/             AI 助手：Gemini 流式客户端（gemini）、票据增量解析（item-stream）、待确认变更合并（pending）、提示词（prompts）、对话循环（assistant）
 │   ├── cloudflare/     Worker 入口与 Durable Objects
 │   └── node/           Node 入口、node:sqlite 驱动、WebSocket 房间
 └── web/                React 前端（features/ledger、features/assistant、features/admin、features/join、features/oauth）
