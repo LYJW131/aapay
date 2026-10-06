@@ -144,6 +144,5 @@ export type MemberInput = z.infer<typeof memberInput>;
 export type LedgerInput = z.infer<typeof ledgerInput>;
 export type ExpenseInput = z.infer<typeof expenseInput>;
 export type ExpenseSplit = z.infer<typeof expenseSplit>;
-export type ChangesInput = z.infer<typeof changesInput>;
 export type SettlementInput = z.infer<typeof settlementInput>;
 export type PassphraseInput = z.infer<typeof passphraseInput>;

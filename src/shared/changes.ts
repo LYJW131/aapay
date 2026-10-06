@@ -13,8 +13,6 @@ export type Change =
   | { op: 'settlement.create'; id: string; settlement: SettlementInput }
   | { op: 'settlement.delete'; id: string };
 
-export type ChangeOp = Change['op'];
-
 export interface ChangeResult {
   messages: LiveMessage[];
   undo: Change[];
