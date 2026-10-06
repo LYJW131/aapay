@@ -392,7 +392,28 @@ describe('undo', () => {
     expect(service.snapshot().expenses[0]!.title).toBe('别人又改了');
   });
 
-  it('round-trips stored expenses through expenseInputOf', () => {
+  it.each([
+    ['updating', (x: string, a: string, b: string): Change => ({ op: 'expense.update', id: x, expense: expenseInput(a, even(a, b), { amount: 101 }) })],
+    ['deleting', (x: string): Change => ({ op: 'expense.delete', id: x })],
+  ])('restores each share exactly after %s an even split and deleting a participant in one batch', (_, change) => {
+    const [a, m, b, x] = [newId(), newId(), newId(), newId()];
+    service.applyChanges(
+      [
+        { op: 'member.create', id: a, member: { name: 'A' } },
+        { op: 'member.create', id: m, member: { name: 'M' } },
+        { op: 'member.create', id: b, member: { name: 'B' } },
+        { op: 'expense.create', id: x, expense: expenseInput(a, even(a, m, b), { amount: 101 }) },
+      ],
+      ctx,
+    );
+    const perPerson = () => Object.fromEntries(service.snapshot().expenses[0]!.shares.map((s) => [s.memberId, s.amount]));
+    expect(perPerson()).toEqual({ [a]: 34, [m]: 34, [b]: 33 });
+    const { undo } = service.applyChanges([change(x, a, b), { op: 'member.delete', id: m }], ctx);
+    service.applyChanges(undo, ctx);
+    expect(perPerson()).toEqual({ [a]: 34, [m]: 34, [b]: 33 });
+  });
+
+  it('turns stored expenses back into inputs with their exact shares, unless a share is zero', () => {
     const [a, b, c] = [newId(), newId(), newId()];
     service.applyChanges(
       [
@@ -401,12 +422,14 @@ describe('undo', () => {
         { op: 'member.create', id: c, member: { name: 'C' } },
         { op: 'expense.create', id: newId(), expense: expenseInput(a, even(c, a, b), { amount: 1000 }) },
         { op: 'expense.create', id: newId(), expense: expenseInput(a, exact({ [c]: 500, [a]: 500 }), { amount: 1000, date: '2026-09-01' }) },
+        { op: 'expense.create', id: newId(), expense: expenseInput(a, even(a, b, c), { amount: 2, date: '2026-08-01' }) },
       ],
       ctx,
     );
     const { members, expenses } = service.snapshot();
-    expect(expenseInputOf(expenses[0]!, members).split).toEqual({ mode: 'even', memberIds: [a, b, c] });
-    expect(expenseInputOf(expenses[1]!, members).split).toEqual({ mode: 'even', memberIds: [a, c] });
+    expect(expenseInputOf(expenses[0]!, members).split).toEqual(exact({ [a]: 334, [b]: 333, [c]: 333 }));
+    expect(expenseInputOf(expenses[1]!, members).split).toEqual(exact({ [a]: 500, [c]: 500 }));
+    expect(expenseInputOf(expenses[2]!, members).split).toEqual(even(a, b, c));
   });
 });
 

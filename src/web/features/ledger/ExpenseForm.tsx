@@ -1,4 +1,4 @@
-import { Check, ScanLine, Trash2 } from 'lucide-react';
+import { Check, RefreshCw, ScanLine, Trash2 } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import { guessCategory, type Category } from '../../../shared/categories.ts';
@@ -16,7 +16,7 @@ import { Label } from '../../components/Card.tsx';
 import { Collapse } from '../../components/Collapse.tsx';
 import { common } from '../../i18n/common.ts';
 import { expense as t } from '../../i18n/expense.ts';
-import { api, call, errorMessage } from '../../lib/api.ts';
+import { api, ApiError, call, errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { addDays, today } from '../../lib/dates.ts';
 import { compressImage } from '../../lib/image.ts';
@@ -45,9 +45,10 @@ export function useDefaultPayer(storageKey: string) {
   );
 }
 
-export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: () => void }) {
+export function ExpenseForm({ expense: latest, onReload, onDone }: { expense?: Expense; onReload?: () => void; onDone?: () => void }) {
   const { snapshot, store, key, memberById, recognize } = useLedger();
   const { members } = snapshot;
+  const [expense] = useState(latest);
 
   const [amount, setAmount] = useState(expense ? centsToInput(expense.amount) : '');
   const [title, setTitle] = useState(expense?.title ?? '');
@@ -74,6 +75,8 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   };
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [done, setDone] = useState(false);
+  const changedElsewhere = !!expense && !!latest && latest.updatedAt !== expense.updatedAt && !saving && !deleting && !done;
   const [scanning, setScanning] = useState(false);
   const [drafts, setDrafts] = useState<BillRow[] | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -82,7 +85,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   const cents = parseAmount(amount);
   const participantIds = members.filter((m) => selected.has(m.id)).map((m) => m.id);
   const original = useMemo(() => (expense ? splitOf(expense, members) : null), [expense, members]);
-  // 表单只能均分：编辑按金额分摊的支出时，金额和参与者都没动就保留原来的分摊
+  // 表单只能编辑均分，按金额分摊只能原样保留
   const keepsCustom =
     original?.mode === 'exact' &&
     cents === expense!.amount &&
@@ -123,6 +126,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
       if (expense) {
         if (matchesInput(expense, input, members)) return onDone?.();
         await store.apply([{ op: 'expense.update', id: expense.id, expense: input, ifUpdatedAt: expense.updatedAt }]);
+        setDone(true);
         toast.success(t.form.saved);
       } else {
         const { undo } = await store.apply([{ op: 'expense.create', id: newId(), expense: input }]);
@@ -135,10 +139,15 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
       }
       onDone?.();
     } catch (err) {
+      conflicted(err);
       toast.error(errorMessage(err));
     } finally {
       setSaving(false);
     }
+  }
+
+  function conflicted(err: unknown) {
+    if (expense && err instanceof ApiError && err.status === 409) void store.refresh();
   }
 
   async function submitBatch(rows: BillRow[]) {
@@ -243,6 +252,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
       toast.success(t.form.deleted(expense.title), { action: undoAction(store, undo) });
       onDone?.();
     } catch (err) {
+      conflicted(err);
       toast.error(errorMessage(err));
       setDeleting(false);
     }
@@ -262,6 +272,14 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         <p className="py-6 text-center text-sm text-zinc-500">{t.form.noMembers}</p>
       </Collapse>
       <Collapse open={members.length > 0}>
+        <Collapse open={changedElsewhere} className="pb-4">
+          <div className="flex items-center gap-3 rounded-2xl bg-amber-500/12 py-2 pr-2 pl-4 text-sm text-amber-800 dark:text-amber-200">
+            <span className="min-w-0 flex-1">{t.form.changedElsewhere}</span>
+            <Button size="sm" variant="secondary" icon={<RefreshCw className="size-4" />} onClick={onReload}>
+              {t.form.loadLatest}
+            </Button>
+          </div>
+        </Collapse>
         <form onSubmit={submit} className="space-y-5 pb-1">
           {recognize && !expense && <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={scan} />}
           <div>

@@ -131,6 +131,37 @@ describe('API (isolated mode)', () => {
     resetCookies();
   });
 
+  it('maps rejected change sets to 400, 404 and 409', async () => {
+    await login();
+    const ledger = (await call('POST', '/admin/ledgers', { name: '改动校验' })).data;
+    await call('POST', `/admin/ledgers/${ledger.id}/enter`);
+    const changes = (list: unknown[]) => call('POST', '/ledger/changes', { changes: list });
+    const member = (name: string) => ({ op: 'member.create', id: newId(), member: { name } });
+    const a = newId();
+    const id = newId();
+    const expense = (title: string) => ({ title, amount: 1000, payerId: a, date: '2026-10-01', category: null, split: { mode: 'even', memberIds: [a] } });
+    await changes([{ op: 'member.create', id: a, member: { name: '阿杰' } }, { op: 'expense.create', id, expense: expense('晚饭') }]);
+    const seen = (await call('GET', '/ledger')).data.expenses[0].updatedAt;
+
+    expect(await changes([])).toEqual({ status: 400, data: { error: '没有要保存的改动' } });
+    expect(await changes(Array.from({ length: 101 }, (_, i) => member(`成员${i}`)))).toEqual({ status: 400, data: { error: '一次最多 100 项改动' } });
+    expect(await changes([{ op: 'member.create', id: 'bad id', member: { name: '新人' } }])).toEqual({ status: 400, data: { error: '记录 ID 无效' } });
+    expect(await changes([{ op: 'expense.update', id: newId(), expense: expense('午饭') }])).toEqual({ status: 404, data: { error: '这笔支出不存在或已被删除' } });
+    expect(await changes([{ op: 'expense.delete', id: newId() }])).toEqual({ status: 404, data: { error: '这笔支出不存在或已被删除' } });
+    expect(await changes([{ op: 'member.delete', id: newId() }])).toEqual({ status: 404, data: { error: '成员不存在' } });
+    expect(await changes([{ op: 'settlement.delete', id: newId() }])).toEqual({ status: 404, data: { error: '这笔还款不存在或已被删除' } });
+
+    expect((await changes([{ op: 'expense.update', id, expense: expense('夜宵'), ifUpdatedAt: seen }])).status).toBe(200);
+    expect(await changes([{ op: 'expense.delete', id, ifUpdatedAt: seen }])).toEqual({ status: 409, data: { error: '这笔账刚被改过，请刷新后再试' } });
+    expect(await changes([member('小雨'), { op: 'expense.update', id, expense: expense('早饭'), ifUpdatedAt: seen }])).toMatchObject({ status: 409 });
+    const after = (await call('GET', '/ledger')).data;
+    expect(after.members.map((m: { name: string }) => m.name)).toEqual(['阿杰']);
+    expect(after.expenses[0].title).toBe('夜宵');
+
+    await call('DELETE', `/admin/ledgers/${ledger.id}`);
+    resetCookies();
+  });
+
   it('ends ledger sessions opened by an admin together with the admin session', async () => {
     await login();
     const ledger = (await call('POST', '/admin/ledgers', { name: '管理员会话' })).data;

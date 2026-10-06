@@ -51,7 +51,10 @@ export function expenseInputOf(expense: Expense, members: readonly Member[]): Ex
     payerId: expense.payerId,
     date: expense.date,
     category: expense.category,
-    split: splitOf(expense, members),
+    // 按原份额还原，不随成员先后重算零头（成员被删后重建会排到最后）；精确分摊不接受 0 份额，只能退回均分
+    split: expense.shares.every((s) => s.amount > 0)
+      ? { mode: 'exact', shares: expense.shares.map(({ memberId, amount }) => ({ memberId, amount })) }
+      : splitOf(expense, members),
   };
 }
 

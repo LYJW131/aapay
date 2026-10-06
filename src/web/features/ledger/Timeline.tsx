@@ -39,10 +39,12 @@ function matches(item: Expense | Settlement, query: string, memberById: Map<stri
 
 export function Timeline({ expenses, settlements, range }: { expenses: Expense[]; settlements: Settlement[]; range: RangeFilter }) {
   const [visible, setVisible] = useState(PAGE);
-  const [editing, setEditing] = useState<Expense | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [reloads, setReloads] = useState(0);
   const [viewing, setViewing] = useState<Settlement | null>(null);
   const [query, setQuery] = useState('');
-  const { memberById } = useLedger();
+  const { memberById, snapshot } = useLedger();
+  const editing = editingId ? snapshot.expenses.find((e) => e.id === editingId) : undefined;
   const needle = query.trim().toLowerCase();
 
   const days = useMemo(() => {
@@ -123,7 +125,7 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
                       {d.items.map((item) => (
                         <Reveal as="li" key={item.id} layout="position">
                           {'payerId' in item ? (
-                            <ExpenseRow expense={item} onClick={() => setEditing(item)} />
+                            <ExpenseRow expense={item} onClick={() => setEditingId(item.id)} />
                           ) : (
                             <SettlementRow settlement={item} onClick={() => setViewing(item)} />
                           )}
@@ -143,8 +145,15 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
         </div>
       </Card>
 
-      <Sheet open={!!editing} onClose={() => setEditing(null)} title={t.editExpense}>
-        {editing && <ExpenseForm key={editing.id} expense={editing} onDone={() => setEditing(null)} />}
+      <Sheet open={!!editing} onClose={() => setEditingId(null)} title={t.editExpense}>
+        {editing && (
+          <ExpenseForm
+            key={`${editing.id}:${reloads}`}
+            expense={editing}
+            onReload={() => setReloads((n) => n + 1)}
+            onDone={() => setEditingId(null)}
+          />
+        )}
       </Sheet>
       <Sheet open={!!viewing} onClose={() => setViewing(null)} title={t.settlementDetail}>
         {viewing && <SettlementDetail settlement={viewing} onDone={() => setViewing(null)} />}

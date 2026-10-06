@@ -103,7 +103,6 @@ function summarize(messages: LiveMessage[], before: Snapshot): string | null {
   return parts.length ? b.join(parts) : null;
 }
 
-// 同一批变更的远程消息逐条到达，凑齐后只弹一次；漏收时由定时器兜底
 function remoteNotifier(current: () => Snapshot | null) {
   const pending = new Map<string, { before: Snapshot; messages: LiveMessage[]; timer: ReturnType<typeof setTimeout> }>();
   const show = (messages: LiveMessage[], before: Snapshot) => {
@@ -122,17 +121,23 @@ function remoteNotifier(current: () => Snapshot | null) {
     pending.delete(id);
     show(group.messages, group.before);
   };
-  return (message: LiveMessage, before: Snapshot) => {
+  const notify = (message: LiveMessage, before: Snapshot) => {
     const { batch } = message;
     if (!batch || batch.size <= 1) return show([message], before);
     let group = pending.get(batch.id);
     if (!group) {
+      // 同批消息有漏收（出现版本缺口时改拉快照）就凑不齐，由定时器兜底
       group = { before, messages: [], timer: setTimeout(() => flush(batch.id), 800) };
       pending.set(batch.id, group);
     }
     group.messages.push(message);
     if (group.messages.length >= batch.size) flush(batch.id);
   };
+  const dispose = () => {
+    for (const group of pending.values()) clearTimeout(group.timer);
+    pending.clear();
+  };
+  return { notify, dispose };
 }
 
 export function LedgerPage({
@@ -156,14 +161,14 @@ export function LedgerPage({
 }) {
   const prefix = `aapay:${session.ledger.id}:`;
   const [activity] = useState(() => new ActivityLog(prefix));
-  const [notifyRemote] = useState(() => remoteNotifier(() => store.getState().snapshot));
+  const [remote] = useState(() => remoteNotifier(() => store.getState().snapshot));
   const [store] = useState(
     () =>
       new LedgerStore({
         onAudit: (record, own) => activity.receive(record, own),
         onClosed: (reason) =>
           onExit(reason === 'unauthorized' && session.role === 'admin' ? common.adminExpired : t.closed[reason]),
-        onRemote: (message, before) => notifyRemote(message, before),
+        onRemote: (message, before) => remote.notify(message, before),
       }, initialSnapshot),
   );
   const state = useSyncExternalStore(store.subscribe, store.getState);
@@ -182,8 +187,9 @@ export function LedgerPage({
     return () => {
       clearTimeout(prefetch);
       store.stop();
+      remote.dispose();
     };
-  }, [store, activity]);
+  }, [store, activity, remote]);
 
   const [range, setRange] = usePersistentState<RangeFilter>(`${prefix}range`, { key: 'all' });
   const [memberId, setMemberId] = usePersistentState<string | null>(`${prefix}member`, null);
