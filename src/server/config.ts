@@ -1,5 +1,4 @@
 import type { AdminAuthMode, Mode } from '../shared/types.ts';
-import type { Recognizer } from './recognize.ts';
 
 export interface Config {
   mode: Mode;
@@ -13,7 +12,12 @@ export interface Config {
   publicUrl: string | null;
   timezone: string;
   auditKey: Uint8Array | null;
-  recognizer: Recognizer | null;
+  gemini: GeminiConfig | null;
+}
+
+export interface GeminiConfig {
+  apiKey: string;
+  model: string;
 }
 
 const MODES = ['isolated', 'shared'] as const;
@@ -61,11 +65,7 @@ export function loadConfig(env: object): Config {
     publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
     timezone: str('TIMEZONE') || 'Asia/Shanghai',
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
-    recognizer: str('DEEPSEEK_API_KEY')
-      ? { provider: 'deepseek', apiKey: str('DEEPSEEK_API_KEY'), model: str('DEEPSEEK_MODEL') || 'deepseek-flash' }
-      : str('GEMINI_API_KEY')
-        ? { provider: 'gemini', apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-3.5-flash-lite' }
-        : null,
+    gemini: str('GEMINI_API_KEY') ? { apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-3.5-flash-lite' } : null,
   };
 
   if (config.mode === 'shared') config.adminAuth = 'disabled';

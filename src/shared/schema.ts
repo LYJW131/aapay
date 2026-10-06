@@ -112,8 +112,6 @@ const imageDataUrl = z
   .max(4_000_000, msg('imageTooLarge'))
   .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/, msg('imageFormat'));
 
-export const recognizeInput = z.object({ image: imageDataUrl });
-
 export const assistantInput = z.object({
   messages: z
     .array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().max(LIMITS.assistantText) }))

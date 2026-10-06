@@ -74,6 +74,18 @@ export const fail = (key: PlainErrorKey) => new ToolError(translateError(TOOL_LO
 export const issueText = (message: string | undefined) =>
   message === undefined ? translateError(TOOL_LOCALE, 'invalidParams') : isPlainErrorKey(message) ? translateError(TOOL_LOCALE, message) : message;
 
+export function inputSchema(schema: z.ZodType): object {
+  const { $schema: _, ...json } = z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' });
+  return json;
+}
+
+export function parseArgs<T extends z.ZodType>(schema: T, args: unknown): z.infer<T> {
+  const parsed = schema.safeParse(args ?? {});
+  if (parsed.success) return parsed.data;
+  const issue = parsed.error.issues[0];
+  throw new ToolError(`Invalid arguments: ${issue?.path.join('.') || 'input'} ${issue ? issueText(issue.message) : ''}`.trim());
+}
+
 export function validate<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
   const result = schema.safeParse(value);
   if (!result.success) throw new ToolError(issueText(result.error.issues[0]?.message));

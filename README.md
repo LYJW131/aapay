@@ -92,7 +92,7 @@ node scripts/seed.mjs            # 可选：生成演示账本（口令 demo2026
 
 也可以用 **Workers Builds** 自动部署：在 Worker 的 Settings → Builds 关联 GitHub 仓库，构建命令 `npm run typecheck && npm test && npm run build`，部署命令 `npx wrangler deploy`，环境变量 `NODE_VERSION=24`。之后推送到监听的分支就会自动测试并上线（本项目监听 `main`，只改 `*.md` / `docs/` 不触发）。
 
-Durable Objects 与限流由 `wrangler.jsonc` 自动创建，无需手动建数据库。「识别账单」调用 DeepSeek 或 Gemini 的视觉模型，用 `npx wrangler secret put DEEPSEEK_API_KEY`（或 `GEMINI_API_KEY`）配置密钥，每个账本每分钟最多 10 次。登录时 Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），通过后签发本站的管理员会话；绕过 Access 直连 Worker 拿不到会话，也就无法访问管理接口。
+Durable Objects 与限流由 `wrangler.jsonc` 自动创建，无需手动建数据库。「AI 助手」调用 Gemini，用 `npx wrangler secret put GEMINI_API_KEY` 配置密钥，每个账本每分钟最多 30 次请求。登录时 Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），通过后签发本站的管理员会话；绕过 Access 直连 Worker 拿不到会话，也就无法访问管理接口。
 
 ## 部署到 Docker
 
@@ -126,10 +126,8 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 | `PUBLIC_URL` | 可选，对外访问地址（如 `https://aapay.example.com`），作为 OAuth issuer 与 MCP 资源标识；不填则按请求推断（信任 `X-Forwarded-Proto/Host`），反向代理后建议填写 | — |
 | `TIMEZONE` | 可选，AI 记账未指定日期时按此时区取「今天」 | `Asia/Shanghai` |
 | `AUDIT_SIGNING_KEY` | 可选，操作动态的 Ed25519 签名私钥（32 字节随机数的 base64url，可用 `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"` 生成；Cloudflare 上请用 secret）。不填则只有哈希链没有签名；设置后不要更换，否则成员的浏览器会提示签名公钥变化 | — |
-| `DEEPSEEK_API_KEY` | 可选，DeepSeek API 密钥（Cloudflare 上用 secret 配置），填写后「识别账单」使用 DeepSeek | — |
-| `DEEPSEEK_MODEL` | 可选，识别账单使用的 DeepSeek 模型 | `deepseek-flash` |
-| `GEMINI_API_KEY` | 可选，Gemini API 密钥（Cloudflare 上用 secret 配置），未配置 `DEEPSEEK_API_KEY` 时「识别账单」使用 Gemini | — |
-| `GEMINI_MODEL` | 可选，识别账单使用的 Gemini 模型 | `gemini-3.5-flash-lite` |
+| `GEMINI_API_KEY` | 可选，Gemini API 密钥（Cloudflare 上用 secret 配置），填写后启用 AI 助手（对话记账、查账、识别账单图片） | — |
+| `GEMINI_MODEL` | 可选，AI 助手使用的 Gemini 模型 | `gemini-3.5-flash-lite` |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
 
 管理员认证方式：
@@ -184,10 +182,11 @@ src/
 │   ├── core/           RegistryService（账本、口令、会话、OAuth 授权）、LedgerService、SQL 抽象、RPC 信封
 │   ├── mcp/            OAuth 2.1 授权服务器、MCP 端点（JSON-RPC）与管理员工具
 │   ├── tools/          账本工具：读工具与写工具的 plan / describe（MCP 与 AI 助手共用）
+│   ├── ai/             AI 助手：Gemini 流式客户端、对话循环、变更集折叠、票据增量解析
 │   ├── cloudflare/     Worker 入口与 Durable Objects
 │   └── node/           Node 入口、node:sqlite 驱动、WebSocket 房间
 └── web/                React 前端（features/ledger、features/admin、features/join、features/oauth）
-tests/                  vitest：金额、结算、账本服务、完整 API 流程、OAuth + MCP 流程
+tests/                  vitest：金额、结算、账本服务、完整 API 流程、OAuth + MCP 流程、AI 助手
 ```
 
 ## API
@@ -205,7 +204,7 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `GET` | `/api/ledger/live` | WebSocket 实时事件 |
 | `POST` | `/api/ledger/changes` | 唯一的账目写入口：一组变更（成员、支出、还款的增改删）原子执行，返回实时消息与可直接回放的撤销变更 |
 | `GET` | `/api/ledger/audit?before=&after=&limit=` | 操作动态（签名哈希链，附公钥与最新一条） |
-| `POST` | `/api/ledger/recognize` | 识别账单图片（小票、付款详情或账单列表），返回一笔或多笔支出草稿（不写入账本） |
+| `POST` | `/api/ledger/assistant` | AI 助手（SSE 流式）：对话、查账、识别账单图片；写操作只返回待确认的变更集，由前端确认后经 `/api/ledger/changes` 写入 |
 | `GET` `POST` `PATCH` `DELETE` | `/api/admin/ledgers[/:id]` | 账本管理（含统计） |
 | `GET` `POST` | `/api/admin/ledgers/:id/passphrases` | 分享口令 |
 | `DELETE` | `/api/admin/passphrases/:id` | 撤销口令 |

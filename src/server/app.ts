@@ -3,14 +3,16 @@ import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import { changesInput, joinInput, ledgerInput, loginInput, passphraseInput, recognizeInput } from '../shared/schema.ts';
+import { streamSSE } from 'hono/streaming';
+import { assistantInput, changesInput, joinInput, ledgerInput, loginInput, passphraseInput } from '../shared/schema.ts';
 import { translateError } from '../shared/errors.ts';
 import { localPath } from '../shared/redirect.ts';
 import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, SessionState, Snapshot } from '../shared/types.ts';
 import { adminActions } from './admin.ts';
+import { streamAssistant } from './ai/assistant.ts';
 import { authenticateAdmin, externalAdmin, passwordMatches } from './auth/admin.ts';
 import { clearSessionCookie, CONSOLE_COOKIE, SESSION_COOKIE, setSessionCookie } from './auth/cookies.ts';
-import { todayIn, type Config } from './config.ts';
+import type { Config } from './config.ts';
 import { AppError, notFound, unauthorized } from './core/errors.ts';
 import { newToken, sha256 } from './core/ids.ts';
 import {
@@ -24,7 +26,6 @@ import {
 } from './mcp/oauth.ts';
 import { mcpRoutes } from './mcp/server.ts';
 import type { Platform } from './platform.ts';
-import { recognizeBills } from './recognize.ts';
 import { actorOf, clientIp, findSession } from './session.ts';
 import { body, localeOf, query } from './validate.ts';
 
@@ -89,11 +90,14 @@ const ledgerRoutes = new Hono<AppEnv>()
     const { changes, via } = c.req.valid('json');
     return c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.applyChanges(changes, { ...mutation(c), via }));
   })
-  .post('/recognize', body(recognizeInput), async (c) => {
+  .post('/assistant', body(assistantInput), async (c) => {
     const { platform, config, session } = c.var;
-    if (!config.recognizer) throw notFound('recognizeDisabled');
-    if (!(await platform.rateLimit('recognize', session.ledger.id))) throw new AppError(429, 'recognizeRateLimited');
-    return c.json(await recognizeBills(config.recognizer, c.req.valid('json').image, todayIn(config.timezone), localeOf(c)));
+    if (!config.gemini) throw notFound('assistantDisabled');
+    if (!(await platform.rateLimit('assistant', session.ledger.id))) throw new AppError(429, 'assistantRateLimited');
+    const request = c.req.valid('json');
+    const deps = { gemini: config.gemini, api: platform.ledger(session.ledger.id).api, info: session.ledger, locale: localeOf(c) };
+    c.header('X-Accel-Buffering', 'no');
+    return streamSSE(c, (stream) => streamAssistant(stream, request, deps));
   })
   .get('/audit', query(auditQuery), async (c) =>
     c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.auditLog(c.req.valid('query'))),
@@ -176,7 +180,7 @@ function buildApi() {
         mode: c.var.config.mode,
         adminAuth: c.var.config.adminAuth,
         mcp: c.var.config.mcp,
-        assistant: c.var.config.recognizer !== null,
+        assistant: c.var.config.gemini !== null,
       } satisfies PublicConfig),
     )
     .get('/session', async (c) => {

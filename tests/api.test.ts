@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { createApp } from '../src/server/app.ts';
 import { loadConfig } from '../src/server/config.ts';
@@ -235,120 +235,5 @@ describe('API (shared mode)', () => {
     expect(session).toMatchObject({ role: 'shared', ledger: { id: 'shared' } });
     expect((await call('POST', '/ledger/changes', { changes: [{ op: 'member.create', id: newId(), member: { name: '室友' } }] })).status).toBe(200);
     expect((await call('POST', '/join', { code: 'abc' })).status).toBe(404);
-  });
-});
-
-describe('API (bill recognition)', () => {
-  const image = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
-  const completion = (content: unknown) => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(content) }] } }] });
-  afterEach(() => vi.unstubAllGlobals());
-
-  function gemini(reply: (url: string, body: any) => unknown) {
-    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => Response.json(await reply(url, JSON.parse(init.body as string))));
-  }
-
-  async function joined(env: Record<string, string> = { GEMINI_API_KEY: 'test-key' }) {
-    const api = setup({ ADMIN_AUTH: 'none', ...env });
-    await api.login();
-    const ledger = (await api.call('POST', '/admin/ledgers', { name: '识别测试' })).data;
-    await api.call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: 'scan2026', validUntil: null });
-    api.resetCookies();
-    expect((await api.call('POST', '/ledger/recognize', { image })).status).toBe(401);
-    await api.call('POST', '/join', { code: 'scan2026' });
-    return api;
-  }
-
-  it('turns the model reply into drafts in cents', async () => {
-    const seen: { url: string; body: any }[] = [];
-    gemini((url, body) => {
-      seen.push({ url, body });
-      return completion({
-        items: [
-          { title: ' 鑫震源山塘街店 ', amount: -147, date: '2026-10-01', category: 'food' },
-          { title: '滴滴出行', amount: 39.16, date: '2026-10-01', category: 'transport' },
-        ],
-      });
-    });
-    const { call } = await joined();
-    expect((await call('GET', '/config')).data.assistant).toBe(true);
-    const res = await call('POST', '/ledger/recognize', { image });
-    expect(res).toEqual({
-      status: 200,
-      data: {
-        items: [
-          { title: '鑫震源山塘街店', amount: 14700, date: '2026-10-01', category: 'food' },
-          { title: '滴滴出行', amount: 3916, date: '2026-10-01', category: 'transport' },
-        ],
-      },
-    });
-    expect(seen[0]!.url).toContain('/models/gemini-3.5-flash-lite:generateContent');
-    expect(seen[0]!.body.generationConfig.responseSchema.properties.items.items.properties.category.enum).toContain('groceries');
-    expect(seen[0]!.body.contents[0].parts[0].inlineData).toEqual({ mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' });
-  });
-
-  it('uses DeepSeek when DEEPSEEK_API_KEY is set', async () => {
-    const seen: { url: string; body: any; auth: string }[] = [];
-    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-      seen.push({ url, body: JSON.parse(init.body as string), auth: (init.headers as Record<string, string>).authorization! });
-      return Response.json({
-        choices: [{ message: { content: JSON.stringify({ items: [{ title: '瑞幸咖啡', amount: 16.9, date: '2026-10-04' }] }) } }],
-      });
-    });
-    const { call } = await joined({ DEEPSEEK_API_KEY: 'ds-key', GEMINI_API_KEY: 'test-key' });
-    expect((await call('GET', '/config')).data.assistant).toBe(true);
-    expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
-      items: [{ title: '瑞幸咖啡', amount: 1690, date: '2026-10-04', category: null }],
-    });
-    expect(seen[0]).toMatchObject({
-      url: 'https://api.deepseek.com/chat/completions',
-      auth: 'Bearer ds-key',
-      body: { model: 'deepseek-flash', thinking: { type: 'disabled' }, response_format: { type: 'json_object' } },
-    });
-    expect(seen[0]!.body.messages[1].content[0].image_url.url).toBe(image);
-
-    const other = await joined({ DEEPSEEK_API_KEY: 'ds-key', DEEPSEEK_MODEL: 'deepseek-v4-pro' });
-    await other.call('POST', '/ledger/recognize', { image });
-    expect(seen[1]!.body.model).toBe('deepseek-v4-pro');
-  });
-
-  it('drops fields the model got wrong and rejects non-bills', async () => {
-    let reply: unknown = completion({
-      items: [
-        { title: '外卖', amount: 0, date: '10月4日', category: 'takeout' },
-        { title: null, amount: null, date: '2026-10-04' },
-      ],
-    });
-    let url = '';
-    gemini((u) => {
-      url = u;
-      return reply;
-    });
-    const { call } = await joined({ GEMINI_API_KEY: 'test-key', GEMINI_MODEL: 'gemini-2.5-flash' });
-    expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
-      items: [{ title: '外卖', amount: null, date: null, category: null }],
-    });
-    expect(url).toContain('/models/gemini-2.5-flash:generateContent');
-    reply = completion({ items: [] });
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(422);
-    reply = completion({ title: '旧格式', amount: 1, date: null });
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
-    reply = { candidates: [{ content: { parts: [{ text: '我看不清' }] } }] };
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
-  });
-
-  it('validates the image, reports model failures and limits the rate', async () => {
-    vi.stubGlobal('fetch', async () => Response.json({ error: { message: 'User location is not supported' } }, { status: 400 }));
-    const { call } = await joined();
-    expect((await call('POST', '/ledger/recognize', { image: 'https://example.com/a.jpg' })).status).toBe(400);
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
-    const statuses = [];
-    for (let i = 0; i < 10; i++) statuses.push((await call('POST', '/ledger/recognize', { image })).status);
-    expect(statuses.at(-1)).toBe(429);
-  });
-
-  it('is unavailable without a Gemini API key', async () => {
-    const { call } = await joined({});
-    expect((await call('GET', '/config')).data.assistant).toBe(false);
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(404);
   });
 });

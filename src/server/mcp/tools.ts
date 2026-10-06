@@ -8,7 +8,7 @@ import { adminActions } from '../admin.ts';
 import { AppError } from '../core/errors.ts';
 import type { GrantRole } from '../core/registry.ts';
 import type { Platform } from '../platform.ts';
-import { issueText, LEDGER_TOOLS, TOOL_LOCALE, ToolError, validate, yuan, type LedgerTool } from '../tools/ledger.ts';
+import { inputSchema, LEDGER_TOOLS, parseArgs, TOOL_LOCALE, ToolError, validate, yuan, type LedgerTool } from '../tools/ledger.ts';
 
 export interface McpSession {
   role: GrantRole;
@@ -228,11 +228,6 @@ const findTool = (name: string) => TOOLS.find((e) => e.tool.name === name);
 
 const permitted = (entry: AnyTool, session: McpSession) => entry.kind === 'ledger' || session.role === 'admin';
 
-function inputSchema(schema: z.ZodObject) {
-  const { $schema: _, ...json } = z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' });
-  return json;
-}
-
 // 客户端会缓存工具列表，换授权后未必重新拉取，所以列表对所有授权都相同，权限在调用时检查
 export const TOOL_LIST = TOOLS.map(({ kind, tool, input }) => ({
   name: tool.name,
@@ -281,17 +276,13 @@ export async function callTool(name: string, args: unknown, session: McpSession)
     );
   }
 
-  const parsed = entry.input.safeParse(args ?? {});
-  if (!parsed.success) {
-    const issue = parsed.error.issues[0];
-    return fail(`Invalid arguments: ${issue?.path.join('.') || 'input'} ${issue ? issueText(issue.message) : ''}`.trim());
-  }
   try {
+    const parsed = parseArgs(entry.input, args);
     let result: object;
     if (entry.kind === 'admin') {
-      result = await entry.tool.run(parsed.data, { session, actions: adminActions(session.platform, session.actor) });
+      result = await entry.tool.run(parsed, { session, actions: adminActions(session.platform, session.actor) });
     } else {
-      result = await runLedgerTool(entry.tool, parsed.data, session);
+      result = await runLedgerTool(entry.tool, parsed, session);
     }
     return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result };
   } catch (err) {

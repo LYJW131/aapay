@@ -15,7 +15,7 @@ export interface Env {
   REGISTRY: DurableObjectNamespace<RegistryRoom>;
   JOIN_LIMITER?: RateLimit;
   LOGIN_LIMITER?: RateLimit;
-  RECOGNIZE_LIMITER?: RateLimit;
+  ASSISTANT_LIMITER?: RateLimit;
 }
 
 const TAG_HEADER = 'x-aapay-tag';
@@ -124,7 +124,7 @@ function cloudflarePlatform(env: Env): Platform {
     },
     connectConsole: (c) => forwardUpgrade(registry, c, 'console'),
     async rateLimit(bucket, key) {
-      const limiter = { join: env.JOIN_LIMITER, login: env.LOGIN_LIMITER, recognize: env.RECOGNIZE_LIMITER }[bucket];
+      const limiter = { join: env.JOIN_LIMITER, login: env.LOGIN_LIMITER, assistant: env.ASSISTANT_LIMITER }[bucket];
       return limiter ? (await limiter.limit({ key })).success : true;
     },
   };

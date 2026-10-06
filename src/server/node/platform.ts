@@ -113,7 +113,7 @@ export function createNodePlatform(
   const limiters: Record<RateLimitBucket, RateLimiter> = {
     join: new RateLimiter(10, 60_000),
     login: new RateLimiter(5, 60_000),
-    recognize: new RateLimiter(10, 60_000),
+    assistant: new RateLimiter(30, 60_000),
   };
 
   return {
