@@ -30,12 +30,30 @@ describe('fold', () => {
 
   it('merges updates of pending records into their create', () => {
     const pending = fold([create, settle], { op: 'expense.update', id: 'expenseNEW', expense: input('renamed', 2000), ifUpdatedAt: 99 }, real);
-    expect(pending).toEqual([{ ...create, expense: input('renamed', 2000) }, settle]);
+    expect(pending).toEqual([settle, { ...create, expense: input('renamed', 2000) }]);
 
     const member: Change = { op: 'member.create', id: 'memberNEW1', member: { name: 'B', avatar: '🐶' } };
     expect(fold([member], { op: 'member.update', id: 'memberNEW1', member: { name: 'C', avatar: '🐶' } }, real)).toEqual([
       { ...member, member: { name: 'C', avatar: '🐶' } },
     ]);
+  });
+
+  it('moves merged and replaced expenses after members created later', () => {
+    const member: Change = { op: 'member.create', id: 'memberNEW1', member: { name: 'B', avatar: '🐶' } };
+    const withNew: ExpenseInput = { ...input('new'), split: { mode: 'even', memberIds: ['memberAAAA', 'memberNEW1'] } };
+    expect(fold([create, member], { op: 'expense.update', id: 'expenseNEW', expense: withNew, ifUpdatedAt: 99 }, real)).toEqual([
+      member,
+      { ...create, expense: withNew },
+    ]);
+
+    const update: Change = { op: 'expense.update', id: 'expenseOLD', expense: input('renamed'), ifUpdatedAt: 42 };
+    expect(fold([update, member], { op: 'expense.update', id: 'expenseOLD', expense: withNew, ifUpdatedAt: 1 }, real)).toEqual([
+      member,
+      { op: 'expense.update', id: 'expenseOLD', expense: withNew, ifUpdatedAt: 42 },
+    ]);
+
+    const renamed = fold([member, create], { op: 'member.update', id: 'memberNEW1', member: { name: 'C', avatar: '🐶' } }, real);
+    expect(renamed.map((c) => c.op)).toEqual(['member.create', 'expense.create']);
   });
 
   it('removes a pending record that gets deleted', () => {
@@ -47,7 +65,7 @@ describe('fold', () => {
     const first = fold([create], { op: 'expense.update', id: 'expenseOLD', expense: input('first'), ifUpdatedAt: 77 }, real);
     expect(first).toEqual([create, { op: 'expense.update', id: 'expenseOLD', expense: input('first'), ifUpdatedAt: 42 }]);
     const second = fold([...first, settle], { op: 'expense.update', id: 'expenseOLD', expense: input('second'), ifUpdatedAt: 78 }, real);
-    expect(second).toEqual([create, { op: 'expense.update', id: 'expenseOLD', expense: input('second'), ifUpdatedAt: 42 }, settle]);
+    expect(second).toEqual([create, settle, { op: 'expense.update', id: 'expenseOLD', expense: input('second'), ifUpdatedAt: 42 }]);
 
     const member = fold([{ op: 'member.update', id: 'memberAAAA', member: { name: 'X' } }], { op: 'member.update', id: 'memberAAAA', member: { name: 'Y' } }, real);
     expect(member).toEqual([{ op: 'member.update', id: 'memberAAAA', member: { name: 'Y' } }]);
@@ -56,8 +74,8 @@ describe('fold', () => {
   it('turns update then delete of an existing record into a delete', () => {
     const updated = fold([], { op: 'expense.update', id: 'expenseOLD', expense: input('first'), ifUpdatedAt: 77 }, real);
     expect(fold([...updated, create], { op: 'expense.delete', id: 'expenseOLD', ifUpdatedAt: 78 }, real)).toEqual([
-      { op: 'expense.delete', id: 'expenseOLD', ifUpdatedAt: 42 },
       create,
+      { op: 'expense.delete', id: 'expenseOLD', ifUpdatedAt: 42 },
     ]);
     expect(fold([], { op: 'settlement.delete', id: 'settleOLD1' }, real)).toEqual([{ op: 'settlement.delete', id: 'settleOLD1' }]);
   });

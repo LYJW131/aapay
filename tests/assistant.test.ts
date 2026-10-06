@@ -31,8 +31,9 @@ function parseSse(raw: string) {
     });
 }
 
-async function setup(env: Record<string, string> = { GEMINI_API_KEY: 'test-key' }) {
-  const config = loadConfig({ ADMIN_AUTH: 'none', ...env });
+async function setup(env: Record<string, string> = { GEMINI_API_KEY: 'test-key' }, idleTimeout?: number) {
+  const loaded = loadConfig({ ADMIN_AUTH: 'none', ...env });
+  const config = idleTimeout && loaded.gemini ? { ...loaded, gemini: { ...loaded.gemini, idleTimeout } } : loaded;
   const platform = createNodePlatform(join(dir, crypto.randomUUID()), (() => undefined) as unknown as UpgradeWebSocket);
   const app = createApp(async (c, next) => {
     c.set('config', config);
@@ -239,6 +240,42 @@ describe('assistant endpoint', () => {
     expect(requests[1]!.body.contents[2].parts[2].functionResponse.response).toMatchObject({ status: 'proposed', before: { title: '营地费' }, after: { title: '露营地' } });
   });
 
+  it('adds a member created afterwards to earlier proposed expenses', async () => {
+    const { ask, ids, json } = await setup();
+    const existing = newId();
+    await json('POST', '/ledger/changes', {
+      changes: [
+        { op: 'expense.create', id: existing, expense: { title: '营地', amount: 20000, payerId: ids.me, date: '2026-10-01', category: null, split: { mode: 'even', memberIds: [ids.me] } } },
+      ],
+    });
+    const requests = stubGemini((body, index) => {
+      if (index === 0) {
+        return [
+          call('add_expense', { title: '晚饭', amount: 100, payer: '阿杰', participants: ['阿杰'] }, { id: 'a1' }),
+          call('update_expense', { id: existing, title: '露营地' }, { id: 'u1' }),
+          call('add_member', { name: '小周' }, { id: 'm1' }),
+        ];
+      }
+      if (index === 1) {
+        const created = body.contents[2].parts[0].functionResponse.response.id as string;
+        return [
+          call('update_expense', { id: created, participants: ['阿杰', '小周'] }, { id: 'u2' }),
+          call('update_expense', { id: existing, participants: ['阿杰', '小周'] }, { id: 'u3' }),
+        ];
+      }
+      return [text('好了。')];
+    });
+    const { events } = await ask({ messages: [{ role: 'user', text: '晚饭和营地都加上新来的小周' }] });
+
+    expect(ofType(events, 'step').filter((s) => s.status === 'error')).toEqual([]);
+    expect(requests[2]!.body.contents[4].parts.map((p: any) => p.functionResponse.response.status)).toEqual(['proposed', 'proposed']);
+    const final = ofType(events, 'pending').at(-1)!.changes;
+    expect(final.map((c) => c.op)).toEqual(['member.create', 'expense.create', 'expense.update']);
+    const zhou = final[0]!.id;
+    expect(final[1]).toMatchObject({ expense: { title: '晚饭', split: { mode: 'even', memberIds: [ids.me, zhou] } } });
+    expect(final[2]).toMatchObject({ id: existing, expense: { title: '露营地', split: { mode: 'even', memberIds: [ids.me, zhou] } } });
+  });
+
   it('drops invalid pending changes and explains why in the request language', async () => {
     const { ask, ids, json } = await setup();
     const existing = newId();
@@ -326,6 +363,15 @@ describe('assistant endpoint', () => {
     expect(requests[0]!.body.systemInstruction.parts[0].text).toContain('The user has not said which member they are');
   });
 
+  it('treats an unknown me like no member and passes images to the conversation', async () => {
+    const requests = stubGemini([[text('这是谁付的？')]]);
+    const { ask } = await setup();
+    const { events } = await ask({ images: [IMAGE], me: newId(), messages: [{ role: 'user', text: '记一下' }] });
+    expect(events.map((e) => e.type)).toEqual(['pending', 'text', 'done']);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.body.contents[0].parts).toContainEqual({ inlineData: { mimeType: 'image/png', data: 'iVBORw0KGgo=' } });
+  });
+
   it('turns show calls into views', async () => {
     stubGemini([
       [
@@ -374,6 +420,95 @@ describe('assistant endpoint', () => {
     stubGemini([[text('{"items":[')], []]);
     const extraction = await ask({ images: [IMAGE] });
     expect(extraction.events.map((e) => e.type)).toEqual(['pending', 'step', 'step', 'done']);
+
+    stubGemini([Response.json({}, { status: 500 })]);
+    expect((await ask({ images: [IMAGE] })).events).toEqual([
+      { type: 'pending', changes: [] },
+      { type: 'step', id: 'read_images', tool: 'read_images', status: 'start' },
+      { type: 'step', id: 'read_images', tool: 'read_images', status: 'error' },
+      { type: 'error', message: 'AI 助手暂时不可用，请稍后再试' },
+    ]);
+  });
+
+  it('reports a quiet upstream as a timeout instead of hanging', async () => {
+    const hang = (first: string[] = []) =>
+      vi.stubGlobal('fetch', async () => {
+        const encoder = new TextEncoder();
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              for (const piece of first) controller.enqueue(encoder.encode(piece));
+            },
+          }),
+        );
+      });
+    const { ask } = await setup(undefined, 50);
+
+    hang();
+    expect((await ask({})).events).toEqual([
+      { type: 'pending', changes: [] },
+      { type: 'error', message: 'AI 助手响应超时，请重试' },
+    ]);
+
+    hang([`data: ${JSON.stringify(text('写到一半'))}\r\n\r\n`]);
+    expect((await ask({}, 'en')).events.slice(1)).toEqual([
+      { type: 'text', delta: '写到一半' },
+      { type: 'error', message: 'The AI assistant took too long to respond. Please try again' },
+    ]);
+
+    hang();
+    expect((await ask({ images: [IMAGE] })).events).toEqual([
+      { type: 'pending', changes: [] },
+      { type: 'step', id: 'read_images', tool: 'read_images', status: 'start' },
+      { type: 'step', id: 'read_images', tool: 'read_images', status: 'error' },
+      { type: 'error', message: 'AI 助手响应超时，请重试' },
+    ]);
+  });
+
+  it('stops reading images and running tools when the client goes away', async () => {
+    const upstream: AbortSignal[] = [];
+    vi.stubGlobal('fetch', async (_: string, init: RequestInit) => {
+      upstream.push(init.signal!);
+      const encoder = new TextEncoder();
+      const first = upstream.length === 1 ? '{"items":[{"title":"咖啡","amount":18' : '';
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(text(first))}\r\n\r\n`));
+          },
+        }),
+      );
+    });
+    const { request, ids } = await setup();
+    const res = await request('POST', '/ledger/assistant', { messages: [{ role: 'user', text: '' }], images: [IMAGE], me: ids.me, participants: null, today: TODAY });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let seen = '';
+    while (!seen.includes('event: draft')) seen += decoder.decode((await reader.read()).value);
+    await reader.cancel();
+    await vi.waitFor(() => expect(upstream[0]!.aborted).toBe(true));
+    expect(upstream).toHaveLength(1);
+
+    const signals: AbortSignal[] = [];
+    vi.stubGlobal('fetch', async (_: string, init: RequestInit) => {
+      signals.push(init.signal!);
+      const encoder = new TextEncoder();
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(call('get_ledger', {}, { id: 'g1' }))}\r\n\r\n`));
+          },
+        }),
+      );
+    });
+    const second = await request('POST', '/ledger/assistant', { messages: [{ role: 'user', text: '你好' }], me: ids.me, participants: null, today: TODAY });
+    const reader2 = second.body!.getReader();
+    seen = '';
+    while (!seen.includes('event: step')) seen += decoder.decode((await reader2.read()).value);
+    await reader2.cancel();
+    await vi.waitFor(() => expect(signals[0]!.aborted).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(signals).toHaveLength(1);
   });
 
   it('aborts the upstream request when the client goes away', async () => {

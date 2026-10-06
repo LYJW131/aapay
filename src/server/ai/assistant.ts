@@ -334,7 +334,7 @@ export async function runAssistant(run: Run, request: AssistantRequest) {
 function failure(err: unknown, locale: Locale) {
   if (err instanceof GeminiError) {
     console.error('assistant upstream failed', err.status, err.message);
-    return translateError(locale, err.status === 429 ? 'assistantRateLimited' : 'assistantUnavailable');
+    return translateError(locale, err.status === 429 ? 'assistantRateLimited' : err.status === 504 ? 'assistantTimeout' : 'assistantUnavailable');
   }
   console.error('assistant failed', err);
   return translateError(locale, 'assistantFailed');

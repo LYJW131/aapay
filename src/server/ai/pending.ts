@@ -8,11 +8,11 @@ const targets = (change: Change, kind: Kind, id: string) => kindOf(change) === k
 const createdIn = (pending: readonly Change[], kind: Kind, id: string) =>
   pending.some((c) => c.op === `${kind}.create` && c.id === id);
 
-function replaceOrAppend(pending: readonly Change[], change: Change, replaced: (c: Change) => boolean): Change[] {
-  const index = pending.findIndex(replaced);
-  if (index < 0) return [...pending, change];
-  return [...pending.slice(0, index), change, ...pending.slice(index + 1).filter((c) => !replaced(c))];
-}
+// 合并或替换后的改动一律放到末尾：它是按完整草稿校验的，可能引用排在后面才创建的成员
+const replaceOrAppend = (pending: readonly Change[], change: Change, replaced: (c: Change) => boolean): Change[] => [
+  ...pending.filter((c) => !replaced(c)),
+  change,
+];
 
 function guarded(change: Change, real: LedgerData): Change {
   if (change.op !== 'expense.update' && change.op !== 'expense.delete') return change;
@@ -23,11 +23,11 @@ function guarded(change: Change, real: LedgerData): Change {
 export function fold(pending: readonly Change[], change: Change, real: LedgerData): Change[] {
   const kind = kindOf(change);
   switch (change.op) {
-    case 'expense.update':
-      if (createdIn(pending, 'expense', change.id)) {
-        return pending.map((c) => (c.op === 'expense.create' && c.id === change.id ? { ...c, expense: change.expense } : c));
-      }
+    case 'expense.update': {
+      const created = pending.find((c): c is Extract<Change, { op: 'expense.create' }> => c.op === 'expense.create' && c.id === change.id);
+      if (created) return replaceOrAppend(pending, { ...created, expense: change.expense }, (c) => c === created);
       return replaceOrAppend(pending, guarded(change, real), (c) => c.op === 'expense.update' && c.id === change.id);
+    }
     case 'member.update':
       if (createdIn(pending, 'member', change.id)) {
         return pending.map((c) => (c.op === 'member.create' && c.id === change.id ? { ...c, member: change.member } : c));

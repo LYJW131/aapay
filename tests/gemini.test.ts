@@ -5,12 +5,28 @@ import { call, parts, sseBody, stubGemini, text, type Chunk } from './helpers/ge
 
 afterEach(() => vi.unstubAllGlobals());
 
-const options = { apiKey: 'test-key', model: 'gemini-test' };
+const options = { apiKey: 'test-key', model: 'gemini-test', idleTimeout: 1000 };
 
-async function collect(request = { contents: [] }) {
+async function collect(request = { contents: [] }, extra: Partial<typeof options> & { signal?: AbortSignal } = {}) {
   const out: GeminiPart[][] = [];
-  for await (const p of streamGemini(request, options)) out.push(p);
+  for await (const p of streamGemini(request, { ...options, ...extra })) out.push(p);
   return out;
+}
+
+function stubHang(first: string[] = []) {
+  const signals: AbortSignal[] = [];
+  vi.stubGlobal('fetch', async (_: string, init: RequestInit) => {
+    signals.push(init.signal!);
+    const encoder = new TextEncoder();
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          for (const piece of first) controller.enqueue(encoder.encode(piece));
+        },
+      }),
+    );
+  });
+  return signals;
 }
 
 describe('streamGemini', () => {
@@ -55,6 +71,33 @@ describe('streamGemini', () => {
 
     stubGemini([[{ error: { code: 503, message: 'overloaded' } }]]);
     await expect(collect()).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('times out when the upstream goes quiet and cancels the request', async () => {
+    const signals = stubHang();
+    await expect(collect(undefined, { idleTimeout: 30 })).rejects.toMatchObject({ name: 'GeminiError', status: 504 });
+    expect(signals[0]!.aborted).toBe(true);
+
+    stubHang([`data: ${JSON.stringify(text('开头'))}\r\n\r\n`]);
+    const out: GeminiPart[][] = [];
+    const stalled = (async () => {
+      for await (const p of streamGemini({ contents: [] }, { ...options, idleTimeout: 30 })) out.push(p);
+    })();
+    await expect(stalled).rejects.toMatchObject({ status: 504 });
+    expect(out).toEqual([[{ text: '开头' }]]);
+
+    vi.stubGlobal('fetch', (_: string, init: RequestInit) => new Promise((_, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason))));
+    await expect(collect(undefined, { idleTimeout: 30 })).rejects.toMatchObject({ status: 504 });
+  });
+
+  it('passes a caller abort through instead of reporting a timeout', async () => {
+    const signals = stubHang([`data: ${JSON.stringify(text('开头'))}\r\n\r\n`]);
+    const caller = new AbortController();
+    const run = (async () => {
+      for await (const _ of streamGemini({ contents: [] }, { ...options, signal: caller.signal })) caller.abort(new Error('client left'));
+    })();
+    await expect(run).rejects.toThrow('client left');
+    expect(signals[0]!.aborted).toBe(true);
   });
 
   it('ignores chunks without parts and keeps finished candidates', async () => {

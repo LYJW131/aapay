@@ -18,6 +18,7 @@ export interface Config {
 export interface GeminiConfig {
   apiKey: string;
   model: string;
+  idleTimeout: number;
 }
 
 const MODES = ['isolated', 'shared'] as const;
@@ -65,7 +66,7 @@ export function loadConfig(env: object): Config {
     publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
     timezone: str('TIMEZONE') || 'Asia/Shanghai',
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
-    gemini: str('GEMINI_API_KEY') ? { apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-3.5-flash-lite' } : null,
+    gemini: str('GEMINI_API_KEY') ? { apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-3.5-flash-lite', idleTimeout: 45_000 } : null,
   };
 
   if (config.mode === 'shared') config.adminAuth = 'disabled';

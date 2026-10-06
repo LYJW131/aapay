@@ -35,6 +35,7 @@ export interface GeminiRequest {
 export interface GeminiOptions {
   apiKey: string;
   model: string;
+  idleTimeout: number;
   signal?: AbortSignal;
 }
 
@@ -77,22 +78,55 @@ function check(chunk: GeminiChunk) {
   if (reason && FAILED_FINISH.has(reason)) throw new GeminiError(502, `Gemini finished with ${reason}`);
 }
 
-export async function* streamGemini(request: GeminiRequest, { apiKey, model, signal }: GeminiOptions): AsyncGenerator<GeminiPart[]> {
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
-    body: JSON.stringify(request),
-    signal,
-  });
-  if (!res.ok || !res.body) throw new GeminiError(res.status, `Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+export async function* streamGemini(request: GeminiRequest, { apiKey, model, idleTimeout, signal }: GeminiOptions): AsyncGenerator<GeminiPart[]> {
+  const controller = new AbortController();
+  const relay = () => controller.abort(signal?.reason);
+  if (signal?.aborted) relay();
+  signal?.addEventListener('abort', relay, { once: true });
+  let timedOut = false;
+  const timeout = () => new GeminiError(504, `Gemini sent nothing for ${idleTimeout}ms`);
 
-  const decoder = new TextDecoder();
-  const buffer = { text: '' };
-  let carry = '';
-  const reader = res.body.getReader();
+  const wait = <T>(work: Promise<T>) =>
+    new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, idleTimeout);
+      const settle = () => {
+        clearTimeout(timer);
+        controller.signal.removeEventListener('abort', aborted);
+      };
+      const fail = (err: unknown) => {
+        settle();
+        reject(timedOut ? timeout() : err);
+      };
+      const aborted = () => fail(controller.signal.reason);
+      work.then((value) => {
+        settle();
+        resolve(value);
+      }, fail);
+      if (controller.signal.aborted) aborted();
+      else controller.signal.addEventListener('abort', aborted, { once: true });
+    });
+
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
+    const res = await wait(
+      fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
+        body: JSON.stringify(request),
+        signal: controller.signal,
+      }),
+    );
+    if (!res.ok || !res.body) throw new GeminiError(res.status, `Gemini ${res.status}: ${(await wait(res.text())).slice(0, 300)}`);
+
+    const decoder = new TextDecoder();
+    const buffer = { text: '' };
+    let carry = '';
+    reader = res.body.getReader();
     for (;;) {
-      const { done, value } = await reader.read();
+      const { done, value } = await wait(reader.read());
       let text = carry + (done ? decoder.decode() + '\n\n' : decoder.decode(value, { stream: true }));
       carry = text.endsWith('\r') ? '\r' : '';
       if (carry) text = text.slice(0, -1);
@@ -105,6 +139,8 @@ export async function* streamGemini(request: GeminiRequest, { apiKey, model, sig
       if (done) return;
     }
   } finally {
-    reader.cancel().catch(() => {});
+    signal?.removeEventListener('abort', relay);
+    reader?.cancel().catch(() => {});
+    controller.abort();
   }
 }
