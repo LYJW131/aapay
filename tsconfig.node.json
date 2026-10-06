@@ -1,6 +1,7 @@
 {
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
+    "erasableSyntaxOnly": true,
     "types": ["node"]
   },
   "include": ["src/server/core", "src/server/auth", "src/server/*.ts", "src/server/node", "src/shared", "tests", "scripts", "vite.config.ts", "vitest.config.ts"]

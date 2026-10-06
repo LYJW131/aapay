@@ -115,12 +115,17 @@ const modelError = (err: unknown) => {
 };
 
 class Draft {
-  private constructor(
-    private readonly api: Remote<LedgerService>,
-    readonly real: LedgerData,
-    public pending: Change[],
-    public data: LedgerData,
-  ) {}
+  private readonly api: Remote<LedgerService>;
+  readonly real: LedgerData;
+  pending: Change[];
+  data: LedgerData;
+
+  private constructor(api: Remote<LedgerService>, real: LedgerData, pending: Change[], data: LedgerData) {
+    this.api = api;
+    this.real = real;
+    this.pending = pending;
+    this.data = data;
+  }
 
   static async open(api: Remote<LedgerService>, pending: Change[], locale: Locale) {
     const real = await api.snapshot();
@@ -237,7 +242,7 @@ async function execute(run: Run, request: AssistantRequest, draft: Draft, call: 
   if (call.name === 'show') {
     const view = resolveView(parseArgs(showInput, args), draft.data);
     await run.emit({ type: 'view', view });
-    return { status: 'shown', note: 'The user now sees this card with live numbers; do not repeat them.' };
+    return { status: 'shown', note: 'The user now sees this card with live numbers; do not repeat them or say where the card is.' };
   }
   const tool = findLedgerTool(call.name);
   if (!tool) throw new ToolError(`Unknown tool ${call.name}`);

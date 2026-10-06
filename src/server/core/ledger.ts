@@ -146,11 +146,14 @@ function guardUndo(undo: Change[]): Change[] {
 }
 
 export class LedgerService {
-  constructor(
-    private readonly db: SqlDriver,
-    private readonly emit: (message: LiveMessage) => void,
-    private readonly signer: AuditSigner | null = null,
-  ) {
+  private readonly db: SqlDriver;
+  private readonly emit: (message: LiveMessage) => void;
+  private readonly signer: AuditSigner | null;
+
+  constructor(db: SqlDriver, emit: (message: LiveMessage) => void, signer: AuditSigner | null = null) {
+    this.db = db;
+    this.emit = emit;
+    this.signer = signer;
     migrate(db, MIGRATIONS);
   }
 

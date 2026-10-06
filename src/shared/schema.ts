@@ -117,7 +117,7 @@ export const assistantInput = z.object({
     .array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().max(LIMITS.assistantText) }))
     .min(1)
     .max(LIMITS.assistantHistory)
-    .refine((turns) => turns.at(-1)!.role === 'user', msg('invalidParams')),
+    .refine((turns) => turns.at(-1)?.role === 'user', msg('invalidParams')),
   images: z.array(imageDataUrl).max(LIMITS.assistantImages).default([]),
   pending: z.array(changeSchema).max(LIMITS.changes).default([]),
   me: z.string().min(1).max(64).nullable(),

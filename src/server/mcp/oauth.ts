@@ -23,13 +23,14 @@ const JWT_BEARER = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
 
 export class OAuthError extends Error {
-  constructor(
-    readonly code: string,
-    description: string,
-    readonly status: 400 | 401 | 429 = 400,
-  ) {
+  readonly code: string;
+  readonly status: 400 | 401 | 429;
+
+  constructor(code: string, description: string, status: 400 | 401 | 429 = 400) {
     super(description);
     this.name = 'OAuthError';
+    this.code = code;
+    this.status = status;
   }
 }
 

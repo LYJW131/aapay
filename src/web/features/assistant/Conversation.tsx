@@ -34,6 +34,10 @@ export function Conversation({ onSuggest, onNavigate }: { onSuggest: (text: stri
   const scroller = useRef<HTMLDivElement>(null);
   const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
+  const touched = useRef(0);
+  const touch = () => {
+    touched.current = Date.now();
+  };
 
   useLayoutEffect(() => {
     const el = scroller.current!;
@@ -53,9 +57,14 @@ export function Conversation({ onSuggest, onNavigate }: { onSuggest: (text: stri
   return (
     <div
       ref={scroller}
+      onWheel={touch}
+      onTouchMove={touch}
+      onPointerDown={touch}
+      onKeyDown={touch}
       onScroll={(e) => {
         const el = e.currentTarget;
-        stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        if (el.scrollHeight - el.scrollTop - el.clientHeight < 48) stick.current = true;
+        else if (Date.now() - touched.current < 600) stick.current = false;
       }}
       className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
     >
@@ -103,27 +112,7 @@ function EmptyState({ onSuggest }: { onSuggest: (text: string) => void }) {
       <h3 className="mt-4 text-lg font-semibold tracking-tight">{t.greeting}</h3>
       <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{t.greetingSub}</p>
 
-      {needsMe && (
-        <div className="mt-5 w-full rounded-2xl bg-brand-500/6 p-3 ring-1 ring-brand-500/15 dark:bg-brand-400/8">
-          <p className="mb-2 text-[13px] font-medium text-brand-700 dark:text-brand-200">
-            {t.whoAreYou}
-            <span className="ml-1.5 font-normal text-zinc-500 dark:text-zinc-400">{t.whoAreYouHint}</span>
-          </p>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {snapshot.members.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => saveDefaultPayer(key('payer'), m.id)}
-                className="flex h-9 items-center gap-1.5 rounded-full bg-surface pr-3.5 pl-1 text-sm font-medium shadow-sm ring-1 ring-zinc-900/8 transition hover:ring-brand-500/50 active:scale-95 dark:ring-white/10"
-              >
-                <Avatar member={m} size="xs" className="size-7" />
-                {m.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      {needsMe && <WhoAreYou hint={t.whoAreYouHint} className="mt-5 justify-center" />}
 
       <div className="mt-5 flex w-full flex-col gap-2">
         {suggestions.map((s, i) => (
@@ -139,6 +128,34 @@ function EmptyState({ onSuggest }: { onSuggest: (text: string) => void }) {
             <Sparkles className="size-3.5 shrink-0 text-brand-500 opacity-70 transition group-hover:opacity-100 dark:text-brand-300" />
             {s}
           </motion.button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WhoAreYou({ hint, className, onPick }: { hint: string; className?: string; onPick?: () => void }) {
+  const { snapshot, key } = useLedger();
+  return (
+    <div className="w-full rounded-2xl bg-brand-500/6 p-3 ring-1 ring-brand-500/15 dark:bg-brand-400/8">
+      <p className="mb-2 text-[13px] font-medium text-brand-700 dark:text-brand-200">
+        {t.whoAreYou}
+        <span className="ml-1.5 font-normal text-zinc-500 dark:text-zinc-400">{hint}</span>
+      </p>
+      <div className={cn('flex flex-wrap gap-1.5', className)}>
+        {snapshot.members.map((m) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => {
+              saveDefaultPayer(key('payer'), m.id);
+              onPick?.();
+            }}
+            className="flex h-9 items-center gap-1.5 rounded-full bg-surface pr-3.5 pl-1 text-sm font-medium shadow-sm ring-1 ring-zinc-900/8 transition hover:ring-brand-500/50 active:scale-95 dark:ring-white/10"
+          >
+            <Avatar member={m} size="xs" className="size-7" />
+            {m.name}
+          </button>
         ))}
       </div>
     </div>
@@ -253,6 +270,7 @@ function AssistantBubble({ message, onNavigate }: { message: AssistantMessage; o
             <ViewCard key={i} view={part.view} onNavigate={onNavigate} />
           ),
         )}
+        {message.needsMe && <WhoAreYou hint={t.whoForImages} onPick={() => store.retry(message.id)} />}
         <ChangeSetView message={message} />
         {message.state === 'error' && (
           <div className="flex items-center gap-2 rounded-2xl bg-rose-500/8 py-1.5 pr-1.5 pl-3 text-sm text-rose-600 dark:text-rose-300">

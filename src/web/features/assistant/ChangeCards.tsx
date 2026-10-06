@@ -1,4 +1,4 @@
-import { ArrowRight, Check, CornerDownLeft, Pencil, RefreshCw, RotateCcw, ScanLine, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, Check, CornerDownLeft, Pencil, RefreshCw, RotateCcw, RotateCw, ScanLine, TriangleAlert, X } from 'lucide-react';
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CATEGORY_EMOJI } from '../../../shared/categories.ts';
@@ -84,10 +84,16 @@ function Summary({ messageId, set }: { messageId: string; set: ChangeSet }) {
         </div>
       );
     case 'undone':
+    case 'redoing':
       return (
         <div className={cn(row, 'bg-zinc-900/4 text-zinc-500 dark:bg-white/5 dark:text-zinc-400')}>
           <RotateCcw className="size-4" />
-          {t.undone}
+          <span className="flex-1">{t.undone}</span>
+          {set.redo && set.redo.length > 0 && (
+            <Button size="sm" variant="ghost" loading={set.status === 'redoing'} icon={<RotateCw className="size-3.5" />} onClick={() => void store.redo(messageId)}>
+              {t.redo}
+            </Button>
+          )}
         </div>
       );
     case 'discarded':
@@ -119,8 +125,8 @@ function Group({ message, set }: { message: AssistantMessage; set: ChangeSet | n
         {total > 0 && <span className="text-zinc-400">·</span>}
         {total > 0 && <span className="tabular font-medium text-zinc-700 dark:text-zinc-200">{t.total(formatMoney(total))}</span>}
       </header>
-      <ul className="space-y-2 px-2.5 pb-2.5">
-        <AnimatePresence initial={false}>
+      <ul className="relative space-y-2 px-2.5 pb-2.5">
+        <AnimatePresence initial={false} mode="popLayout">
           {changes.map((change) => {
             const k = changeKey(change);
             const order = fresh.indexOf(k);
@@ -407,7 +413,7 @@ function ExpenseRow({ input, name, member }: { input: ExpenseInput; name: (id: s
           {input.category && <span className="hidden truncate sm:inline">· {categoryText(input.category)}</span>}
         </p>
       </div>
-      <span className="tabular shrink-0 text-lg font-semibold tracking-tight">{formatMoney(input.amount)}</span>
+      <span className="tabular shrink-0 text-base font-semibold tracking-tight sm:text-lg">{formatMoney(input.amount)}</span>
     </div>
   );
 }

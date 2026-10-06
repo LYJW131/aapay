@@ -12,8 +12,11 @@ import { openSqlite } from './sqlite.ts';
 
 class Room {
   private readonly sockets = new Map<WSContext, string>();
+  private readonly upgrade: UpgradeWebSocket;
 
-  constructor(private readonly upgrade: UpgradeWebSocket) {}
+  constructor(upgrade: UpgradeWebSocket) {
+    this.upgrade = upgrade;
+  }
 
   connect(c: Context, tag: string) {
     return this.upgrade(c, {
@@ -43,14 +46,13 @@ class NodeLedger implements LedgerHost {
   private readonly db;
   private readonly room;
   private readonly service;
+  private readonly path: string;
+  private readonly onDestroy: () => void;
   readonly api;
 
-  constructor(
-    private readonly path: string,
-    upgrade: UpgradeWebSocket,
-    signer: AuditSigner | null,
-    private readonly onDestroy: () => void,
-  ) {
+  constructor(path: string, upgrade: UpgradeWebSocket, signer: AuditSigner | null, onDestroy: () => void) {
+    this.path = path;
+    this.onDestroy = onDestroy;
     this.db = openSqlite(path);
     this.room = new Room(upgrade);
     this.service = new LedgerService(this.db, (message) => this.room.broadcast(message), signer);
@@ -78,11 +80,13 @@ class NodeLedger implements LedgerHost {
 
 class RateLimiter {
   private readonly hits = new Map<string, { count: number; reset: number }>();
+  private readonly limit: number;
+  private readonly windowMs: number;
 
-  constructor(
-    private readonly limit: number,
-    private readonly windowMs: number,
-  ) {}
+  constructor(limit: number, windowMs: number) {
+    this.limit = limit;
+    this.windowMs = windowMs;
+  }
 
   take(key: string) {
     const now = Date.now();

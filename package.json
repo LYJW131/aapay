@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "dev:node": "AAPAY_TARGET=node node --watch-path=src/server --watch-path=src/shared --experimental-transform-types --no-warnings src/server/node/main.ts & AAPAY_TARGET=node vite",
+    "dev:node": "AAPAY_TARGET=node node --watch-path=src/server --watch-path=src/shared --experimental-strip-types --no-warnings src/server/node/main.ts & AAPAY_TARGET=node vite",
     "build": "vite build",
     "build:node": "AAPAY_TARGET=node vite build && node scripts/build-node.mjs",
     "start": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning dist/node/server.mjs",

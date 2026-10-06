@@ -218,11 +218,10 @@ export function LedgerPage({
         activity,
         memberById: new Map(snapshot.members.map((m) => [m.id, m])),
         key: (name) => prefix + name,
-        assistant: config.assistant,
         filters,
         setFilters,
       },
-    [snapshot, session, store, activity, prefix, config.assistant, filters, setFilters],
+    [snapshot, session, store, activity, prefix, filters, setFilters],
   );
 
   const filtered = useMemo(() => {
@@ -254,7 +253,7 @@ export function LedgerPage({
     <LedgerContext value={context}>
       <AssistantDock enabled={config.assistant} onCompose={() => setComposerOpen(true)}>
         <Header live={state.live} config={config} admin={!!admin} onSwitch={onSwitch} onLeave={() => onExit()} />
-        <main className="mx-auto max-w-6xl px-4 pt-4 pb-32 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-12">
+        <main className="mx-auto max-w-6xl px-4 pt-4 pb-4 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-8">
           {admin && (
             <div className="mb-4 lg:col-span-2 lg:mb-0">
               <Suspense fallback={null}>
@@ -293,13 +292,13 @@ export function LedgerPage({
             {!desktop && <AboutCard />}
           </div>
         </main>
+        {!desktop && (
+          <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title={t.addExpense}>
+            <ExpenseForm onDone={() => setComposerOpen(false)} />
+          </Sheet>
+        )}
       </AssistantDock>
       <WelcomeSheet open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
-      {!desktop && (
-        <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title={t.addExpense}>
-          <ExpenseForm onDone={() => setComposerOpen(false)} />
-        </Sheet>
-      )}
     </LedgerContext>
   );
 }

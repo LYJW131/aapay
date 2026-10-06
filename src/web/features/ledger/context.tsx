@@ -11,7 +11,6 @@ export interface LedgerContextValue {
   activity: ActivityLog;
   memberById: Map<string, Member>;
   key: (name: string) => string;
-  assistant: boolean;
   filters: LedgerFilters;
   setFilters: (patch: Partial<LedgerFilters>) => void;
 }

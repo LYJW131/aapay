@@ -114,13 +114,6 @@ export interface PublicConfig {
   assistant: boolean;
 }
 
-export interface BillDraft {
-  title: string | null;
-  amount: Cents | null;
-  date: string | null;
-  category: Category | null;
-}
-
 export interface AdminIdentity {
   name: string;
 }

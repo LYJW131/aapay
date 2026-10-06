@@ -1,4 +1,5 @@
-import { CATEGORY_EMOJI, CATEGORY_LABELS, type Category } from '../../../shared/categories.ts';
+import { categoryLabel } from '../../../shared/audit-text.ts';
+import type { Category } from '../../../shared/categories.ts';
 import type { Change } from '../../../shared/changes.ts';
 import { computeShares, sameShares, splitOf } from '../../../shared/ledger.ts';
 import { formatMoney } from '../../../shared/money.ts';
@@ -8,10 +9,7 @@ import { assistant as t } from '../../i18n/assistant.ts';
 import { locale } from '../../i18n/locale.ts';
 import { dayLabel, daysBetween } from '../../lib/dates.ts';
 
-export const categoryName = (category: Category) => CATEGORY_LABELS[locale][category];
-
-export const categoryText = (category: Category | null) =>
-  category ? `${CATEGORY_EMOJI[category]} ${CATEGORY_LABELS[locale][category]}` : t.uncategorized;
+export const categoryText = (category: Category | null) => categoryLabel(category, locale);
 
 export const dateText = (date: IsoDate) => dayLabel(date).title;
 

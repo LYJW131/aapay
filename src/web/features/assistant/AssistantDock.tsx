@@ -28,6 +28,7 @@ function Fallback({ onCompose, children }: { onCompose: () => void; children: Re
   return (
     <AssistantContext value={UNAVAILABLE}>
       {children}
+      <div aria-hidden className="h-[calc(5rem+env(safe-area-inset-bottom))] lg:h-4" />
       <AnimatePresence>
         {!desktop && snapshot.members.length > 0 && (
           <motion.button
@@ -111,8 +112,10 @@ function Dock({ onCompose, children }: { onCompose: () => void; children: ReactN
 
   const hide = useCallback(() => {
     setOpen(false);
+    setFocused(false);
     input.current?.blur();
-  }, []);
+    if (!desktop) store.revealChanges();
+  }, [desktop, store]);
 
   const send = useCallback(
     (value: string, pics: string[]) => {

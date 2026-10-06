@@ -25,7 +25,7 @@ export interface Draft {
   fields: DraftFields;
 }
 
-export type ChangeStatus = 'pending' | 'applying' | 'applied' | 'undoing' | 'undone' | 'discarded' | 'superseded' | 'conflict';
+export type ChangeStatus = 'pending' | 'applying' | 'applied' | 'undoing' | 'undone' | 'redoing' | 'discarded' | 'superseded' | 'conflict';
 
 export interface ChangeSet {
   changes: Change[];
@@ -35,6 +35,7 @@ export interface ChangeSet {
   fresh: string[];
   applied?: number;
   undo?: Change[];
+  redo?: Change[];
   error?: string;
 }
 
@@ -55,6 +56,7 @@ export interface AssistantMessage {
   changeSet: ChangeSet | null;
   state: 'streaming' | 'done' | 'error' | 'stopped';
   error?: string;
+  needsMe?: boolean;
 }
 
 export type ChatMessage = UserMessage | AssistantMessage;
@@ -110,7 +112,7 @@ function persistable(messages: ChatMessage[]): ChatMessage[] {
       ...m.changeSet,
       fresh: [],
       morph: {},
-      status: m.changeSet.status === 'applying' ? 'pending' : m.changeSet.status === 'undoing' ? 'applied' : m.changeSet.status,
+      status: m.changeSet.status === 'applying' ? 'pending' : m.changeSet.status === 'undoing' ? 'applied' : m.changeSet.status === 'redoing' ? 'undone' : m.changeSet.status,
     };
     return { ...m, drafts: [], changeSet, state: m.state === 'streaming' ? 'stopped' : m.state };
   });
@@ -128,6 +130,7 @@ export class AssistantStore {
   private textBuffer = '';
   private frame = 0;
   private saveTimer: ReturnType<typeof setTimeout> | undefined;
+  private unseen: string[] = [];
 
   constructor(private readonly env: Env) {
     this.state = {
@@ -192,17 +195,21 @@ export class AssistantStore {
     return turns.slice(-LIMITS.assistantHistory);
   }
 
+  private me() {
+    const payer = load<string | null>(this.env.key('payer'), null);
+    return payer && this.env.ledger.getState().snapshot?.members.some((m) => m.id === payer) ? payer : null;
+  }
+
   private request(images: string[]): AssistantRequest {
     const { snapshot } = this.env.ledger.getState();
     const members = snapshot?.members ?? [];
-    const payer = load<string | null>(this.env.key('payer'), null);
     const excluded = new Set(load<string[]>(this.env.key('excluded-participants'), []));
     const participants = members.filter((m) => !excluded.has(m.id)).map((m) => m.id);
     return {
       messages: this.history(),
       images,
       pending: this.pending()?.set.changes ?? [],
-      me: payer && members.some((m) => m.id === payer) ? payer : null,
+      me: this.me(),
       participants: participants.length === members.length ? null : participants,
       today: today(),
     };
@@ -213,6 +220,10 @@ export class AssistantStore {
     if (this.state.streaming || (!trimmed && images.length === 0)) return;
     const user: UserMessage = { id: newId(), role: 'user', text: trimmed, images, imageCount: images.length };
     const reply: AssistantMessage = { id: newId(), role: 'assistant', parts: [], steps: [], drafts: [], changeSet: null, state: 'streaming' };
+    if (images.length > 0 && !this.me()) {
+      this.set({ messages: [...this.state.messages, user, { ...reply, state: 'done' as const, needsMe: true }].slice(-MAX_MESSAGES) });
+      return;
+    }
     this.set({ messages: [...this.state.messages, user].slice(-MAX_MESSAGES), streaming: true });
     const body = this.request(images);
     this.set({ messages: [...this.state.messages, reply] });
@@ -357,12 +368,7 @@ export class AssistantStore {
     this.patchSet(message.id, { status: 'applying', fresh: [] });
     try {
       const { undo } = await this.env.ledger.apply(set.changes, { via: 'assistant' });
-      this.patchSet(message.id, { status: 'applied', applied: set.changes.length, undo });
-      highlight(set.changes.filter((c) => !c.op.endsWith('.delete')).map((c) => c.id));
-      toast.success(t.appliedToast(set.changes.length), {
-        icon: '✨',
-        action: undo.length ? { label: common.undo, onClick: () => void this.undo(message.id) } : undefined,
-      });
+      this.applied(message.id, set.changes, undo);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
         this.patchSet(message.id, { status: 'conflict', error: err.message });
@@ -373,17 +379,44 @@ export class AssistantStore {
     }
   }
 
+  private applied(id: string, changes: Change[], undo: Change[]) {
+    this.patchSet(id, { status: 'applied', applied: changes.length, undo, redo: undefined });
+    this.unseen = changes.filter((c) => !c.op.endsWith('.delete')).map((c) => c.id);
+    highlight(this.unseen);
+    toast.success(t.appliedToast(changes.length), {
+      icon: '✨',
+      action: undo.length ? { label: common.undo, onClick: () => void this.undo(id) } : undefined,
+    });
+  }
+
+  revealChanges() {
+    highlight(this.unseen);
+    this.unseen = [];
+  }
+
   async undo(id: string) {
-    const m = this.find(id);
-    const set = m?.changeSet;
+    const set = this.find(id)?.changeSet;
     if (!set?.undo || set.status !== 'applied') return;
     this.patchSet(id, { status: 'undoing' });
     try {
-      await this.env.ledger.apply(set.undo);
-      this.patchSet(id, { status: 'undone' });
+      const { undo: redo } = await this.env.ledger.apply(set.undo);
+      this.patchSet(id, { status: 'undone', redo });
       toast.success(common.undone);
     } catch (err) {
       this.patchSet(id, { status: 'applied' });
+      toast.error(errorMessage(err));
+    }
+  }
+
+  async redo(id: string) {
+    const set = this.find(id)?.changeSet;
+    if (!set?.redo?.length || set.status !== 'undone') return;
+    this.patchSet(id, { status: 'redoing' });
+    try {
+      const { undo } = await this.env.ledger.apply(set.redo, { via: 'assistant' });
+      this.applied(id, set.changes, undo);
+    } catch (err) {
+      this.patchSet(id, { status: 'undone' });
       toast.error(errorMessage(err));
     }
   }

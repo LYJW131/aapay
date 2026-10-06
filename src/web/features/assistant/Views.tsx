@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import { useMemo, useState, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import type { AssistantView, ViewRange } from '../../../shared/assistant.ts';
-import { CATEGORY_EMOJI, type Category } from '../../../shared/categories.ts';
+import type { Category } from '../../../shared/categories.ts';
 import { newId } from '../../../shared/ids.ts';
 import { byNewest } from '../../../shared/ledger.ts';
 import { formatMoney } from '../../../shared/money.ts';
@@ -11,6 +11,7 @@ import { computeBalances, suggestTransfers, type Transfer } from '../../../share
 import type { Expense, IsoDate } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Button } from '../../components/Button.tsx';
+import { CategoryIcon, categoryName } from '../../components/CategoryIcon.tsx';
 import { assistant as t } from '../../i18n/assistant.ts';
 import { ledger } from '../../i18n/ledger.ts';
 import { errorMessage } from '../../lib/api.ts';
@@ -19,7 +20,7 @@ import { addDays, daysBetween, parseIsoDate, shortDate, today } from '../../lib/
 import { useLedger } from '../ledger/context.tsx';
 import { involves, inRange } from '../ledger/range.ts';
 import { undoAction } from '../ledger/undo.ts';
-import { categoryName, categoryText, dateText } from './describe.ts';
+import { categoryText, dateText } from './describe.ts';
 
 const v = t.views;
 
@@ -203,13 +204,11 @@ function Categories({ range, memberId }: { range: ViewRange; memberId: string | 
               const ratio = total > 0 ? amount / total : 0;
               return (
                 <li key={category ?? 'none'} className="flex items-center gap-3">
-                  <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-base dark:bg-white/6">
-                    {category ? CATEGORY_EMOJI[category] : '🏷️'}
-                  </span>
+                  <CategoryIcon category={category} size="sm" className="size-8 text-base" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline justify-between gap-3 text-sm">
                       <span className="truncate font-medium">
-                        {category ? categoryName(category) : t.uncategorized}
+                        {category ? categoryName(category) : ledger.overview.uncategorized}
                         <span className="tabular ml-1.5 text-xs font-normal text-zinc-400">{ratio < 0.01 ? '<1%' : `${Math.round(ratio * 100)}%`}</span>
                       </span>
                       <span className="tabular shrink-0 font-semibold">{formatMoney(amount)}</span>
@@ -293,8 +292,7 @@ function Trend({ range, memberId, category }: { range: ViewRange; memberId: stri
 }
 
 function scrollToTimeline() {
-  const heading = [...document.querySelectorAll('main h2')].find((h) => h.textContent?.trim() === ledger.timeline.title);
-  const section = heading?.closest('section');
+  const section = document.querySelector('[data-card=timeline]');
   if (section) window.scrollTo({ top: section.getBoundingClientRect().top + window.scrollY - 72, behavior: 'smooth' });
 }
 
@@ -332,9 +330,7 @@ function Transactions({ view, onNavigate }: { view: Extract<AssistantView, { kin
           <ul className="-mx-1 divide-y divide-zinc-900/5 dark:divide-white/6">
             {matches.slice(0, 8).map((e) => (
               <li key={e.id} className="flex items-center gap-3 px-1 py-2">
-                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-base dark:bg-white/6">
-                  {e.category ? CATEGORY_EMOJI[e.category] : '🧾'}
-                </span>
+                <CategoryIcon category={e.category} size="sm" className="size-8 text-base" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{e.title}</p>
                   <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">

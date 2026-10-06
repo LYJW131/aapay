@@ -408,6 +408,7 @@ describe('assistant endpoint', () => {
     expect(bad.status).toBe(400);
     expect(await bad.json()).toEqual({ error: '参数错误' });
     expect((await ask({ images: ['https://example.com/a.png'] })).res.status).toBe(400);
+    expect((await ask({ messages: [] })).res.status).toBe(400);
 
     const statuses = [];
     for (let i = 0; i < 31; i++) statuses.push((await ask({})).res.status);
