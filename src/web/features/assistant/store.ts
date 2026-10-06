@@ -220,7 +220,7 @@ export class AssistantStore {
     if (this.state.streaming || (!trimmed && images.length === 0)) return;
     const user: UserMessage = { id: newId(), role: 'user', text: trimmed, images, imageCount: images.length };
     const reply: AssistantMessage = { id: newId(), role: 'assistant', parts: [], steps: [], drafts: [], changeSet: null, state: 'streaming' };
-    if (images.length > 0 && !this.me()) {
+    if (images.length > 0 && !this.me() && this.env.ledger.getState().snapshot?.members.length) {
       this.set({ messages: [...this.state.messages, user, { ...reply, state: 'done' as const, needsMe: true }].slice(-MAX_MESSAGES) });
       return;
     }
@@ -400,6 +400,7 @@ export class AssistantStore {
     this.patchSet(id, { status: 'undoing' });
     try {
       const { undo: redo } = await this.env.ledger.apply(set.undo);
+      this.unseen = [];
       this.patchSet(id, { status: 'undone', redo });
       toast.success(common.undone);
     } catch (err) {

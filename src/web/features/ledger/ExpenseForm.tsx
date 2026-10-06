@@ -477,7 +477,7 @@ export function ExpenseForm({
               disabled={unbalanced}
               icon={<Check className="size-4" />}
             >
-              {expense ? t.form.saveChanges : t.form.add}
+              {expense || onSave ? t.form.saveChanges : t.form.add}
             </Button>
           </div>
         </form>

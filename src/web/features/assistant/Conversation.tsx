@@ -32,21 +32,27 @@ export function AiAvatar({ busy, className }: { busy?: boolean; className?: stri
 export function Conversation({ onSuggest, onNavigate }: { onSuggest: (text: string) => void; onNavigate: () => void }) {
   const { messages } = useChatState();
   const scroller = useRef<HTMLDivElement>(null);
-  const content = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const touched = useRef(0);
   const touch = () => {
     touched.current = Date.now();
   };
 
+  // 不用 ResizeObserver 盯内容：里面的 AutoHeight 会在自己的回调里改高度，祖先被观察就会报 ResizeObserver loop 错误
   useLayoutEffect(() => {
     const el = scroller.current!;
-    el.scrollTop = el.scrollHeight;
-    const observer = new ResizeObserver(() => {
-      if (stick.current) el.scrollTop = el.scrollHeight;
-    });
-    observer.observe(content.current!);
-    return () => observer.disconnect();
+    let height = el.scrollHeight;
+    el.scrollTop = height;
+    let frame = 0;
+    const follow = () => {
+      if (el.scrollHeight !== height) {
+        height = el.scrollHeight;
+        if (stick.current) el.scrollTop = height;
+      }
+      frame = requestAnimationFrame(follow);
+    };
+    frame = requestAnimationFrame(follow);
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   const last = messages.at(-1);
@@ -68,7 +74,7 @@ export function Conversation({ onSuggest, onNavigate }: { onSuggest: (text: stri
       }}
       className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
     >
-      <div ref={content} role="log" aria-live="polite" className="flow-root px-4 py-4">
+      <div role="log" aria-live="polite" className="flow-root px-4 py-4">
         {messages.length === 0 ? (
           <EmptyState onSuggest={onSuggest} />
         ) : (
