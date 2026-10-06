@@ -107,11 +107,24 @@ export const changesInput = z.object({
   via: z.literal('assistant').optional(),
 });
 
-export const recognizeInput = z.object({
-  image: z
-    .string()
-    .max(4_000_000, msg('imageTooLarge'))
-    .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/, msg('imageFormat')),
+const imageDataUrl = z
+  .string()
+  .max(4_000_000, msg('imageTooLarge'))
+  .regex(/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/, msg('imageFormat'));
+
+export const recognizeInput = z.object({ image: imageDataUrl });
+
+export const assistantInput = z.object({
+  messages: z
+    .array(z.object({ role: z.enum(['user', 'assistant']), text: z.string().max(LIMITS.assistantText) }))
+    .min(1)
+    .max(LIMITS.assistantHistory)
+    .refine((turns) => turns.at(-1)!.role === 'user', msg('invalidParams')),
+  images: z.array(imageDataUrl).max(LIMITS.assistantImages).default([]),
+  pending: z.array(changeSchema).max(LIMITS.changes).default([]),
+  me: z.string().min(1).max(64).nullable(),
+  participants: z.array(z.string().min(1).max(64)).max(LIMITS.members).nullable(),
+  today: isoDate,
 });
 
 export const joinInput = z.object({ code: passphraseCode });

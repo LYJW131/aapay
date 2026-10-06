@@ -1,6 +1,7 @@
 import { createContext, use } from 'react';
 import type { Member, SessionInfo, Snapshot } from '../../../shared/types.ts';
 import type { ActivityLog } from './activity.ts';
+import type { LedgerFilters } from './filters.ts';
 import type { LedgerStore } from './store.ts';
 
 export interface LedgerContextValue {
@@ -10,7 +11,9 @@ export interface LedgerContextValue {
   activity: ActivityLog;
   memberById: Map<string, Member>;
   key: (name: string) => string;
-  recognize: boolean;
+  assistant: boolean;
+  filters: LedgerFilters;
+  setFilters: (patch: Partial<LedgerFilters>) => void;
 }
 
 export const LedgerContext = createContext<LedgerContextValue | null>(null);

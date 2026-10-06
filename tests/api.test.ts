@@ -49,7 +49,7 @@ describe('API (isolated mode)', () => {
   const { call, login, resetCookies } = setup({ ADMIN_AUTH: 'none' });
 
   it('runs the full admin → passphrase → member flow', async () => {
-    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true, recognize: false });
+    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true, assistant: false });
     expect((await call('GET', '/session')).data).toEqual({ session: null, admin: null });
     expect((await call('GET', '/admin/ledgers')).status).toBe(401);
     expect(await login('/oauth/authorize?client_id=x')).toMatchObject({ status: 302, location: '/oauth/authorize?client_id=x' });
@@ -270,7 +270,7 @@ describe('API (bill recognition)', () => {
       });
     });
     const { call } = await joined();
-    expect((await call('GET', '/config')).data.recognize).toBe(true);
+    expect((await call('GET', '/config')).data.assistant).toBe(true);
     const res = await call('POST', '/ledger/recognize', { image });
     expect(res).toEqual({
       status: 200,
@@ -295,7 +295,7 @@ describe('API (bill recognition)', () => {
       });
     });
     const { call } = await joined({ DEEPSEEK_API_KEY: 'ds-key', GEMINI_API_KEY: 'test-key' });
-    expect((await call('GET', '/config')).data.recognize).toBe(true);
+    expect((await call('GET', '/config')).data.assistant).toBe(true);
     expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
       items: [{ title: '瑞幸咖啡', amount: 1690, date: '2026-10-04', category: null }],
     });
@@ -348,7 +348,7 @@ describe('API (bill recognition)', () => {
 
   it('is unavailable without a Gemini API key', async () => {
     const { call } = await joined({});
-    expect((await call('GET', '/config')).data.recognize).toBe(false);
+    expect((await call('GET', '/config')).data.assistant).toBe(false);
     expect((await call('POST', '/ledger/recognize', { image })).status).toBe(404);
   });
 });

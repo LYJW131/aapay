@@ -176,7 +176,7 @@ function buildApi() {
         mode: c.var.config.mode,
         adminAuth: c.var.config.adminAuth,
         mcp: c.var.config.mcp,
-        recognize: c.var.config.recognizer !== null,
+        assistant: c.var.config.recognizer !== null,
       } satisfies PublicConfig),
     )
     .get('/session', async (c) => {

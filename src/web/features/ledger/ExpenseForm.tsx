@@ -45,25 +45,44 @@ export function useDefaultPayer(storageKey: string) {
   );
 }
 
-export function ExpenseForm({ expense: latest, onReload, onDone }: { expense?: Expense; onReload?: () => void; onDone?: () => void }) {
-  const { snapshot, store, key, memberById, recognize } = useLedger();
+export function ExpenseForm({
+  expense: latest,
+  initial,
+  onSave,
+  onReload,
+  onDone,
+}: {
+  expense?: Expense;
+  initial?: ExpenseInput;
+  onSave?: (input: ExpenseInput) => void;
+  onReload?: () => void;
+  onDone?: () => void;
+}) {
+  const { snapshot, store, key, memberById, assistant: recognize } = useLedger();
   const { members } = snapshot;
   const [expense] = useState(latest);
+  const seed = expense ?? initial;
 
-  const [amount, setAmount] = useState(expense ? centsToInput(expense.amount) : '');
-  const [title, setTitle] = useState(expense?.title ?? '');
-  const [pickedCategory, setPickedCategory] = useState<Category | null | undefined>(expense ? expense.category : undefined);
+  const [amount, setAmount] = useState(seed ? centsToInput(seed.amount) : '');
+  const [title, setTitle] = useState(seed?.title ?? '');
+  const [pickedCategory, setPickedCategory] = useState<Category | null | undefined>(seed ? seed.category : undefined);
   const category = pickedCategory !== undefined ? pickedCategory : guessCategory(title);
   const changeTitle = (value: string) => {
     setTitle(value);
-    if (!expense) setPickedCategory(undefined);
+    if (!seed) setPickedCategory(undefined);
   };
-  const [date, setDate] = useState(expense?.date ?? today());
+  const [date, setDate] = useState(seed?.date ?? today());
   const defaultPayer = useDefaultPayer(key('payer'));
-  const [editedPayer, setEditedPayer] = useState(expense?.payerId ?? '');
-  const payerId = expense ? editedPayer : defaultPayer && memberById.has(defaultPayer) ? defaultPayer : '';
-  const choosePayer = (id: string) => (expense ? setEditedPayer(id) : saveDefaultPayer(key('payer'), id));
-  const [picked, setPicked] = useState(() => (expense ? new Set(expense.shares.map((s) => s.memberId)) : null));
+  const [editedPayer, setEditedPayer] = useState(seed?.payerId ?? '');
+  const payerId = seed ? editedPayer : defaultPayer && memberById.has(defaultPayer) ? defaultPayer : '';
+  const choosePayer = (id: string) => (seed ? setEditedPayer(id) : saveDefaultPayer(key('payer'), id));
+  const [picked, setPicked] = useState(() =>
+    expense
+      ? new Set(expense.shares.map((s) => s.memberId))
+      : initial
+        ? new Set(initial.split.mode === 'even' ? initial.split.memberIds : initial.split.shares.map((s) => s.memberId))
+        : null,
+  );
   // 新记一笔时只记住没选的人，之后加入的成员（包括表单打开期间）默认参与
   const [excluded, setExcluded] = useState(() => new Set(load<string[]>(key('excluded-participants'), [])));
   const selected = picked ?? new Set(members.filter((m) => !excluded.has(m.id)).map((m) => m.id));
@@ -84,11 +103,11 @@ export function ExpenseForm({ expense: latest, onReload, onDone }: { expense?: E
 
   const cents = parseAmount(amount);
   const participantIds = members.filter((m) => selected.has(m.id)).map((m) => m.id);
-  const original = useMemo(() => (expense ? splitOf(expense, members) : null), [expense, members]);
+  const original = useMemo(() => (expense ? splitOf(expense, members) : (initial?.split ?? null)), [expense, initial, members]);
   // 表单只能编辑均分，按金额分摊只能原样保留
   const keepsCustom =
     original?.mode === 'exact' &&
-    cents === expense!.amount &&
+    cents === seed!.amount &&
     original.shares.length === participantIds.length &&
     original.shares.every((s) => selected.has(s.memberId));
   const split: ExpenseSplit = keepsCustom ? original : { mode: 'even', memberIds: participantIds };
@@ -121,6 +140,10 @@ export function ExpenseForm({ expense: latest, onReload, onDone }: { expense?: E
     if (participantIds.length === 0) return toast.error(t.form.participantsRequired);
 
     const input: ExpenseInput = { title: title.trim(), amount: cents, payerId, date, category, split };
+    if (onSave) {
+      onSave(input);
+      return onDone?.();
+    }
     setSaving(true);
     try {
       if (expense) {
@@ -281,7 +304,7 @@ export function ExpenseForm({ expense: latest, onReload, onDone }: { expense?: E
           </div>
         </Collapse>
         <form onSubmit={submit} className="space-y-5 pb-1">
-          {recognize && !expense && <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={scan} />}
+          {recognize && !seed && <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={scan} />}
           <div>
             <AutoHeight className="-m-1 p-1">
               {drafts ? (
@@ -299,7 +322,7 @@ export function ExpenseForm({ expense: latest, onReload, onDone }: { expense?: E
                       autoFocus={!expense && window.matchMedia('(min-width: 1024px)').matches}
                       className="tabular min-w-0 flex-1 bg-transparent text-[32px] leading-tight font-semibold tracking-tight outline-none placeholder:text-zinc-300 dark:placeholder:text-zinc-600"
                     />
-                    {recognize && !expense && (
+                    {recognize && !seed && (
                       <>
                         <Button
                           variant="soft"

@@ -42,8 +42,9 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
   const [editingId, setEditingId] = useState<string | null>(null);
   const [reloads, setReloads] = useState(0);
   const [viewing, setViewing] = useState<Settlement | null>(null);
-  const [query, setQuery] = useState('');
-  const { memberById, snapshot } = useLedger();
+  const { memberById, snapshot, filters, setFilters } = useLedger();
+  const { query } = filters;
+  const setQuery = (value: string) => setFilters({ query: value });
   const editing = editingId ? snapshot.expenses.find((e) => e.id === editingId) : undefined;
   const needle = query.trim().toLowerCase();
 

@@ -111,7 +111,7 @@ export interface PublicConfig {
   mode: Mode;
   adminAuth: AdminAuthMode;
   mcp: boolean;
-  recognize: boolean;
+  assistant: boolean;
 }
 
 export interface BillDraft {

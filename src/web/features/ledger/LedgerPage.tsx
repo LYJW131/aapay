@@ -1,6 +1,5 @@
 import { Plus, ShieldAlert } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { formatMoney } from '../../../shared/money.ts';
 import type { AdminIdentity, LiveMessage, PublicConfig, SessionInfo, Snapshot } from '../../../shared/types.ts';
@@ -13,10 +12,12 @@ import { ledger } from '../../i18n/ledger.ts';
 import { useMediaQuery, useMinuteTick, usePersistentState } from '../../lib/hooks.ts';
 import { load } from '../../lib/storage.ts';
 import { adminModules } from '../admin/preload.ts';
+import { AssistantDock } from '../assistant/AssistantDock.tsx';
 import { AboutCard } from './About.tsx';
 import { ActivityLog } from './activity.ts';
 import { LedgerContext, type LedgerContextValue } from './context.tsx';
 import { ExpenseForm } from './ExpenseForm.tsx';
+import { inCategory, type CategoryFilter, type LedgerFilters } from './filters.ts';
 import { Header } from './Header.tsx';
 import { MembersCard } from './Members.tsx';
 import { OverviewCard } from './Overview.tsx';
@@ -193,8 +194,21 @@ export function LedgerPage({
 
   const [range, setRange] = usePersistentState<RangeFilter>(`${prefix}range`, { key: 'all' });
   const [memberId, setMemberId] = usePersistentState<string | null>(`${prefix}member`, null);
+  const [category, setCategory] = usePersistentState<CategoryFilter>(`${prefix}category`, null);
+  const [query, setQuery] = useState('');
+  const setFilters = useCallback(
+    (patch: Partial<LedgerFilters>) => {
+      if (patch.range !== undefined) setRange(patch.range);
+      if (patch.memberId !== undefined) setMemberId(patch.memberId);
+      if (patch.category !== undefined) setCategory(patch.category);
+      if (patch.query !== undefined) setQuery(patch.query);
+    },
+    [setRange, setMemberId, setCategory],
+  );
 
   const snapshot = state.snapshot;
+  const validMember = memberId && snapshot?.members.some((m) => m.id === memberId) ? memberId : null;
+  const filters = useMemo<LedgerFilters>(() => ({ range, memberId: validMember, category, query }), [range, validMember, category, query]);
   const context = useMemo<LedgerContextValue | null>(
     () =>
       snapshot && {
@@ -204,19 +218,20 @@ export function LedgerPage({
         activity,
         memberById: new Map(snapshot.members.map((m) => [m.id, m])),
         key: (name) => prefix + name,
-        recognize: config.recognize,
+        assistant: config.assistant,
+        filters,
+        setFilters,
       },
-    [snapshot, session, store, activity, prefix, config.recognize],
+    [snapshot, session, store, activity, prefix, config.assistant, filters, setFilters],
   );
 
   const filtered = useMemo(() => {
-    if (!snapshot) return { expenses: [], settlements: [], memberId: null };
+    if (!snapshot) return { expenses: [], settlements: [] };
     const bounds = resolveRange(range);
-    const validMember = memberId && snapshot.members.some((m) => m.id === memberId) ? memberId : null;
     const keep = (r: Snapshot['expenses'][number] | Snapshot['settlements'][number]) =>
-      inRange(r.date, bounds) && (!validMember || involves(r, validMember));
-    return { expenses: snapshot.expenses.filter(keep), settlements: snapshot.settlements.filter(keep), memberId: validMember };
-  }, [snapshot, range, memberId]);
+      inRange(r.date, bounds) && (!validMember || involves(r, validMember)) && inCategory(r, category);
+    return { expenses: snapshot.expenses.filter(keep), settlements: snapshot.settlements.filter(keep) };
+  }, [snapshot, range, validMember, category]);
 
   useEffect(() => {
     if (snapshot) document.title = `${snapshot.ledger.emoji} ${snapshot.ledger.name} · AAPay`;
@@ -237,62 +252,48 @@ export function LedgerPage({
 
   return (
     <LedgerContext value={context}>
-      <Header live={state.live} config={config} admin={!!admin} onSwitch={onSwitch} onLeave={() => onExit()} />
-      <main className="mx-auto max-w-6xl px-4 pt-4 pb-32 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-12">
-        {admin && (
-          <div className="mb-4 lg:col-span-2 lg:mb-0">
-            <Suspense fallback={null}>
-              <AdminCard admin={admin} current={session} onEnter={onSwitch} />
-            </Suspense>
-          </div>
-        )}
-        {!admin && adminExpired && (
-          <div className="card mb-4 flex items-center gap-3 px-5 py-4 lg:col-span-2 lg:mb-0">
-            <ShieldAlert className="size-[18px] shrink-0 text-amber-500" />
-            <span className="flex-1 text-sm">{t.adminExpired}</span>
-            <Button size="sm" variant="soft" onClick={() => window.location.assign('/admin')}>
-              {t.signInAgain}
-            </Button>
-          </div>
-        )}
-        <aside className="space-y-4">
-          {desktop && (
-            <Card id="compose" title={t.addExpense} icon={<Plus />}>
-              <ExpenseForm />
-            </Card>
+      <AssistantDock enabled={config.assistant} onCompose={() => setComposerOpen(true)}>
+        <Header live={state.live} config={config} admin={!!admin} onSwitch={onSwitch} onLeave={() => onExit()} />
+        <main className="mx-auto max-w-6xl px-4 pt-4 pb-32 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-12">
+          {admin && (
+            <div className="mb-4 lg:col-span-2 lg:mb-0">
+              <Suspense fallback={null}>
+                <AdminCard admin={admin} current={session} onEnter={onSwitch} />
+              </Suspense>
+            </div>
           )}
-          <MembersCard />
-          {desktop && <AboutCard />}
-        </aside>
-        <div className="mt-4 space-y-4 lg:mt-0">
-          <OverviewCard
-            range={range}
-            onRange={setRange}
-            memberId={filtered.memberId}
-            onMember={setMemberId}
-            expenses={filtered.expenses}
-          />
-          <SettlementCard />
-          <Timeline expenses={filtered.expenses} settlements={filtered.settlements} range={range} />
-          {!desktop && <AboutCard />}
-        </div>
-      </main>
-
-      <AnimatePresence>
-        {!desktop && snapshot!.members.length > 0 && (
-          <motion.button
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.6, opacity: 0 }}
-            whileTap={{ scale: 0.92 }}
-            onClick={() => setComposerOpen(true)}
-            className="fixed right-5 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-20 flex h-14 items-center gap-2 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 pr-6 pl-5 font-semibold text-white shadow-[0_12px_32px_-8px] shadow-brand-500/70"
-          >
-            <Plus className="size-5" strokeWidth={2.5} />
-            {t.addExpense}
-          </motion.button>
-        )}
-      </AnimatePresence>
+          {!admin && adminExpired && (
+            <div className="card mb-4 flex items-center gap-3 px-5 py-4 lg:col-span-2 lg:mb-0">
+              <ShieldAlert className="size-[18px] shrink-0 text-amber-500" />
+              <span className="flex-1 text-sm">{t.adminExpired}</span>
+              <Button size="sm" variant="soft" onClick={() => window.location.assign('/admin')}>
+                {t.signInAgain}
+              </Button>
+            </div>
+          )}
+          <aside className="space-y-4">
+            {desktop && (
+              <Card id="compose" title={t.addExpense} icon={<Plus />}>
+                <ExpenseForm />
+              </Card>
+            )}
+            <MembersCard />
+            {desktop && <AboutCard />}
+          </aside>
+          <div className="mt-4 space-y-4 lg:mt-0">
+            <OverviewCard
+              range={range}
+              onRange={setRange}
+              memberId={validMember}
+              onMember={setMemberId}
+              expenses={filtered.expenses}
+            />
+            <SettlementCard />
+            <Timeline expenses={filtered.expenses} settlements={filtered.settlements} range={range} />
+            {!desktop && <AboutCard />}
+          </div>
+        </main>
+      </AssistantDock>
       <WelcomeSheet open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
       {!desktop && (
         <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title={t.addExpense}>
