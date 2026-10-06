@@ -1,16 +1,20 @@
-import { CalendarRange, ChartColumnBig, Check } from 'lucide-react';
+import { CalendarRange, ChartColumnBig, Check, Sparkles } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { formatMoney } from '../../../shared/money.ts';
 import type { Expense, IsoDate } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
 import { Card } from '../../components/Card.tsx';
+import { CategoryIcon, categoryName } from '../../components/CategoryIcon.tsx';
 import { Collapse } from '../../components/Collapse.tsx';
+import { Hint } from '../../components/Hint.tsx';
 import { ledger } from '../../i18n/ledger.ts';
 import { cn } from '../../lib/cn.ts';
 import { addDays, daysBetween, parseIsoDate, shortDate, today } from '../../lib/dates.ts';
+import { useAssistant } from '../assistant/context.ts';
 import { useLedger } from './context.tsx';
-import { RANGE_OPTIONS, resolveRange, type RangeFilter } from './range.ts';
+import type { CategoryFilter } from './filters.ts';
+import { inRange, involves, RANGE_OPTIONS, resolveRange, type RangeFilter } from './range.ts';
 
 const t = ledger.overview;
 
@@ -69,7 +73,8 @@ function buckets(expenses: Expense[], from: IsoDate, to: IsoDate): Bucket[] {
 }
 
 export function OverviewCard({ range, onRange, memberId, onMember, expenses }: Props) {
-  const { snapshot } = useLedger();
+  const { snapshot, filters, setFilters, memberById } = useLedger();
+  const assistant = useAssistant();
   const [customOpen, setCustomOpen] = useState(false);
   const rangeBar = useRef<HTMLDivElement>(null);
 
@@ -94,6 +99,21 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
       : 0;
     return { total, from, to, days, paid, consumed, series: days >= 3 ? buckets(expenses, from, to) : [] };
   }, [expenses, resolved.from, resolved.to, memberId]);
+
+  const scope = useMemo(
+    () => snapshot.expenses.filter((e) => inRange(e.date, resolved) && (!memberId || involves(e, memberId))),
+    [snapshot.expenses, resolved.from, resolved.to, memberId],
+  );
+  const uncategorized = scope.filter((e) => e.category === null).length;
+  const tidy = () =>
+    assistant.open({
+      text: t.tidyPrompt(
+        uncategorized,
+        range.key === 'all' ? null : ledger.range.span(resolved.from, resolved.to),
+        memberId ? (memberById.get(memberId)?.name ?? null) : null,
+      ),
+      send: true,
+    });
 
   return (
     <Card id="overview" title={t.title} icon={<ChartColumnBig />}>
@@ -204,8 +224,100 @@ export function OverviewCard({ range, onRange, memberId, onMember, expenses }: P
         empty={stats.total === 0 ? t.noSpending : t.tooShort}
         onPick={(b) => (setCustomOpen(false), onRange(b.range))}
       />
+
+      <Collapse open={scope.length > 0} className="pt-5">
+        <CategoryBreakdown
+          expenses={scope}
+          selected={filters.category}
+          onSelect={(category) => setFilters({ category: filters.category === category ? null : category })}
+        />
+        <Collapse open={assistant.available && uncategorized > 0} className="pt-2">
+          <button
+            type="button"
+            onClick={tidy}
+            className="-ml-1 flex h-8 items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium text-brand-600 transition hover:bg-brand-500/10 dark:text-brand-300"
+          >
+            <Sparkles className="size-3.5" />
+            {t.tidy(uncategorized)}
+          </button>
+        </Collapse>
+      </Collapse>
     </Card>
   );
+}
+
+type CategoryKey = Exclude<CategoryFilter, null>;
+
+export function CategoryBreakdown({
+  expenses,
+  selected,
+  onSelect,
+}: {
+  expenses: readonly Expense[];
+  selected: CategoryFilter;
+  onSelect: (category: CategoryKey) => void;
+}) {
+  const { rows, total } = useMemo(() => {
+    const sums = new Map<CategoryKey, number>();
+    for (const e of expenses) {
+      const k = e.category ?? 'none';
+      sums.set(k, (sums.get(k) ?? 0) + e.amount);
+    }
+    if (selected && !sums.has(selected)) sums.set(selected, 0);
+    const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+    return { rows: [...sums].sort((a, b) => b[1] - a[1]), total };
+  }, [expenses, selected]);
+
+  return (
+    <section>
+      <h3 className="mb-1.5 flex h-5 items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+        {t.categories}
+        <Hint>{t.categoriesHint}</Hint>
+      </h3>
+      <ul className="-mx-2">
+        {rows.map(([key, amount]) => {
+          const active = selected === key;
+          const ratio = total > 0 ? amount / total : 0;
+          return (
+            <li key={key}>
+              <button
+                type="button"
+                aria-pressed={active}
+                onClick={() => onSelect(key)}
+                className={cn(
+                  'flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition',
+                  active ? 'bg-brand-500/8 ring-1 ring-brand-500/30 dark:bg-brand-400/10' : 'hover:bg-zinc-900/3 dark:hover:bg-white/4',
+                  selected && !active && 'opacity-55',
+                )}
+              >
+                <CategoryIcon category={key === 'none' ? null : key} size="sm" />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="truncate font-medium">
+                      {key === 'none' ? t.uncategorized : categoryName(key)}
+                      <span className="tabular ml-1.5 text-xs font-normal text-zinc-400">{percent(ratio)}</span>
+                    </span>
+                    <span className="tabular shrink-0 font-semibold">{formatMoney(amount)}</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-white/6">
+                    <div
+                      className={cn('h-full rounded-full transition-[width] duration-500', key === 'none' ? 'bg-zinc-300 dark:bg-zinc-600' : 'bg-chart')}
+                      style={{ width: `${ratio * 100}%` }}
+                    />
+                  </div>
+                </div>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function percent(ratio: number) {
+  if (ratio > 0 && ratio < 0.01) return '<1%';
+  return `${Math.round(ratio * 100)}%`;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {

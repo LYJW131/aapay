@@ -129,6 +129,12 @@ export const ledger = messages({
       peak: (amount: string) => `峰值 ${amount}`,
       month: (month: number) => `${month}月`,
       yearMonth: (year: number, month: number) => `${year}年${month}月`,
+      categories: '分类',
+      categoriesHint: '点一行只看这一类，再点取消',
+      uncategorized: '未分类',
+      tidy: (n: number) => `让 AI 整理 ${n} 笔未分类`,
+      tidyPrompt: (n: number, range: string | null, member: string | null) =>
+        `帮我给${range ? ` ${range} 期间` : ''}${member ? `与${member}相关的` : ''} ${n} 笔未分类支出补上分类`,
     },
     timeline: {
       title: '账目明细',
@@ -149,6 +155,15 @@ export const ledger = messages({
       everyone: '全员',
       each: (amount: string) => `每人 ${amount}`,
       settlement: '还款',
+      clearCategory: (name: string) => `取消筛选：${name}`,
+      export: '导出 CSV',
+      exportName: (ledger: string, date: string) => `${ledger}-账目-${date}.csv`,
+      csv: {
+        columns: ['日期', '类型', '用途 / 备注', '分类', '金额', '付款人 / 付款方', '收款方', '分摊明细'],
+        expense: '支出',
+        settlement: '还款',
+        separator: '；',
+      },
     },
     about: {
       title: '关于',
@@ -300,6 +315,12 @@ export const ledger = messages({
       peak: (amount) => `Peak ${amount}`,
       month: (month) => MONTHS[month - 1]!,
       yearMonth: (year, month) => `${MONTHS[month - 1]} ${year}`,
+      categories: 'By category',
+      categoriesHint: 'Tap a row to show only that category, tap again to clear',
+      uncategorized: 'Uncategorized',
+      tidy: (n) => `Let AI sort ${n} uncategorized`,
+      tidyPrompt: (n, range, member) =>
+        `Please categorize the ${n === 1 ? 'uncategorized expense' : `${n} uncategorized expenses`}${member ? ` involving ${member}` : ''}${range ? ` dated ${range}` : ''}`,
     },
     timeline: {
       title: 'Transactions',
@@ -320,6 +341,15 @@ export const ledger = messages({
       everyone: 'Everyone',
       each: (amount) => `${amount} each`,
       settlement: 'Payment',
+      clearCategory: (name) => `Clear filter: ${name}`,
+      export: 'Export CSV',
+      exportName: (ledger, date) => `${ledger}-transactions-${date}.csv`,
+      csv: {
+        columns: ['Date', 'Type', 'Description / Note', 'Category', 'Amount', 'Paid by / From', 'To', 'Split'],
+        expense: 'Expense',
+        settlement: 'Payment',
+        separator: '; ',
+      },
     },
     about: {
       title: 'About',

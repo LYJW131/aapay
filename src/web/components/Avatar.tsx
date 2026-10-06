@@ -19,6 +19,7 @@ function tint(id: string) {
 }
 
 const SIZES = {
+  '2xs': 'size-5 text-[11px]',
   xs: 'size-6 text-sm',
   sm: 'size-8 text-base',
   md: 'size-11 text-[22px]',

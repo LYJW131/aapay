@@ -2,7 +2,7 @@ import { Copy, History, RotateCw, ShieldAlert, ShieldCheck, Sparkles, UserRound,
 import { AnimatePresence } from 'motion/react';
 import { useEffect, useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { actorLabel, describeAudit } from '../../../shared/audit-text.ts';
+import { actorLabel, describeAudit, viaLabel } from '../../../shared/audit-text.ts';
 import { keyFingerprint, parseAudit, type AuditActor, type AuditRecord } from '../../../shared/audit.ts';
 import { Button } from '../../components/Button.tsx';
 import { Empty } from '../../components/Card.tsx';
@@ -148,8 +148,15 @@ function Entry({ record }: { record: AuditRecord }) {
               ))}
             </ul>
           )}
-          <p className="mt-1 truncate text-xs text-zinc-400">
-            {actorLabel(actor, locale, via)} · <time title={formatDateTime(at)}>{relativeTime(at)}</time>
+          <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-zinc-400">
+            {via && (
+              <span title={viaLabel(via, locale)} className="shrink-0 rounded-full bg-brand-500/10 px-1.5 py-px font-medium text-brand-600 dark:text-brand-300">
+                ✨ {ledger.page.assistant}
+              </span>
+            )}
+            <span className="truncate">
+              {actorLabel(actor, locale)} · <time title={formatDateTime(at)}>{relativeTime(at)}</time>
+            </span>
           </p>
         </div>
       </div>
