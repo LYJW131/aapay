@@ -1,6 +1,8 @@
 import { toast } from 'sonner';
 import type { AssistantEvent, AssistantRequest, AssistantTurn, AssistantView, DraftFields, DroppedChange } from '../../../shared/assistant.ts';
 import type { Change } from '../../../shared/changes.ts';
+import type { ExpenseInput } from '../../../shared/schema.ts';
+import type { Member } from '../../../shared/types.ts';
 import { newId } from '../../../shared/ids.ts';
 import { LIMITS } from '../../../shared/limits.ts';
 import { assistant as t } from '../../i18n/assistant.ts';
@@ -71,6 +73,23 @@ export const changeKey = (change: Change) => `${change.op}:${change.id}`;
 
 const MAX_MESSAGES = 50;
 const LIVE: ChangeStatus[] = ['pending', 'applying', 'conflict'];
+const OPEN: ChangeStatus[] = ['pending', 'conflict'];
+
+const closeSteps = (steps: Step[]) => steps.map((s) => (s.status === 'start' ? { ...s, status: 'error' as const } : s));
+const lostImages = (user: UserMessage) => user.imageCount > 0 && !user.images?.length;
+
+function splitMembers(split: ExpenseInput['split']) {
+  return split.mode === 'even' ? split.memberIds : split.shares.map((s) => s.memberId);
+}
+
+function referencesMissing(changes: readonly Change[], members: readonly Member[]) {
+  const known = new Set([...members.map((m) => m.id), ...changes.flatMap((c) => (c.op === 'member.create' ? [c.id] : []))]);
+  return changes.some((c) => {
+    if (c.op === 'expense.create' || c.op === 'expense.update') return [c.expense.payerId, ...splitMembers(c.expense.split)].some((id) => !known.has(id));
+    if (c.op === 'settlement.create') return !known.has(c.settlement.fromId) || !known.has(c.settlement.toId);
+    return false;
+  });
+}
 
 export function findPending(messages: readonly ChatMessage[]): { message: AssistantMessage; set: ChangeSet } | null {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -114,7 +133,7 @@ function persistable(messages: ChatMessage[]): ChatMessage[] {
       morph: {},
       status: m.changeSet.status === 'applying' ? 'pending' : m.changeSet.status === 'undoing' ? 'applied' : m.changeSet.status === 'redoing' ? 'undone' : m.changeSet.status,
     };
-    return { ...m, drafts: [], changeSet, state: m.state === 'streaming' ? 'stopped' : m.state };
+    return { ...m, drafts: [], steps: closeSteps(m.steps), changeSet, state: m.state === 'streaming' ? 'stopped' : m.state };
   });
 }
 
@@ -205,28 +224,28 @@ export class AssistantStore {
     const members = snapshot?.members ?? [];
     const excluded = new Set(load<string[]>(this.env.key('excluded-participants'), []));
     const participants = members.filter((m) => !excluded.has(m.id)).map((m) => m.id);
+    const live = this.pending();
     return {
       messages: this.history(),
       images,
-      pending: this.pending()?.set.changes ?? [],
+      pending: live && OPEN.includes(live.set.status) ? live.set.changes : [],
       me: this.me(),
       participants: participants.length === members.length ? null : participants,
       today: today(),
     };
   }
 
-  async send(text: string, images: string[] = []) {
+  async send(text: string, images: string[] = [], carried: ChangeSet | null = null) {
     const trimmed = text.trim();
     if (this.state.streaming || (!trimmed && images.length === 0)) return;
     const user: UserMessage = { id: newId(), role: 'user', text: trimmed, images, imageCount: images.length };
-    const reply: AssistantMessage = { id: newId(), role: 'assistant', parts: [], steps: [], drafts: [], changeSet: null, state: 'streaming' };
+    const reply: AssistantMessage = { id: newId(), role: 'assistant', parts: [], steps: [], drafts: [], changeSet: carried, state: 'streaming' };
     if (images.length > 0 && !this.me() && this.env.ledger.getState().snapshot?.members.length) {
       this.set({ messages: [...this.state.messages, user, { ...reply, state: 'done' as const, needsMe: true }].slice(-MAX_MESSAGES) });
       return;
     }
-    this.set({ messages: [...this.state.messages, user].slice(-MAX_MESSAGES), streaming: true });
+    this.set({ messages: [...this.state.messages, user, reply].slice(-MAX_MESSAGES), streaming: true });
     const body = this.request(images);
-    this.set({ messages: [...this.state.messages, reply] });
 
     const controller = new AbortController();
     this.controller = controller;
@@ -245,8 +264,8 @@ export class AssistantStore {
       if (!finished) this.receive(reply.id, { type: 'done' });
     } catch (err) {
       this.flushText(reply.id);
-      if (controller.signal.aborted) this.update(reply.id, (m) => ({ ...m, drafts: [], state: 'stopped' }));
-      else this.update(reply.id, (m) => ({ ...m, drafts: [], state: 'error', error: errorMessage(err) }));
+      const ended = controller.signal.aborted ? { state: 'stopped' as const } : { state: 'error' as const, error: errorMessage(err) };
+      this.update(reply.id, (m) => ({ ...m, drafts: [], steps: closeSteps(m.steps), ...ended }));
     } finally {
       this.controller = null;
       this.set({ streaming: false });
@@ -306,7 +325,7 @@ export class AssistantStore {
       case 'done':
         return this.update(id, (m) => ({ ...m, drafts: [], state: 'done' }));
       case 'error':
-        return this.update(id, (m) => ({ ...m, drafts: [], state: 'error', error: event.message || t.error }));
+        return this.update(id, (m) => ({ ...m, drafts: [], steps: closeSteps(m.steps), state: 'error', error: event.message || t.error }));
     }
   }
 
@@ -318,8 +337,9 @@ export class AssistantStore {
       messages: this.state.messages.map((m) => {
         if (m.role !== 'assistant') return m;
         if (m.id !== id) {
-          return m.changeSet && LIVE.includes(m.changeSet.status) ? { ...m, changeSet: { ...m.changeSet, status: 'superseded' } } : m;
+          return m.changeSet && OPEN.includes(m.changeSet.status) ? { ...m, changeSet: { ...m.changeSet, status: 'superseded' } } : m;
         }
+        if (m.changeSet && !OPEN.includes(m.changeSet.status)) return m;
         const morph = { ...(m.changeSet?.morph ?? {}) };
         if (event.replaces && fresh[0]) morph[fresh[0]] = event.replaces;
         return {
@@ -363,15 +383,18 @@ export class AssistantStore {
 
   async apply() {
     const current = this.pending();
-    if (!current || current.set.status === 'applying') return;
+    if (!current || current.set.status === 'applying' || this.state.streaming) return;
     const { message, set } = current;
     this.patchSet(message.id, { status: 'applying', fresh: [] });
     try {
       const { undo } = await this.env.ledger.apply(set.changes, { via: 'assistant' });
       this.applied(message.id, set.changes, undo);
     } catch (err) {
-      if (err instanceof ApiError && err.status === 409) {
-        this.patchSet(message.id, { status: 'conflict', error: err.message });
+      const stale =
+        err instanceof ApiError &&
+        (err.status === 409 || err.status === 404 || (err.status === 400 && referencesMissing(set.changes, this.env.ledger.getState().snapshot?.members ?? [])));
+      if (stale) {
+        this.patchSet(message.id, { status: 'conflict', error: errorMessage(err) });
       } else {
         this.patchSet(message.id, { status: 'pending' });
         toast.error(errorMessage(err));
@@ -422,12 +445,25 @@ export class AssistantStore {
     }
   }
 
-  retry(id: string) {
+  private promptOf(id: string) {
     const index = this.state.messages.findIndex((m) => m.id === id);
     const user = this.state.messages[index - 1];
-    if (this.state.streaming || index < 1 || user?.role !== 'user') return;
-    this.set({ messages: this.state.messages.filter((_, i) => i !== index && i !== index - 1) });
-    void this.send(user.text, user.images ?? []);
+    return index > 0 && user?.role === 'user' ? user : null;
+  }
+
+  canResend(id: string) {
+    const user = this.promptOf(id);
+    return !!user && !lostImages(user) && (!!user.text || user.imageCount > 0);
+  }
+
+  retry(id: string) {
+    const user = this.promptOf(id);
+    const reply = this.find(id);
+    if (this.state.streaming || !user || !reply || !this.canResend(id)) return;
+    const set = reply.changeSet;
+    const carried = set && set.changes.length > 0 && OPEN.includes(set.status) ? { ...set, fresh: [], morph: {} } : null;
+    this.set({ messages: this.state.messages.filter((m) => m !== user && m.id !== id) });
+    void this.send(user.text, user.images ?? [], carried);
   }
 
   recheck() {

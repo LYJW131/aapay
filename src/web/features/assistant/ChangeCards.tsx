@@ -17,7 +17,7 @@ import { cn } from '../../lib/cn.ts';
 import { useLedger } from '../ledger/context.tsx';
 import { ExpenseForm } from '../ledger/ExpenseForm.tsx';
 import { categoryText, changeTotal, dateText, expenseDiff, findDuplicate, membersWithPending, splitSummary, type FieldDiff } from './describe.ts';
-import { useChatStore } from './state.ts';
+import { useChatState, useChatStore } from './state.ts';
 import { changeKey, type AssistantMessage, type ChangeSet, type Draft } from './store.ts';
 
 const SPRING = { type: 'spring', stiffness: 420, damping: 32 } as const;
@@ -107,13 +107,14 @@ function Summary({ messageId, set }: { messageId: string; set: ChangeSet }) {
 
 function Group({ message, set }: { message: AssistantMessage; set: ChangeSet | null }) {
   const store = useChatStore();
+  const { streaming } = useChatState();
   const { snapshot } = useLedger();
   const reduce = useReducedMotion();
   const changes = set?.changes ?? [];
   const members = membersWithPending(snapshot, changes);
   const total = changeTotal(changes);
   const applying = set?.status === 'applying';
-  const editable = set?.status === 'pending' || set?.status === 'conflict';
+  const editable = !streaming && (set?.status === 'pending' || set?.status === 'conflict');
   const fresh = set?.fresh ?? [];
 
   return (
@@ -166,17 +167,17 @@ function Group({ message, set }: { message: AssistantMessage; set: ChangeSet | n
             {t.conflict}
             {set.error && <span className="block text-xs opacity-75">{set.error}</span>}
           </span>
-          <Button size="sm" variant="secondary" icon={<RefreshCw className="size-3.5" />} onClick={() => store.recheck()}>
+          <Button size="sm" variant="secondary" disabled={streaming} icon={<RefreshCw className="size-3.5" />} onClick={() => store.recheck()}>
             {t.recheck}
           </Button>
         </div>
       )}
       {set && (
         <footer className="flex items-center justify-end gap-2 border-t border-zinc-900/5 px-2.5 py-2.5 dark:border-white/6">
-          <Button size="sm" variant="ghost" disabled={applying} onClick={() => store.discard()}>
+          <Button size="sm" variant="ghost" disabled={applying || streaming} onClick={() => store.discard()}>
             {t.discardAll}
           </Button>
-          <Button size="sm" variant="primary" loading={applying} icon={<Check className="size-3.5" />} onClick={() => void store.apply()}>
+          <Button size="sm" variant="primary" loading={applying} disabled={streaming} icon={<Check className="size-3.5" />} onClick={() => void store.apply()}>
             {t.confirm}
             <kbd className="ml-0.5 hidden items-center gap-0.5 rounded-md bg-white/20 px-1 font-sans text-[11px] lg:inline-flex">
               {isMac ? '⌘' : 'Ctrl'}

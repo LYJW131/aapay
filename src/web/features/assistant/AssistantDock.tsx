@@ -156,7 +156,7 @@ function Dock({ onCompose, children }: { onCompose: () => void; children: ReactN
       } else if (e.key === 'Escape' && open && !otherDialogOpen()) {
         e.preventDefault();
         hide();
-      } else if (mod && e.key === 'Enter' && open && !otherDialogOpen() && findPending(store.getState().messages)) {
+      } else if (mod && e.key === 'Enter' && open && !otherDialogOpen() && !store.getState().streaming && findPending(store.getState().messages)) {
         e.preventDefault();
         void store.apply();
       }

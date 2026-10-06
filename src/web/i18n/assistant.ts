@@ -108,7 +108,7 @@ export const assistant = messages({
     error: '出错了，请重试',
     stopped: '已停止',
     retry: '重试',
-    you: '你',
+    reattach: '图片没有保存，请重新添加',
   },
   en: {
     title: 'AI assistant',
@@ -217,6 +217,6 @@ export const assistant = messages({
     error: 'Something went wrong. Try again',
     stopped: 'Stopped',
     retry: 'Retry',
-    you: 'You',
+    reattach: "Images aren't saved. Please add them again",
   },
 });

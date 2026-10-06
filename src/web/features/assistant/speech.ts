@@ -38,6 +38,13 @@ export function useSpeech(onText: (text: string) => void) {
 
   const stop = useCallback(() => recognition.current?.stop(), []);
 
+  const cancel = useCallback(() => {
+    const r = recognition.current;
+    if (!r) return;
+    r.onresult = null;
+    r.abort();
+  }, []);
+
   const start = useCallback((prefix: string) => {
     if (!Speech || recognition.current) return;
     const r = new Speech();
@@ -71,5 +78,5 @@ export function useSpeech(onText: (text: string) => void) {
 
   useEffect(() => () => recognition.current?.abort(), []);
 
-  return { listening, start, stop };
+  return { listening, start, stop, cancel };
 }

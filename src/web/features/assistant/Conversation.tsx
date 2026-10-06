@@ -259,6 +259,7 @@ function AssistantBubble({ message, onNavigate }: { message: AssistantMessage; o
   const store = useChatStore();
   const streaming = message.state === 'streaming';
   const lastText = message.parts.findLastIndex((p) => p.kind === 'text');
+  const resendable = store.canResend(message.id);
   const idle = streaming && message.parts.length === 0 && message.drafts.length === 0 && !message.changeSet && !message.steps.some((s) => s.status === 'start');
 
   return (
@@ -276,19 +277,25 @@ function AssistantBubble({ message, onNavigate }: { message: AssistantMessage; o
             <ViewCard key={i} view={part.view} onNavigate={onNavigate} />
           ),
         )}
-        {message.needsMe && <WhoAreYou hint={t.whoForImages} onPick={() => store.retry(message.id)} />}
+        {message.needsMe &&
+          (resendable ? <WhoAreYou hint={t.whoForImages} onPick={() => store.retry(message.id)} /> : <p className="text-sm text-zinc-500 dark:text-zinc-400">{t.reattach}</p>)}
         <ChangeSetView message={message} />
         {message.state === 'error' && (
           <div className="flex items-center gap-2 rounded-2xl bg-rose-500/8 py-1.5 pr-1.5 pl-3 text-sm text-rose-600 dark:text-rose-300">
-            <span className="min-w-0 flex-1">{message.error ?? t.error}</span>
-            <button
-              type="button"
-              onClick={() => store.retry(message.id)}
-              className="flex h-8 items-center gap-1 rounded-xl px-2.5 text-[13px] font-medium transition hover:bg-rose-500/10"
-            >
-              <RotateCcw className="size-3.5" />
-              {t.retry}
-            </button>
+            <span className="min-w-0 flex-1 py-1">
+              {message.error ?? t.error}
+              {!resendable && <span className="block text-xs opacity-75">{t.reattach}</span>}
+            </span>
+            {resendable && (
+              <button
+                type="button"
+                onClick={() => store.retry(message.id)}
+                className="flex h-8 items-center gap-1 rounded-xl px-2.5 text-[13px] font-medium transition hover:bg-rose-500/10"
+              >
+                <RotateCcw className="size-3.5" />
+                {t.retry}
+              </button>
+            )}
           </div>
         )}
         {message.state === 'stopped' && <p className="text-xs text-zinc-400">{t.stopped}</p>}

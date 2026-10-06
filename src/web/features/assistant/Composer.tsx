@@ -39,7 +39,7 @@ export function Composer({
   const speech = useSpeech(onText);
   const canSend = !streaming && (text.trim().length > 0 || images.length > 0);
   const send = () => {
-    speech.stop();
+    speech.cancel();
     onSend();
   };
 

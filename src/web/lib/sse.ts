@@ -74,9 +74,17 @@ export async function* streamSse(url: string, body: unknown, signal?: AbortSigna
   const queue: SseMessage[] = [];
   const parser = parseSse((m) => queue.push(m));
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  const read = async () => {
+    try {
+      return await reader.read();
+    } catch (err) {
+      if (signal?.aborted) throw err;
+      throw new ApiError(0, common.networkError);
+    }
+  };
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await read();
       if (done) parser.end();
       else parser.push(value);
       while (queue.length) yield queue.shift()!;
