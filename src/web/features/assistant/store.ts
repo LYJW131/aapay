@@ -205,6 +205,7 @@ export class AssistantStore {
   private history(): AssistantTurn[] {
     const turns: AssistantTurn[] = [];
     for (const m of this.state.messages) {
+      if (m.role === 'assistant' && m.state === 'streaming') continue;
       const text =
         m.role === 'user'
           ? m.text || (m.imageCount ? t.imagesOnly : '')
