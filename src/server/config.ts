@@ -64,7 +64,7 @@ export function loadConfig(env: object): Config {
     recognizer: str('DEEPSEEK_API_KEY')
       ? { provider: 'deepseek', apiKey: str('DEEPSEEK_API_KEY'), model: str('DEEPSEEK_MODEL') || 'deepseek-flash' }
       : str('GEMINI_API_KEY')
-        ? { provider: 'gemini', apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-flash-lite-latest' }
+        ? { provider: 'gemini', apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-3.5-flash-lite' }
         : null,
   };
 

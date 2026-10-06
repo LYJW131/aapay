@@ -1,6 +1,7 @@
 import { Plus, Trash2, Users } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import { newId } from '../../../shared/ids.ts';
 import { LIMITS } from '../../../shared/limits.ts';
 import type { Member } from '../../../shared/types.ts';
 import { AutoHeight } from '../../components/AutoHeight.tsx';
@@ -9,9 +10,10 @@ import { Button } from '../../components/Button.tsx';
 import { Card, Label } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { ledger } from '../../i18n/ledger.ts';
-import { api, errorMessage } from '../../lib/api.ts';
+import { errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { useLedger } from './context.tsx';
+import { undoAction } from './undo.ts';
 
 const t = ledger.members;
 
@@ -28,7 +30,7 @@ export function MembersCard() {
     if (!name.trim()) return;
     setAdding(true);
     try {
-      await store.mutate(api.ledger.members.$post({ json: { name: name.trim() } }));
+      await store.apply([{ op: 'member.create', id: newId(), member: { name: name.trim() } }]);
       setName('');
     } catch (err) {
       toast.error(errorMessage(err));
@@ -96,7 +98,7 @@ function MemberEditor({ member, onDone }: { member: Member; onDone: () => void }
     if (name.trim() === member.name && avatar === member.avatar) return onDone();
     setBusy('save');
     try {
-      await store.mutate(api.ledger.members[':id'].$patch({ param: { id: member.id }, json: { name: name.trim(), avatar } }));
+      await store.apply([{ op: 'member.update', id: member.id, member: { name: name.trim(), avatar } }]);
       onDone();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -107,8 +109,8 @@ function MemberEditor({ member, onDone }: { member: Member; onDone: () => void }
   async function remove() {
     setBusy('delete');
     try {
-      await store.mutate(api.ledger.members[':id'].$delete({ param: { id: member.id } }));
-      toast.success(t.removed(member.name));
+      const { undo } = await store.apply([{ op: 'member.delete', id: member.id }]);
+      toast.success(t.removed(member.name), { action: undoAction(store, undo) });
       onDone();
     } catch (err) {
       toast.error(errorMessage(err));

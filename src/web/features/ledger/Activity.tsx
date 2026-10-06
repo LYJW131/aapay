@@ -131,13 +131,13 @@ function KeyFingerprint({ publicKey }: { publicKey: string }) {
 }
 
 function Entry({ record }: { record: AuditRecord }) {
-  const { at, actor, action } = useMemo(() => parseAudit(record), [record]);
+  const { at, actor, action, via } = useMemo(() => parseAudit(record), [record]);
   const { summary, details } = describeAudit(action, locale);
   return (
     <Reveal as="li" layout="position">
       <div className="flex gap-3 rounded-2xl px-2 py-2.5">
         <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 dark:bg-white/6 dark:text-zinc-400 [&>svg]:size-4">
-          {ACTOR_ICON[actor.kind]}
+          {via === 'assistant' ? <Sparkles /> : ACTOR_ICON[actor.kind]}
         </span>
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-snug">{summary}</p>
@@ -149,7 +149,7 @@ function Entry({ record }: { record: AuditRecord }) {
             </ul>
           )}
           <p className="mt-1 truncate text-xs text-zinc-400">
-            {actorLabel(actor, locale)} · <time title={formatDateTime(at)}>{relativeTime(at)}</time>
+            {actorLabel(actor, locale, via)} · <time title={formatDateTime(at)}>{relativeTime(at)}</time>
           </p>
         </div>
       </div>

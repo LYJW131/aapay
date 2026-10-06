@@ -1,6 +1,7 @@
 import { ArrowRight, ChevronDown, ReceiptText, Search, X } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
 import { useMemo, useState } from 'react';
+import { splitOf } from '../../../shared/ledger.ts';
 import { formatMoney } from '../../../shared/money.ts';
 import type { Expense, IsoDate, Member, Settlement } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
@@ -9,6 +10,7 @@ import { Card, Empty } from '../../components/Card.tsx';
 import { Collapse, Reveal } from '../../components/Collapse.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { common } from '../../i18n/common.ts';
+import { expense as expenseText } from '../../i18n/expense.ts';
 import { ledger } from '../../i18n/ledger.ts';
 import { dayLabel, formatTime } from '../../lib/dates.ts';
 import { useLedger } from './context.tsx';
@@ -152,10 +154,11 @@ export function Timeline({ expenses, settlements, range }: { expenses: Expense[]
 }
 
 function ExpenseRow({ expense, onClick }: { expense: Expense; onClick: () => void }) {
-  const { memberById } = useLedger();
+  const { memberById, snapshot } = useLedger();
   const payer = memberById.get(expense.payerId);
   const n = expense.shares.length;
   const each = expense.shares.at(-1)?.amount ?? 0;
+  const custom = splitOf(expense, snapshot.members).mode === 'exact';
   const names = expense.shares.map((s) => memberById.get(s.memberId)?.name ?? '?');
   return (
     <button onClick={onClick} className="flex w-full items-center gap-3 rounded-2xl px-2 py-2.5 text-left transition hover:bg-zinc-900/3 active:bg-zinc-900/5 dark:hover:bg-white/4">
@@ -170,7 +173,7 @@ function ExpenseRow({ expense, onClick }: { expense: Expense; onClick: () => voi
             {t.paidBy(payer?.name ?? t.deletedMember)} · {n === memberById.size && n > 1 ? t.everyone : names.join(common.listSeparator)}
           </span>
           <span className="tabular shrink-0">
-            {n > 1 ? t.each(formatMoney(each)) : ''} · {formatTime(expense.createdAt)}
+            {custom ? expenseText.form.customSplit : n > 1 ? t.each(formatMoney(each)) : ''} · {formatTime(expense.createdAt)}
           </span>
         </div>
       </div>

@@ -12,6 +12,8 @@ import { createNodePlatform } from '../src/server/node/platform.ts';
 import { openSqlite } from '../src/server/node/sqlite.ts';
 import { actorLabel, describeAudit } from '../src/shared/audit-text.ts';
 import { AUDIT_GENESIS, auditHash, parseAudit, verifyAudit, type AuditRecord } from '../src/shared/audit.ts';
+import { newId } from '../src/shared/ids.ts';
+import type { ExpenseInput } from '../src/shared/schema.ts';
 import type { LiveMessage } from '../src/shared/types.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'aapay-audit-'));
@@ -27,13 +29,22 @@ function service() {
   return { db, messages, svc: new LedgerService(db, (m) => messages.push(m), signer) };
 }
 
+const dinner = (payerId: string, amount: number, memberIds: string[]): ExpenseInput => ({
+  title: '晚饭',
+  amount,
+  payerId,
+  date: '2026-10-01',
+  category: 'food',
+  split: { mode: 'even', memberIds },
+});
+
 function seedLedger(svc: LedgerService) {
-  const a = (svc.createMember({ name: '阿杰' }, member).event as { member: { id: string } }).member.id;
-  const b = (svc.createMember({ name: '小雨' }, member).event as { member: { id: string } }).member.id;
-  const e = svc.createExpense({ title: '晚饭', amount: 12000, payerId: a, date: '2026-10-01', participantIds: [a, b] }, member);
-  const id = (e.event as { expense: { id: string } }).expense.id;
-  svc.updateExpense(id, { title: '晚饭', amount: 15000, payerId: b, date: '2026-10-01', participantIds: [a, b] }, member);
-  svc.createSettlement({ fromId: a, toId: b, amount: 7500, date: '2026-10-02' }, member);
+  const [a, b, id] = [newId(), newId(), newId()];
+  svc.applyChanges([{ op: 'member.create', id: a, member: { name: '阿杰' } }], member);
+  svc.applyChanges([{ op: 'member.create', id: b, member: { name: '小雨' } }], member);
+  svc.applyChanges([{ op: 'expense.create', id, expense: dinner(a, 12000, [a, b]) }], member);
+  svc.applyChanges([{ op: 'expense.update', id, expense: dinner(b, 15000, [a, b]) }], member);
+  svc.applyChanges([{ op: 'settlement.create', id: newId(), settlement: { fromId: a, toId: b, amount: 7500, date: '2026-10-02' } }], member);
   return { a, b, id };
 }
 
@@ -64,7 +75,7 @@ describe('audit log (service)', () => {
   it('rolls back the log when the change fails, and keeps names after members are gone', () => {
     const { svc } = service();
     const { a } = seedLedger(svc);
-    expect(() => svc.deleteMember(a, member)).toThrow('无法删除');
+    expect(() => svc.applyChanges([{ op: 'member.delete', id: a }], member)).toThrow('无法删除');
     expect(allRecords(svc)).toHaveLength(5);
   });
 
@@ -73,13 +84,58 @@ describe('audit log (service)', () => {
     const { a, b, id } = seedLedger(svc);
     const version = svc.snapshot().version;
     const sent = messages.length;
-    const expense = svc.updateExpense(id, { title: '晚饭', amount: 15000, payerId: b, date: '2026-10-01', participantIds: [b, a] }, member);
-    const person = svc.updateMember(a, { name: '阿杰' }, member);
-    expect(expense.v).toBeUndefined();
-    expect(person.v).toBeUndefined();
+    const result = svc.applyChanges(
+      [
+        { op: 'expense.update', id, expense: dinner(b, 15000, [b, a]) },
+        { op: 'member.update', id: a, member: { name: '阿杰' } },
+      ],
+      member,
+    );
+    expect(result).toEqual({ messages: [], undo: [] });
     expect(svc.snapshot().version).toBe(version);
     expect(messages).toHaveLength(sent);
     expect(allRecords(svc)).toHaveLength(5);
+  });
+
+  it('describes categories, custom splits and assistant changes in both languages', () => {
+    const { svc } = service();
+    const { a, b, id } = seedLedger(svc);
+    svc.applyChanges(
+      [
+        {
+          op: 'expense.update',
+          id,
+          expense: { ...dinner(b, 15000, []), category: 'fun', split: { mode: 'exact', shares: [{ memberId: a, amount: 5000 }, { memberId: b, amount: 10000 }] } },
+        },
+        {
+          op: 'expense.create',
+          id: newId(),
+          expense: { ...dinner(a, 9000, []), title: '民宿', category: 'lodging', split: { mode: 'exact', shares: [{ memberId: a, amount: 3000 }, { memberId: b, amount: 6000 }] } },
+        },
+      ],
+      { ...member, via: 'assistant' },
+    );
+    const [update, create] = allRecords(svc).slice(-2).map(parseAudit);
+    expect(describeAudit(update!.action, 'zh-CN').details).toEqual([
+      '分类：🍜 餐饮 → 🎉 娱乐',
+      '分摊：阿杰、小雨 → 阿杰 ¥50.00、小雨 ¥100.00',
+    ]);
+    expect(describeAudit(update!.action, 'en').details).toEqual([
+      'Category: 🍜 Food & drinks → 🎉 Entertainment',
+      'Split: 阿杰, 小雨 → 阿杰 ¥50.00, 小雨 ¥100.00',
+    ]);
+    expect(describeAudit(create!.action, 'zh-CN')).toEqual({
+      summary: '记了一笔「民宿」¥90.00，阿杰 付，2 人按金额分摊（2026-10-01）',
+      details: ['分类：🏨 住宿', '分摊：阿杰 ¥30.00、小雨 ¥60.00'],
+    });
+    expect(describeAudit(create!.action, 'en').summary).toBe('Added “民宿” ¥90.00, paid by 阿杰, custom split 2 ways (2026-10-01)');
+    expect(actorLabel(create!.actor, 'zh-CN', create!.via)).toBe('成员（口令 trip） · 经 AI 助手');
+    expect(actorLabel(create!.actor, 'en', create!.via)).toBe('Member (passcode trip) · via AI assistant');
+
+    const legacy = { id: 'x', title: '旧账', amount: 100, payer: '阿杰', participants: ['阿杰'], date: '2026-01-01' };
+    expect(describeAudit({ type: 'expense.update', before: legacy, after: { ...legacy, amount: 200 } }, 'zh-CN').details).toEqual(['金额：¥1.00 → ¥2.00']);
+    expect(describeAudit({ type: 'expense.create', expense: legacy }, 'en').details).toEqual([]);
+    expect(verifyAudit(allRecords(svc), signer.publicKey, null).ok).toBe(true);
   });
 
   it('refuses to update or delete log rows', () => {
@@ -170,7 +226,7 @@ describe('audit log (app)', () => {
     await call('POST', `/api/admin/ledgers/${ledger.id}/passphrases`, { code: 'camp88', validUntil: null });
     await call('PATCH', `/api/admin/ledgers/${ledger.id}`, { name: '周末露营' });
     await call('POST', '/api/join', { code: 'CAMP88' });
-    await call('POST', '/api/ledger/members', { name: '阿杰' }, { 'x-client-id': 'forged-admin' });
+    await call('POST', '/api/ledger/changes', { changes: [{ op: 'member.create', id: newId(), member: { name: '阿杰' } }] }, { 'x-client-id': 'forged-admin' });
 
     const page = await call('GET', '/api/ledger/audit?limit=10');
     expect(page.publicKey).toBe(signer.publicKey);

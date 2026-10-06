@@ -1,9 +1,13 @@
 import { Check, ScanLine, Trash2 } from 'lucide-react';
 import { useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 import { toast } from 'sonner';
-import { centsToInput, formatMoney, parseAmount, splitEvenly } from '../../../shared/money.ts';
+import { guessCategory, type Category } from '../../../shared/categories.ts';
+import type { Change } from '../../../shared/changes.ts';
+import { newId } from '../../../shared/ids.ts';
+import { computeShares, matchesInput, splitOf } from '../../../shared/ledger.ts';
+import { centsToInput, formatMoney, parseAmount } from '../../../shared/money.ts';
 import { LIMITS } from '../../../shared/limits.ts';
-import type { ExpenseInput } from '../../../shared/schema.ts';
+import type { ExpenseInput, ExpenseSplit } from '../../../shared/schema.ts';
 import type { BillDraft, Expense } from '../../../shared/types.ts';
 import { Avatar } from '../../components/Avatar.tsx';
 import { AutoHeight } from '../../components/AutoHeight.tsx';
@@ -19,6 +23,7 @@ import { compressImage } from '../../lib/image.ts';
 import { BillBatch, type BillRow } from './BillBatch.tsx';
 import { load, save } from '../../lib/storage.ts';
 import { useLedger } from './context.tsx';
+import { undoAction } from './undo.ts';
 
 const MAX_IMAGES = 6;
 const MAX_SUGGESTIONS = 20;
@@ -46,6 +51,12 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
 
   const [amount, setAmount] = useState(expense ? centsToInput(expense.amount) : '');
   const [title, setTitle] = useState(expense?.title ?? '');
+  const [pickedCategory, setPickedCategory] = useState<Category | null | undefined>(expense ? expense.category : undefined);
+  const category = pickedCategory !== undefined ? pickedCategory : guessCategory(title);
+  const changeTitle = (value: string) => {
+    setTitle(value);
+    if (!expense) setPickedCategory(undefined);
+  };
   const [date, setDate] = useState(expense?.date ?? today());
   const defaultPayer = useDefaultPayer(key('payer'));
   const [editedPayer, setEditedPayer] = useState(expense?.payerId ?? '');
@@ -70,7 +81,15 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
 
   const cents = parseAmount(amount);
   const participantIds = members.filter((m) => selected.has(m.id)).map((m) => m.id);
-  const shares = cents ? splitEvenly(cents, participantIds) : [];
+  const original = useMemo(() => (expense ? splitOf(expense, members) : null), [expense, members]);
+  // 表单只能均分：编辑按金额分摊的支出时，金额和参与者都没动就保留原来的分摊
+  const keepsCustom =
+    original?.mode === 'exact' &&
+    cents === expense!.amount &&
+    original.shares.length === participantIds.length &&
+    original.shares.every((s) => selected.has(s.memberId));
+  const split: ExpenseSplit = keepsCustom ? original : { mode: 'even', memberIds: participantIds };
+  const shares = cents ? computeShares(cents, split, members) : [];
   const allSelected = members.length > 0 && participantIds.length === members.length;
 
   const liveSuggestions = useMemo(() => {
@@ -98,16 +117,16 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     if (!payerId) return toast.error(t.form.payerRequired);
     if (participantIds.length === 0) return toast.error(t.form.participantsRequired);
 
-    const input = { title: title.trim(), amount: cents, payerId, date, participantIds };
+    const input: ExpenseInput = { title: title.trim(), amount: cents, payerId, date, category, split };
     setSaving(true);
     try {
       if (expense) {
-        if (unchanged(expense, input)) return onDone?.();
-        await store.mutate(api.ledger.expenses[':id'].$patch({ param: { id: expense.id }, json: input }));
+        if (matchesInput(expense, input, members)) return onDone?.();
+        await store.apply([{ op: 'expense.update', id: expense.id, expense: input, ifUpdatedAt: expense.updatedAt }]);
         toast.success(t.form.saved);
       } else {
-        await store.mutate(api.ledger.expenses.$post({ json: input }));
-        toast.success(t.form.added(input.title, formatMoney(cents)));
+        const { undo } = await store.apply([{ op: 'expense.create', id: newId(), expense: input }]);
+        toast.success(t.form.added(input.title, formatMoney(cents)), { action: undoAction(store, undo) });
         // 在弹窗里时表单随弹窗关掉，这时清空会让退场动画里的内容先变一下
         if (!onDone) {
           setAmount('');
@@ -123,31 +142,41 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
   }
 
   async function submitBatch(rows: BillRow[]) {
-    const inputs: { key: string; input: ExpenseInput }[] = [];
+    const changes: Change[] = [];
+    let total = 0;
     for (const [index, row] of rows.entries()) {
       if (!row.checked) continue;
       const rowCents = parseAmount(row.amount);
-      if (!row.title.trim()) return toast.error(t.form.rowTitleRequired(index + 1));
+      const rowTitle = row.title.trim();
+      if (!rowTitle) return toast.error(t.form.rowTitleRequired(index + 1));
       if (!rowCents) return toast.error(t.form.rowAmountInvalid(index + 1));
-      inputs.push({ key: row.key, input: { title: row.title.trim(), amount: rowCents, payerId, date: row.date, participantIds } });
+      total += rowCents;
+      changes.push({
+        op: 'expense.create',
+        id: newId(),
+        expense: {
+          title: rowTitle,
+          amount: rowCents,
+          payerId,
+          date: row.date,
+          category: row.category ?? guessCategory(rowTitle),
+          split: { mode: 'even', memberIds: participantIds },
+        },
+      });
     }
-    if (inputs.length === 0) return toast.error(t.form.noneChecked);
+    if (changes.length === 0) return toast.error(t.form.noneChecked);
+    if (changes.length > LIMITS.changes) return toast.error(t.form.tooManyRows(LIMITS.changes));
     if (!payerId) return toast.error(t.form.payerRequired);
     if (participantIds.length === 0) return toast.error(t.form.participantsRequired);
 
     setSaving(true);
-    const saved = new Set<string>();
     try {
-      for (const { key: rowKey, input } of inputs) {
-        await store.mutate(api.ledger.expenses.$post({ json: input }));
-        saved.add(rowKey);
-      }
-      toast.success(t.form.addedBatch(inputs.length, formatMoney(inputs.reduce((sum, { input }) => sum + input.amount, 0))));
+      const { undo } = await store.apply(changes);
+      toast.success(t.form.addedBatch(changes.length, formatMoney(total)), { action: undoAction(store, undo) });
       setDrafts(null);
       onDone?.();
     } catch (err) {
-      setDrafts(rows.filter((r) => !saved.has(r.key)));
-      toast.error(saved.size ? t.form.partiallyAdded(saved.size, errorMessage(err)) : errorMessage(err));
+      toast.error(errorMessage(err));
     } finally {
       setSaving(false);
     }
@@ -179,6 +208,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
       if (draft.amount) setAmount(centsToInput(draft.amount));
       if (draft.title) setTitle(draft.title);
       if (draft.date) setDate(draft.date);
+      setPickedCategory(draft.category ?? undefined);
       const missing = [!draft.amount && t.form.missingAmount, !draft.title && t.form.missingTitle].filter((f) => f !== false);
       toast.success((missing.length ? t.form.recognizedMissing(missing) : t.form.recognized) + skipped);
       return;
@@ -196,6 +226,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         title: draft.title ?? '',
         amount: draft.amount ? centsToInput(draft.amount) : '',
         date: rowDate,
+        category: draft.category,
         checked: !duplicate,
         duplicate,
       });
@@ -208,8 +239,8 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
     if (!expense) return;
     setDeleting(true);
     try {
-      await store.mutate(api.ledger.expenses[':id'].$delete({ param: { id: expense.id } }));
-      toast.success(t.form.deleted(expense.title));
+      const { undo } = await store.apply([{ op: 'expense.delete', id: expense.id, ifUpdatedAt: expense.updatedAt }]);
+      toast.success(t.form.deleted(expense.title), { action: undoAction(store, undo) });
       onDone?.();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -270,7 +301,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                     <Label aside={<span className="tabular text-xs text-zinc-400">{title.length}/{LIMITS.title}</span>}>{t.title}</Label>
                     <input
                       value={title}
-                      onChange={(e) => setTitle(e.target.value)}
+                      onChange={(e) => changeTitle(e.target.value)}
                       maxLength={LIMITS.title}
                       placeholder={t.form.titlePlaceholder}
                       className="field"
@@ -281,7 +312,7 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
                           <button
                             key={s}
                             type="button"
-                            onClick={() => setTitle(s)}
+                            onClick={() => changeTitle(s)}
                             className={cn(
                               'rounded-full px-2.5 py-1 text-xs transition',
                               title === s
@@ -377,11 +408,11 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
             ) : (
               <>
                 <span className="text-zinc-500 dark:text-zinc-400">
-                  {participantIds.length > 0 ? t.form.perPerson(participantIds.length) : t.form.choosePeople}
+                  {keepsCustom ? t.form.customSplit : participantIds.length > 0 ? t.form.perPerson(participantIds.length) : t.form.choosePeople}
                 </span>
                 <span className="tabular font-semibold text-brand-600 dark:text-brand-300">
-                  {shares.length ? formatMoney(shares[shares.length - 1]!.amount) : '—'}
-                  {shares.length > 1 && shares[0]!.amount !== shares[shares.length - 1]!.amount && (
+                  {keepsCustom ? formatMoney(cents!) : shares.length ? formatMoney(shares[shares.length - 1]!.amount) : '—'}
+                  {!keepsCustom && shares.length > 1 && shares[0]!.amount !== shares[shares.length - 1]!.amount && (
                     <span className="ml-1 text-xs font-normal text-zinc-400">{t.form.unevenShares}</span>
                   )}
                 </span>
@@ -402,17 +433,6 @@ export function ExpenseForm({ expense, onDone }: { expense?: Expense; onDone?: (
         </form>
       </Collapse>
     </>
-  );
-}
-
-function unchanged(expense: Expense, input: ExpenseInput) {
-  const before = expense.shares.map((s) => s.memberId).sort().join();
-  return (
-    expense.title === input.title &&
-    expense.amount === input.amount &&
-    expense.payerId === input.payerId &&
-    expense.date === input.date &&
-    before === [...input.participantIds].sort().join()
   );
 }
 

@@ -56,8 +56,8 @@ node scripts/seed.mjs http://127.0.0.1:5173                     # 写入演示�
 - `src/server/app.ts` 是平台无关的 Hono 应用，`createApp(inject)` 由平台入口注入 `platform` 与 `config`：`src/server/cloudflare/worker.ts`（Durable Objects）与 `src/server/node/main.ts`（node:sqlite + ws）。两边实现同一个 `Platform` 接口（`src/server/platform.ts`）。
 - 业务逻辑在 `src/server/core/` 的同步服务里：`RegistryService`（账本、口令、会话、OAuth 客户端与授权）和 `LedgerService`（单个账本的成员、支出、还款）。它们只依赖同步的 `SqlDriver`，因此 DO 的 SQLite 与 node:sqlite 共用同一份代码。
 - Cloudflare 上每个账本一个 `LedgerRoom` DO，全局一个 `RegistryRoom` DO；Node 上对应 `data/ledgers/<id>.db` 与 `data/registry.db`。服务通过 `remote()` / `dispatch()`（`core/remote.ts`）调用：`AppError` 不能原样穿过 DO RPC，先装进信封再在调用方还原，所以服务方法里只抛 `AppError`。
-- 账目变更走 `LedgerService.commit()`：递增版本号并通过 WebSocket 广播 `LiveMessage`。前端 `LedgerStore` 按版本号应用增量，发现缺口就重新拉快照。`origin` 为发起方的客户端 ID；MCP 写入时为 `mcp:<客户端名>`，网页据此提示是哪个 AI 应用改的。
-- 操作动态（审计日志）：每个变更方法都带 `MutationContext`（操作者 + origin），`commit()` 在同一个事务里递增版本号并追加 `audit_log`；不经过 `commit` 的操作（管理端重命名、口令、AI 连接）用 `LedgerService.record()` 补记。操作者只能来自服务端验证过的身份（`actorOf(session)`、管理员、OAuth 授权），不能取自请求内容。记录是 `{seq, at, actor, action}` 的 JSON 原文，`hash = sha256(prev + "\n" + payload)`，有 `AUDIT_SIGNING_KEY` 时对哈希做 Ed25519 签名；SQLite 触发器禁止 UPDATE / DELETE。前端 `features/ledger/activity.ts` 从 localStorage 的检查点继续校验整条链，展示的旧记录必须能沿 `prev` 接到已校验的最新记录。
+- 账目变更只有一个入口：`LedgerService.applyChanges(changes, ctx)`（HTTP 为 `POST /api/ledger/changes`），变更集类型在 `shared/changes.ts`、zod 在 `schema.ts` 的 `changeSchema`。一组变更在一个事务里执行，每条有实际变化的变更各自递增版本号、追加审计，提交后才按顺序广播 `LiveMessage`（同批共享 `batch`）；任一条失败整体回滚。返回的 `undo` 可原样再交给 `applyChanges` 撤销。`previewChanges` 用同一套 mutator 在事务里预演后回滚，AI 的提议都在它上面预演。新记录的 id 由调用方用 `shared/ids.ts` 的 `newId()` 预分配。前端 `LedgerStore` 按版本号应用增量，发现缺口就重新拉快照。`origin` 为发起方的客户端 ID；MCP 写入时为 `mcp:<客户端名>`，网页据此提示是哪个 AI 应用改的。
+- 操作动态（审计日志）：`MutationContext`（操作者 + origin + 可选 `via: 'assistant'`）随变更集传入，`applyChanges` 在同一个事务里递增版本号并追加 `audit_log`；不经过 `applyChanges` 的操作（管理端重命名、口令、AI 连接）用 `LedgerService.record()` 补记。操作者只能来自服务端验证过的身份（`actorOf(session)`、管理员、OAuth 授权），不能取自请求内容。记录是 `{seq, at, actor, action, via?}` 的 JSON 原文，`hash = sha256(prev + "\n" + payload)`，有 `AUDIT_SIGNING_KEY` 时对哈希做 Ed25519 签名；SQLite 触发器禁止 UPDATE / DELETE。前端 `features/ledger/activity.ts` 从 localStorage 的检查点继续校验整条链，展示的旧记录必须能沿 `prev` 接到已校验的最新记录。
 - `src/shared/` 前后端共用：zod 校验（`schema.ts`）、金额（以「分」为整数，`money.ts`）、结算算法、事件 reducer。MCP 工具复用同一套 zod 校验以保证错误信息一致。`limits.ts` 不依赖 zod，前端只从这里取限制，避免把 zod 打进前端包。
 - 前端用 `hono/client` 拿到 `ApiType` 的端到端类型；新增接口时把路由链在 `buildApi()` 里，前端就能类型安全地调用。
 - 管理功能是账本页顶部的「管理员卡片」（`src/web/features/admin/AdminCard.tsx`，按需加载）；`/admin` 只是登录入口页。
@@ -68,7 +68,7 @@ node scripts/seed.mjs http://127.0.0.1:5173                     # 写入演示�
 ## MCP 与 OAuth
 
 - `src/server/mcp/oauth.ts`：授权服务器（RFC 9728 / 8414 发现、7591 动态注册、Client ID Metadata Document、PKCE S256、8707 资源绑定、刷新令牌轮换、7009 撤销、`private_key_jwt`）。Claude 与 ChatGPT 都用 CIMD（`client_id` 是元数据 URL），ChatGPT 还会用 `private_key_jwt`。
-- `src/server/mcp/server.ts`：无状态 Streamable HTTP，`POST /mcp` 直接返回 JSON-RPC。`src/server/mcp/tools.ts`：工具定义，金额对外以「元」为单位，成员与账本可用名字指代。
+- `src/server/mcp/server.ts`：无状态 Streamable HTTP，`POST /mcp` 直接返回 JSON-RPC。账本工具在 `src/server/tools/ledger.ts`：读工具 `read(args, ctx)`，写工具是纯函数 `plan(args, { data, today }) => Change` 加 `describe(change, before, after)`，MCP 执行器（`src/server/mcp/tools.ts`）做 plan → `applyChanges` → describe，AI 助手复用同一批 plan 生成提议。金额对外以「元」为单位，成员与账本可用名字指代。
 - 授权分两种角色：成员授权绑定一个账本（口令撤销、账本删除时级联失效）；管理员授权不绑定账本，可用管理员工具，账本工具必须用 `ledger` 参数指定账本。管理员授权走 `/api/admin/oauth/authorize`，与 `/admin` 用同一套管理员认证；每次请求都会按当前配置重新确认此人仍是管理员。
 - `tools/list` 与 `initialize` 的 instructions 对所有授权都相同（客户端会缓存，换授权后不一定重新拉取），不要按角色或作用域过滤；权限在 `tools/call` 时检查：成员调用管理工具、`ledger` 参数与授权不符返回工具错误；只读令牌调用写入工具在 `POST /mcp` 入口返回 403 `insufficient_scope`，客户端据此重新授权（step-up），不能改成工具错误。
 - `/oauth/authorize` 是前端页面（`src/web/features/oauth/AuthorizePage.tsx`），服务端只处理 `/api/oauth/authorize`。

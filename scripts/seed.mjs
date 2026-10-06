@@ -36,31 +36,43 @@ const ledger = await call('POST', '/admin/ledgers', { name: '国庆出游' });
 await call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: 'demo2026', validUntil: null });
 await call('POST', '/join', { code: 'demo2026' });
 
+const newId = () => crypto.randomUUID().replace(/-/g, '').slice(0, 16);
+const apply = (changes) => call('POST', '/ledger/changes', { changes });
+
 const people = {};
-for (const [name, avatar] of [['阿杰', '🦊'], ['小雨', '🐼'], ['老王', '🐯'], ['Mia', '🐱']]) {
-  people[name] = (await call('POST', '/ledger/members', { name, avatar })).event.member.id;
-}
+const members = [['阿杰', '🦊'], ['小雨', '🐼'], ['老王', '🐯'], ['Mia', '🐱']].map(([name, avatar]) => {
+  people[name] = newId();
+  return { op: 'member.create', id: people[name], member: { name, avatar } };
+});
+await apply(members);
 const all = Object.values(people);
-const ids = (...names) => names.map((n) => people[n]);
+const even = (...names) => ({ mode: 'even', memberIds: names.length ? names.map((n) => people[n]) : all });
+const exact = (shares) => ({ mode: 'exact', shares: Object.entries(shares).map(([n, amount]) => ({ memberId: people[n], amount })) });
 
 const expenses = [
-  [-4, '高铁票', 123600, '阿杰', all],
-  [-4, '火锅', 46800, '小雨', all],
-  [-3, '民宿', 158000, '老王', all],
-  [-3, '早餐', 8600, 'Mia', all],
-  [-3, '景区门票', 52000, '阿杰', all],
-  [-2, '午饭', 31200, '小雨', ids('阿杰', '小雨', '老王')],
-  [-2, '打车', 5800, 'Mia', ids('Mia', '小雨')],
-  [-2, '奶茶', 6400, '老王', all],
-  [-1, '烧烤', 42600, '阿杰', all],
-  [-1, '超市', 19850, 'Mia', all],
-  [0, '早餐', 7200, '老王', all],
-  [0, '咖啡', 9600, '小雨', ids('小雨', 'Mia', '阿杰')],
+  [-4, '高铁票', 123600, '阿杰', 'transport', even()],
+  [-4, '火锅', 46800, '小雨', 'food', even()],
+  [-3, '民宿', 158000, '老王', 'lodging', exact({ 阿杰: 39500, 小雨: 39500, 老王: 52000, Mia: 27000 })],
+  [-3, '早餐', 8600, 'Mia', 'food', even()],
+  [-3, '景区门票', 52000, '阿杰', 'fun', even()],
+  [-2, '午饭', 31200, '小雨', 'food', even('阿杰', '小雨', '老王')],
+  [-2, '打车', 5800, 'Mia', 'transport', even('Mia', '小雨')],
+  [-2, '奶茶', 6400, '老王', 'food', even()],
+  [-1, '烧烤', 42600, '阿杰', 'food', exact({ 阿杰: 12600, 小雨: 9000, 老王: 12000, Mia: 9000 })],
+  [-1, '超市', 19850, 'Mia', 'groceries', even()],
+  [0, '早餐', 7200, '老王', 'food', even()],
+  [0, '咖啡', 9600, '小雨', 'food', even('小雨', 'Mia', '阿杰')],
 ];
-for (const [offset, title, amount, payer, participantIds] of expenses) {
-  await call('POST', '/ledger/expenses', { title, amount, payerId: people[payer], date: day(offset), participantIds });
-}
-await call('POST', '/ledger/settlements', { fromId: people.Mia, toId: people['阿杰'], amount: 30000, date: day(-1), note: '微信转账' });
+await apply(
+  expenses.map(([offset, title, amount, payer, category, split]) => ({
+    op: 'expense.create',
+    id: newId(),
+    expense: { title, amount, payerId: people[payer], date: day(offset), category, split },
+  })),
+);
+await apply([
+  { op: 'settlement.create', id: newId(), settlement: { fromId: people.Mia, toId: people['阿杰'], amount: 30000, date: day(-1), note: '微信转账' } },
+]);
 
 const second = await call('POST', '/admin/ledgers', { name: '合租 302' });
 await call('POST', `/admin/ledgers/${second.id}/passphrases`, { code: 'room302', validUntil: Date.now() + 30 * 86400_000 });

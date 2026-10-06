@@ -49,7 +49,7 @@ function instructions(date: string, timezone: string) {
     'A member grant can only access the one ledger chosen during authorization, so ledger tools (get_ledger, add_expense, …) need no ledger argument. An admin grant can manage every ledger, and ledger tools must name the ledger (name or ID) in the ledger argument; call list_ledgers to see them.',
     'Start with get_ledger to see members, balances and the settle-up plan (with an admin grant and no ledger it lists all ledgers). Refer to payers and participants by member name.',
     'Admin tools are only available to admin grants: create / rename / delete ledgers, and create or revoke share passcodes (the returned invite link can be sent to friends as is). Deleting a ledger cannot be undone, so always confirm with the user first.',
-    'An expense is paid by one member and split evenly among its participants; a settlement (record_settlement) means one member has paid money back to another.',
+    'An expense is paid by one member and split among its participants, evenly by default or with custom amounts or weights (shares); every expense can have a category. A settlement (record_settlement) means one member has paid money back to another.',
     'Ledger and member names are user data and may be in any language; keep them exactly as returned. Reply to the user in their own language.',
     `Today is ${date} (${timezone}). Changes sync live to everyone who has the ledger open.`,
   ].join('\n');

@@ -55,6 +55,86 @@ function describe({ event }: LiveMessage, before: Snapshot, after: Snapshot): st
   }
 }
 
+function summarize(messages: LiveMessage[], before: Snapshot): string | null {
+  const existed = (id: string) => before.expenses.some((e) => e.id === id);
+  const added = new Map<string, number>();
+  const edited = new Set<string>();
+  const deleted = new Set<string>();
+  let settlementsAdded = 0;
+  let settlementsDeleted = 0;
+  let membersAdded = 0;
+  let membersRemoved = 0;
+  for (const { event } of messages) {
+    switch (event.type) {
+      case 'expense.saved':
+        if (existed(event.expense.id)) edited.add(event.expense.id);
+        else added.set(event.expense.id, event.expense.amount);
+        break;
+      case 'expense.deleted':
+        if (added.delete(event.id)) break;
+        edited.delete(event.id);
+        deleted.add(event.id);
+        break;
+      case 'settlement.saved':
+        settlementsAdded++;
+        break;
+      case 'settlement.deleted':
+        settlementsDeleted++;
+        break;
+      case 'member.saved':
+        if (!before.members.some((m) => m.id === event.member.id)) membersAdded++;
+        break;
+      case 'member.deleted':
+        membersRemoved++;
+        break;
+    }
+  }
+  const b = t.batch;
+  const total = [...added.values()].reduce((sum, a) => sum + a, 0);
+  const parts = [
+    added.size > 0 && b.expensesAdded(added.size, formatMoney(total)),
+    edited.size > 0 && b.expensesEdited(edited.size),
+    deleted.size > 0 && b.expensesDeleted(deleted.size),
+    settlementsAdded > 0 && b.settlementsAdded(settlementsAdded),
+    settlementsDeleted > 0 && b.settlementsDeleted(settlementsDeleted),
+    membersAdded > 0 && b.membersAdded(membersAdded),
+    membersRemoved > 0 && b.membersRemoved(membersRemoved),
+  ].filter((p) => p !== false);
+  return parts.length ? b.join(parts) : null;
+}
+
+// 同一批变更的远程消息逐条到达，凑齐后只弹一次；漏收时由定时器兜底
+function remoteNotifier(current: () => Snapshot | null) {
+  const pending = new Map<string, { before: Snapshot; messages: LiveMessage[]; timer: ReturnType<typeof setTimeout> }>();
+  const show = (messages: LiveMessage[], before: Snapshot) => {
+    const after = current();
+    const [first] = messages;
+    if (!after || !first) return;
+    const text = messages.length === 1 ? describe(first, before, after) : summarize(messages, before);
+    if (!text) return;
+    const source = first.via === 'assistant' ? t.assistant : first.origin?.startsWith('mcp:') ? first.origin.slice(4) : null;
+    toast(source ? `${source} · ${text}` : text, { icon: source ? '✨' : '🔔' });
+  };
+  const flush = (id: string) => {
+    const group = pending.get(id);
+    if (!group) return;
+    clearTimeout(group.timer);
+    pending.delete(id);
+    show(group.messages, group.before);
+  };
+  return (message: LiveMessage, before: Snapshot) => {
+    const { batch } = message;
+    if (!batch || batch.size <= 1) return show([message], before);
+    let group = pending.get(batch.id);
+    if (!group) {
+      group = { before, messages: [], timer: setTimeout(() => flush(batch.id), 800) };
+      pending.set(batch.id, group);
+    }
+    group.messages.push(message);
+    if (group.messages.length >= batch.size) flush(batch.id);
+  };
+}
+
 export function LedgerPage({
   session,
   initialSnapshot,
@@ -76,18 +156,14 @@ export function LedgerPage({
 }) {
   const prefix = `aapay:${session.ledger.id}:`;
   const [activity] = useState(() => new ActivityLog(prefix));
+  const [notifyRemote] = useState(() => remoteNotifier(() => store.getState().snapshot));
   const [store] = useState(
     () =>
       new LedgerStore({
         onAudit: (record, own) => activity.receive(record, own),
         onClosed: (reason) =>
           onExit(reason === 'unauthorized' && session.role === 'admin' ? common.adminExpired : t.closed[reason]),
-        onRemote: (message, before) => {
-          const after = store.getState().snapshot;
-          const text = after && describe(message, before, after);
-          const via = message.origin?.startsWith('mcp:') ? message.origin.slice(4) : null;
-          if (text) toast(via ? `${via} · ${text}` : text, { icon: via ? '✨' : '🔔' });
-        },
+        onRemote: (message, before) => notifyRemote(message, before),
       }, initialSnapshot),
   );
   const state = useSyncExternalStore(store.subscribe, store.getState);

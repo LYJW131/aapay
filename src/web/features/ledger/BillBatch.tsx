@@ -1,4 +1,5 @@
 import { CalendarDays, Check, ImagePlus } from 'lucide-react';
+import type { Category } from '../../../shared/categories.ts';
 import { LIMITS } from '../../../shared/limits.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
@@ -17,6 +18,7 @@ export interface BillRow {
   title: string;
   amount: string;
   date: string;
+  category: Category | null;
   checked: boolean;
   duplicate: boolean;
 }

@@ -6,6 +6,7 @@ import type { UpgradeWebSocket } from 'hono/ws';
 import { createApp } from '../src/server/app.ts';
 import { loadConfig } from '../src/server/config.ts';
 import { createNodePlatform } from '../src/server/node/platform.ts';
+import { newId } from '../src/shared/ids.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'aapay-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -66,27 +67,50 @@ describe('API (isolated mode)', () => {
     expect(joined.status).toBe(200);
     expect(joined.data).toMatchObject({ role: 'member', passphrase: 'Camp2026', ledger: { name: '周末露营' } });
 
-    const a = (await call('POST', '/ledger/members', { name: '阿杰' })).data.event.member;
-    const b = (await call('POST', '/ledger/members', { name: '小雨' })).data.event.member;
-    const bad = await call('POST', '/ledger/expenses', { title: '', amount: 1, payerId: a.id, date: '2026-10-01', participantIds: [a.id] });
-    expect(bad).toEqual({ status: 400, data: { error: '用途不能为空' } });
-    const english = { 'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8' };
-    const badEn = await call('POST', '/ledger/expenses', { title: '', amount: 1, payerId: a.id, date: '2026-10-01', participantIds: [a.id] }, english);
-    expect(badEn.data.error).toBe('Description is required');
-    expect((await call('POST', '/ledger/members', { name: '阿杰' }, english)).data.error).toBe('A member named “阿杰” already exists');
-    expect((await call('POST', '/ledger/members', { name: '阿杰' })).data.error).toBe('成员「阿杰」已存在');
-
-    const msg = (
-      await call(
-        'POST',
-        '/ledger/expenses',
-        { title: '营地', amount: 20000, payerId: a.id, date: '2026-10-01', participantIds: [a.id, b.id] },
-        { 'x-client-id': 'tab-1' },
-      )
+    const changes = (list: unknown[], headers?: Record<string, string>) => call('POST', '/ledger/changes', { changes: list }, headers);
+    const a = { id: newId() };
+    const b = { id: newId() };
+    const joinedMembers = (
+      await changes([
+        { op: 'member.create', id: a.id, member: { name: '阿杰' } },
+        { op: 'member.create', id: b.id, member: { name: '小雨' } },
+      ])
     ).data;
-    expect(msg).toMatchObject({ v: 3, origin: 'tab-1', event: { type: 'expense.saved' } });
+    expect(joinedMembers.messages.map((m: { v: number }) => m.v)).toEqual([1, 2]);
+    expect(joinedMembers.undo).toEqual([
+      { op: 'member.delete', id: b.id },
+      { op: 'member.delete', id: a.id },
+    ]);
 
-    await call('POST', '/ledger/settlements', { fromId: b.id, toId: a.id, amount: 10000, date: '2026-10-02' });
+    const expense = (extra: object) => ({
+      op: 'expense.create',
+      id: newId(),
+      expense: { title: '营地', amount: 20000, payerId: a.id, date: '2026-10-01', category: 'lodging', split: { mode: 'even', memberIds: [a.id, b.id] }, ...extra },
+    });
+    const english = { 'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8' };
+    expect(await changes([expense({ title: '' })])).toEqual({ status: 400, data: { error: '用途不能为空' } });
+    expect((await changes([expense({ title: '' })], english)).data.error).toBe('Description is required');
+    const uneven = { split: { mode: 'exact', shares: [{ memberId: a.id, amount: 100 }, { memberId: b.id, amount: 100 }] } };
+    expect((await changes([expense(uneven)])).data.error).toBe('各人金额之和需等于总额');
+    expect((await changes([expense(uneven)], english)).data.error).toBe('Shares must add up to the total');
+    expect((await changes([expense({ category: 'snacks' })], english)).data.error).toBe('Invalid category');
+    expect((await changes([], english)).data.error).toBe('Nothing to save');
+    expect((await changes([{ op: 'member.create', id: newId(), member: { name: '阿杰' } }], english)).data.error).toBe('A member named “阿杰” already exists');
+    expect(await changes([{ op: 'member.create', id: a.id, member: { name: '新人' } }])).toEqual({ status: 409, data: { error: '这条记录已存在' } });
+
+    const created = (await changes([expense({})], { 'x-client-id': 'tab-1' })).data;
+    expect(created.messages).toMatchObject([{ v: 3, origin: 'tab-1', event: { type: 'expense.saved', expense: { category: 'lodging' } } }]);
+    expect(created.messages[0]).not.toHaveProperty('via');
+    const assisted = (
+      await call('POST', '/ledger/changes', {
+        changes: [{ op: 'settlement.create', id: newId(), settlement: { fromId: b.id, toId: a.id, amount: 10000, date: '2026-10-02' } }],
+        via: 'assistant',
+      })
+    ).data;
+    expect(assisted.messages[0]).toMatchObject({ v: 4, via: 'assistant', batch: { size: 1 } });
+    const audit = (await call('GET', '/ledger/audit?limit=1')).data.records[0];
+    expect(JSON.parse(audit.payload)).toMatchObject({ via: 'assistant', actor: { kind: 'member', passphrase: 'Camp2026' } });
+
     const snap = (await call('GET', '/ledger')).data;
     expect(snap).toMatchObject({ version: 4, ledger: { id: ledger.id } });
     expect(snap.expenses).toHaveLength(1);
@@ -178,7 +202,7 @@ describe('API (shared mode)', () => {
     const { call } = setup({ MODE: 'shared' });
     const { session } = (await call('GET', '/session')).data;
     expect(session).toMatchObject({ role: 'shared', ledger: { id: 'shared' } });
-    expect((await call('POST', '/ledger/members', { name: '室友' })).status).toBe(200);
+    expect((await call('POST', '/ledger/changes', { changes: [{ op: 'member.create', id: newId(), member: { name: '室友' } }] })).status).toBe(200);
     expect((await call('POST', '/join', { code: 'abc' })).status).toBe(404);
   });
 });
@@ -209,8 +233,8 @@ describe('API (bill recognition)', () => {
       seen.push({ url, body });
       return completion({
         items: [
-          { title: ' 鑫震源山塘街店 ', amount: -147, date: '2026-10-01' },
-          { title: '滴滴出行', amount: 39.16, date: '2026-10-01' },
+          { title: ' 鑫震源山塘街店 ', amount: -147, date: '2026-10-01', category: 'food' },
+          { title: '滴滴出行', amount: 39.16, date: '2026-10-01', category: 'transport' },
         ],
       });
     });
@@ -221,12 +245,13 @@ describe('API (bill recognition)', () => {
       status: 200,
       data: {
         items: [
-          { title: '鑫震源山塘街店', amount: 14700, date: '2026-10-01' },
-          { title: '滴滴出行', amount: 3916, date: '2026-10-01' },
+          { title: '鑫震源山塘街店', amount: 14700, date: '2026-10-01', category: 'food' },
+          { title: '滴滴出行', amount: 3916, date: '2026-10-01', category: 'transport' },
         ],
       },
     });
-    expect(seen[0]!.url).toContain('/models/gemini-flash-lite-latest:generateContent');
+    expect(seen[0]!.url).toContain('/models/gemini-3.5-flash-lite:generateContent');
+    expect(seen[0]!.body.generationConfig.responseSchema.properties.items.items.properties.category.enum).toContain('groceries');
     expect(seen[0]!.body.contents[0].parts[0].inlineData).toEqual({ mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' });
   });
 
@@ -241,7 +266,7 @@ describe('API (bill recognition)', () => {
     const { call } = await joined({ DEEPSEEK_API_KEY: 'ds-key', GEMINI_API_KEY: 'test-key' });
     expect((await call('GET', '/config')).data.recognize).toBe(true);
     expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
-      items: [{ title: '瑞幸咖啡', amount: 1690, date: '2026-10-04' }],
+      items: [{ title: '瑞幸咖啡', amount: 1690, date: '2026-10-04', category: null }],
     });
     expect(seen[0]).toMatchObject({
       url: 'https://api.deepseek.com/chat/completions',
@@ -258,7 +283,7 @@ describe('API (bill recognition)', () => {
   it('drops fields the model got wrong and rejects non-bills', async () => {
     let reply: unknown = completion({
       items: [
-        { title: '外卖', amount: 0, date: '10月4日' },
+        { title: '外卖', amount: 0, date: '10月4日', category: 'takeout' },
         { title: null, amount: null, date: '2026-10-04' },
       ],
     });
@@ -269,7 +294,7 @@ describe('API (bill recognition)', () => {
     });
     const { call } = await joined({ GEMINI_API_KEY: 'test-key', GEMINI_MODEL: 'gemini-2.5-flash' });
     expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
-      items: [{ title: '外卖', amount: null, date: null }],
+      items: [{ title: '外卖', amount: null, date: null, category: null }],
     });
     expect(url).toContain('/models/gemini-2.5-flash:generateContent');
     reply = completion({ items: [] });

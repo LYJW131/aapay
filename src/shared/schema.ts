@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { CATEGORIES } from './categories.ts';
 import type { PlainErrorKey } from './errors.ts';
+import { ID_PATTERN } from './ids.ts';
 import { LIMITS } from './limits.ts';
 import { MAX_AMOUNT } from './money.ts';
 
@@ -32,17 +34,47 @@ export const memberInput = z.object({
   avatar: z.string().trim().max(LIMITS.avatar).optional(),
 });
 
-export const expenseInput = z.object({
-  title: text(LIMITS.title, 'titleRequired', 'titleTooLong'),
-  amount,
-  payerId: id,
-  date: isoDate,
-  participantIds: z
-    .array(id)
-    .min(1, msg('participantsRequired'))
-    .max(LIMITS.members)
-    .refine((ids) => new Set(ids).size === ids.length, msg('participantsDuplicate')),
-});
+export const category = z.enum(CATEGORIES, msg('categoryInvalid'));
+
+const shareAmount = z
+  .number()
+  .int(msg('amountNotCents'))
+  .min(1, msg('shareNotPositive'))
+  .max(MAX_AMOUNT, msg('amountTooLarge'));
+
+export const expenseSplit = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('even'),
+    memberIds: z
+      .array(id)
+      .min(1, msg('participantsRequired'))
+      .max(LIMITS.members, msg('participantsTooMany'))
+      .refine((ids) => new Set(ids).size === ids.length, msg('participantsDuplicate')),
+  }),
+  z.object({
+    mode: z.literal('exact'),
+    shares: z
+      .array(z.object({ memberId: id, amount: shareAmount }))
+      .min(1, msg('participantsRequired'))
+      .max(LIMITS.members, msg('participantsTooMany'))
+      .refine((shares) => new Set(shares.map((s) => s.memberId)).size === shares.length, msg('sharesDuplicate')),
+  }),
+]);
+
+export const expenseInput = z
+  .object({
+    title: text(LIMITS.title, 'titleRequired', 'titleTooLong'),
+    amount,
+    payerId: id,
+    date: isoDate,
+    category: category.nullable(),
+    split: expenseSplit,
+  })
+  .superRefine((e, ctx) => {
+    if (e.split.mode === 'exact' && e.split.shares.reduce((sum, s) => sum + s.amount, 0) !== e.amount) {
+      ctx.addIssue({ code: 'custom', message: msg('sharesSumMismatch'), path: ['split', 'shares'] });
+    }
+  });
 
 export const settlementInput = z
   .object({
@@ -53,6 +85,27 @@ export const settlementInput = z
     note: z.string().trim().max(LIMITS.note).nullish(),
   })
   .refine((s) => s.fromId !== s.toId, { message: msg('settlementSamePerson'), path: ['toId'] });
+
+const recordId = z.string().regex(ID_PATTERN, msg('idInvalid'));
+const ifUpdatedAt = z.number().int().nonnegative().optional();
+
+export const changeSchema = z.discriminatedUnion('op', [
+  z.object({ op: z.literal('member.create'), id: recordId, member: memberInput }),
+  z.object({ op: z.literal('member.update'), id: recordId, member: memberInput }),
+  z.object({ op: z.literal('member.delete'), id: recordId }),
+  z.object({ op: z.literal('expense.create'), id: recordId, expense: expenseInput }),
+  z.object({ op: z.literal('expense.update'), id: recordId, expense: expenseInput, ifUpdatedAt }),
+  z.object({ op: z.literal('expense.delete'), id: recordId, ifUpdatedAt }),
+  z.object({ op: z.literal('settlement.create'), id: recordId, settlement: settlementInput }),
+  z.object({ op: z.literal('settlement.delete'), id: recordId }),
+]);
+
+export const changeList = z.array(changeSchema).min(1, msg('changesRequired')).max(LIMITS.changes, msg('changesTooMany'));
+
+export const changesInput = z.object({
+  changes: changeList,
+  via: z.literal('assistant').optional(),
+});
 
 export const recognizeInput = z.object({
   image: z
@@ -79,5 +132,7 @@ export const passphraseInput = z
 export type MemberInput = z.infer<typeof memberInput>;
 export type LedgerInput = z.infer<typeof ledgerInput>;
 export type ExpenseInput = z.infer<typeof expenseInput>;
+export type ExpenseSplit = z.infer<typeof expenseSplit>;
+export type ChangesInput = z.infer<typeof changesInput>;
 export type SettlementInput = z.infer<typeof settlementInput>;
 export type PassphraseInput = z.infer<typeof passphraseInput>;

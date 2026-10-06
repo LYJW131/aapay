@@ -12,7 +12,7 @@ import type {
   SessionRole,
 } from '../../shared/types.ts';
 import { AppError, conflict, notFound } from './errors.ts';
-import { newId } from './ids.ts';
+import { newId } from '../../shared/ids.ts';
 import { first, migrate, type SqlDriver, type SqlValue } from './sql.ts';
 
 const DAY = 86_400_000;

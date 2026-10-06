@@ -1,6 +1,6 @@
-import type { ClientResponse } from 'hono/client';
-import { applyEvent } from '../../../shared/ledger.ts';
 import type { AuditRecord } from '../../../shared/audit.ts';
+import type { Change, Via } from '../../../shared/changes.ts';
+import { applyEvent } from '../../../shared/ledger.ts';
 import type { LiveMessage, Snapshot } from '../../../shared/types.ts';
 import { api, ApiError, call, CLIENT_ID, liveUrl } from '../../lib/api.ts';
 
@@ -78,11 +78,11 @@ export class LedgerStore {
   }
 
   // 立即应用服务端返回的事件，WebSocket 回声会因版本号相同而被忽略
-  async mutate(request: Promise<ClientResponse<unknown>>) {
+  async apply(changes: Change[], opts: { via?: Via } = {}): Promise<{ undo: Change[] }> {
     try {
-      const message = (await call(request)) as LiveMessage;
-      this.receive(message);
-      return message;
+      const { messages, undo } = await call(api.ledger.changes.$post({ json: { changes, via: opts.via } }));
+      for (const message of messages) this.receive(message);
+      return { undo };
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) this.close('unauthorized');
       throw err;

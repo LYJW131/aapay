@@ -3,16 +3,7 @@ import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import {
-  expenseInput,
-  joinInput,
-  ledgerInput,
-  loginInput,
-  memberInput,
-  passphraseInput,
-  recognizeInput,
-  settlementInput,
-} from '../shared/schema.ts';
+import { changesInput, joinInput, ledgerInput, loginInput, passphraseInput, recognizeInput } from '../shared/schema.ts';
 import { translateError } from '../shared/errors.ts';
 import { localPath } from '../shared/redirect.ts';
 import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, SessionState, Snapshot } from '../shared/types.ts';
@@ -94,42 +85,10 @@ const ledgerRoutes = new Hono<AppEnv>()
     const tag = passphrase ? `p:${passphrase.toLowerCase()}` : role;
     return c.var.platform.ledger(ledger.id).connect(c, tag);
   })
-  .post('/members', body(memberInput), async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.createMember(c.req.valid('json'), mutation(c))),
-  )
-  .patch('/members/:id', body(memberInput), async (c) =>
-    c.json(
-      await c.var.platform
-        .ledger(c.var.session.ledger.id)
-        .api.updateMember(c.req.param('id'), c.req.valid('json'), mutation(c)),
-    ),
-  )
-  .delete('/members/:id', async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.deleteMember(c.req.param('id'), mutation(c))),
-  )
-  .post('/expenses', body(expenseInput), async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.createExpense(c.req.valid('json'), mutation(c))),
-  )
-  .patch('/expenses/:id', body(expenseInput), async (c) =>
-    c.json(
-      await c.var.platform
-        .ledger(c.var.session.ledger.id)
-        .api.updateExpense(c.req.param('id'), c.req.valid('json'), mutation(c)),
-    ),
-  )
-  .delete('/expenses/:id', async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.deleteExpense(c.req.param('id'), mutation(c))),
-  )
-  .post('/settlements', body(settlementInput), async (c) =>
-    c.json(
-      await c.var.platform.ledger(c.var.session.ledger.id).api.createSettlement(c.req.valid('json'), mutation(c)),
-    ),
-  )
-  .delete('/settlements/:id', async (c) =>
-    c.json(
-      await c.var.platform.ledger(c.var.session.ledger.id).api.deleteSettlement(c.req.param('id'), mutation(c)),
-    ),
-  )
+  .post('/changes', body(changesInput), async (c) => {
+    const { changes, via } = c.req.valid('json');
+    return c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.applyChanges(changes, { ...mutation(c), via }));
+  })
   .post('/recognize', body(recognizeInput), async (c) => {
     const { platform, config, session } = c.var;
     if (!config.recognizer) throw notFound('recognizeDisabled');

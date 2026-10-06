@@ -1,6 +1,8 @@
 import { ed25519 } from '@noble/curves/ed25519.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
+import type { Category } from './categories.ts';
+import type { Via } from './changes.ts';
 import type { Cents } from './money.ts';
 import type { IsoDate, Timestamp } from './types.ts';
 
@@ -17,6 +19,8 @@ export interface AuditExpense {
   payer: string;
   participants: string[];
   date: IsoDate;
+  category?: Category | null;
+  split?: { name: string; amount: Cents }[];
 }
 
 export interface AuditSettlement {
@@ -50,6 +54,7 @@ export interface AuditPayload {
   at: Timestamp;
   actor: AuditActor;
   action: AuditAction;
+  via?: Via;
 }
 
 export interface AuditRecord {

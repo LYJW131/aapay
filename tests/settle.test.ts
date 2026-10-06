@@ -10,6 +10,7 @@ const expense = (payerId: string, amount: number, ids: string[]): Expense => ({
   amount,
   payerId,
   date: '2026-10-01',
+  category: null,
   shares: splitEvenly(amount, ids),
   createdAt: 0,
   updatedAt: 0,

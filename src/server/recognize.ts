@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CATEGORIES, isCategory } from '../shared/categories.ts';
 import { LIMITS } from '../shared/limits.ts';
 import { MAX_AMOUNT } from '../shared/money.ts';
 import type { Locale } from '../shared/i18n.ts';
@@ -16,6 +17,7 @@ const instructions = (today: string, locale: Locale) =>
     ...(locale === 'en' ? ['  用户使用英文界面：title 用简短的英文，如 "Luckin Coffee" "Groceries" "Takeout" "Taxi"。'] : []),
     '- amount：这笔实际支付的金额，单位元，正数；是扣除优惠、红包后的实付数，不是原价、小计或单个商品的价格。',
     `- date：消费日期，格式 YYYY-MM-DD；图片上没有年份时按今天（${today}）推断，看不出日期时为 null。`,
+    `- category：分类，从 ${CATEGORIES.join(' / ')} 中选一个（food 餐饮、groceries 超市日用、transport 交通、lodging 住宿、fun 娱乐、shopping 购物、housing 房租水电、health 医疗、gifts 人情礼物），拿不准时用 other。`,
     '只提取支出：收入、退款、转入不要；月度或分类的合计、统计数字不是交易，也不要。',
     '一张小票或一个订单只算一笔，不要按商品拆开。按图片中从上到下的顺序输出。',
     `图片里没有支出或看不清时，items 为空数组。最多 ${MAX_BILLS} 项。`,
@@ -25,6 +27,7 @@ const bill = z.object({
   title: z.string().nullable(),
   amount: z.number().nullable(),
   date: z.string().nullable(),
+  category: z.string().nullish(),
 });
 const reply = z.object({ items: z.array(bill) });
 
@@ -39,8 +42,9 @@ const replySchema = {
           title: { type: 'string', nullable: true },
           amount: { type: 'number', nullable: true },
           date: { type: 'string', nullable: true },
+          category: { type: 'string', enum: [...CATEGORIES] },
         },
-        required: ['title', 'amount', 'date'],
+        required: ['title', 'amount', 'date', 'category'],
       },
     },
   },
@@ -87,7 +91,7 @@ async function askDeepSeek({ apiKey, model }: Recognizer, image: string, today: 
     body: JSON.stringify({
       model,
       messages: [
-        { role: 'system', content: `${instructions(today, locale)}\n只输出 JSON：{"items":[{"title":"…","amount":0,"date":"YYYY-MM-DD"}]}` },
+        { role: 'system', content: `${instructions(today, locale)}\n只输出 JSON：{"items":[{"title":"…","amount":0,"date":"YYYY-MM-DD","category":"other"}]}` },
         {
           role: 'user',
           content: [
@@ -137,12 +141,13 @@ export async function recognizeBills(
 
   const items = parsed.data.items
     .slice(0, MAX_BILLS)
-    .map(({ title, amount, date }): BillDraft => {
+    .map(({ title, amount, date, category }): BillDraft => {
       const cents = amount === null ? 0 : Math.round(Math.abs(amount) * 100);
       return {
         title: title?.trim().slice(0, LIMITS.title) || null,
         amount: cents > 0 && cents <= MAX_AMOUNT ? cents : null,
         date: date && isoDate.safeParse(date).success ? date : null,
+        category: isCategory(category) ? category : null,
       };
     })
     .filter((item) => item.title || item.amount);

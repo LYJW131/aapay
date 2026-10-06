@@ -129,7 +129,7 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 | `DEEPSEEK_API_KEY` | 可选，DeepSeek API 密钥（Cloudflare 上用 secret 配置），填写后「识别账单」使用 DeepSeek | — |
 | `DEEPSEEK_MODEL` | 可选，识别账单使用的 DeepSeek 模型 | `deepseek-flash` |
 | `GEMINI_API_KEY` | 可选，Gemini API 密钥（Cloudflare 上用 secret 配置），未配置 `DEEPSEEK_API_KEY` 时「识别账单」使用 Gemini | — |
-| `GEMINI_MODEL` | 可选，识别账单使用的 Gemini 模型 | `gemini-flash-lite-latest` |
+| `GEMINI_MODEL` | 可选，识别账单使用的 Gemini 模型 | `gemini-3.5-flash-lite` |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
 
 管理员认证方式：
@@ -154,7 +154,7 @@ AAPay 自带一个远程 MCP 服务器，地址就是 `https://你的域名/mcp`
 
 添加后应用会打开 AAPay 的授权页：已在这个浏览器打开过账本可以一键授权，否则输入该账本的分享口令；还可以关掉「记账、修改与删除」只给只读权限。之后就可以直接说「我付了 128 的晚饭，四个人分」「这周谁花得最多」「怎么转账能结清」。AI 做的修改会实时出现在所有人的页面上，并提示是哪个应用改的。
 
-**提供的工具**：`get_ledger`（成员、余额、最少转账方案）、`list_transactions`（按日期 / 成员 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`、`list_activity`（操作动态）。金额以「元」为单位，成员可以直接用名字指代。工具描述、说明与错误提示都是英文（只给模型看），AI 会用你的语言回复，账本和成员名字保持原样。
+**提供的工具**：`get_ledger`（成员、余额、分类汇总、最少转账方案）、`list_transactions`（按日期 / 成员 / 分类 / 关键字查询）、`add_expense` / `update_expense` / `delete_expense`、`add_member` / `update_member`、`record_settlement` / `delete_settlement`、`list_activity`（操作动态）。金额以「元」为单位，成员可以直接用名字指代；记账可带分类，可以均分，也可以按金额或份数自定义分摊。工具描述、说明与错误提示都是英文（只给模型看），AI 会用你的语言回复，账本和成员名字保持原样。
 
 **管理员连接**：已登录的管理员在授权页可以选择「全部账本」，AI 就能管理所有账本：`list_ledgers`、`create_ledger`（默认同时生成口令并返回邀请链接）、`update_ledger`（名称与图标）、`delete_ledger`（需再次输入名称确认）、`list_passphrases` / `create_passphrase` / `revoke_passphrase`；账本内的工具用 `ledger` 参数（名称或 ID）指定账本。管理员授权 30 天有效，在账本页的「连接 AI」中可查看与断开；关闭管理后台或把此人移出 `ADMIN_EMAILS` 后立即失效。还没登录时，授权页有「以管理员身份登录」入口，登录后自动回到授权页。
 
@@ -182,7 +182,8 @@ src/
 │   ├── config.ts       环境变量解析
 │   ├── auth/           管理员认证（Access JWT / 密码 / 代理头）与 Cookie
 │   ├── core/           RegistryService（账本、口令、会话、OAuth 授权）、LedgerService、SQL 抽象、RPC 信封
-│   ├── mcp/            OAuth 2.1 授权服务器、MCP 端点（JSON-RPC）与工具定义
+│   ├── mcp/            OAuth 2.1 授权服务器、MCP 端点（JSON-RPC）与管理员工具
+│   ├── tools/          账本工具：读工具与写工具的 plan / describe（MCP 与 AI 助手共用）
 │   ├── cloudflare/     Worker 入口与 Durable Objects
 │   └── node/           Node 入口、node:sqlite 驱动、WebSocket 房间
 └── web/                React 前端（features/ledger、features/admin、features/join、features/oauth）
@@ -202,9 +203,7 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `POST` | `/api/logout` | 退出账本 |
 | `GET` | `/api/ledger` | 账本快照 |
 | `GET` | `/api/ledger/live` | WebSocket 实时事件 |
-| `POST` `PATCH` `DELETE` | `/api/ledger/members[/:id]` | 成员 |
-| `POST` `PATCH` `DELETE` | `/api/ledger/expenses[/:id]` | 支出 |
-| `POST` `DELETE` | `/api/ledger/settlements[/:id]` | 还款记录 |
+| `POST` | `/api/ledger/changes` | 唯一的账目写入口：一组变更（成员、支出、还款的增改删）原子执行，返回实时消息与可直接回放的撤销变更 |
 | `GET` | `/api/ledger/audit?before=&after=&limit=` | 操作动态（签名哈希链，附公钥与最新一条） |
 | `POST` | `/api/ledger/recognize` | 识别账单图片（小票、付款详情或账单列表），返回一笔或多笔支出草稿（不写入账本） |
 | `GET` `POST` `PATCH` `DELETE` | `/api/admin/ledgers[/:id]` | 账本管理（含统计） |

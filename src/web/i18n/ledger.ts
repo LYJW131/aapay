@@ -16,6 +16,17 @@ export const ledger = messages({
       settlementDeleted: '删除了一笔还款记录',
       memberJoined: (name: string) => `新成员 ${name} 加入`,
       memberRemoved: (name: string) => `移除了成员 ${name}`,
+      assistant: 'AI 助手',
+      batch: {
+        expensesAdded: (n: number, total: string) => `记了 ${n} 笔，共 ${total}`,
+        expensesEdited: (n: number) => `改了 ${n} 笔`,
+        expensesDeleted: (n: number) => `删了 ${n} 笔`,
+        settlementsAdded: (n: number) => `记了 ${n} 笔还款`,
+        settlementsDeleted: (n: number) => `删了 ${n} 笔还款`,
+        membersAdded: (n: number) => `加了 ${n} 位成员`,
+        membersRemoved: (n: number) => `移除 ${n} 位成员`,
+        join: (parts: string[]) => parts.join('，'),
+      },
       retry: '重试',
       adminExpired: '管理员登录已过期',
       signInAgain: '重新登录',
@@ -173,6 +184,20 @@ export const ledger = messages({
       settlementDeleted: 'Deleted a payment',
       memberJoined: (name) => `${name} joined`,
       memberRemoved: (name) => `Removed member ${name}`,
+      assistant: 'AI assistant',
+      batch: {
+        expensesAdded: (n, total) => `added ${n === 1 ? '1 expense' : `${n} expenses`} (${total})`,
+        expensesEdited: (n) => `edited ${n}`,
+        expensesDeleted: (n) => `deleted ${n}`,
+        settlementsAdded: (n) => `recorded ${n === 1 ? '1 payment' : `${n} payments`}`,
+        settlementsDeleted: (n) => `removed ${n === 1 ? '1 payment' : `${n} payments`}`,
+        membersAdded: (n) => `added ${n === 1 ? '1 member' : `${n} members`}`,
+        membersRemoved: (n) => `removed ${n === 1 ? '1 member' : `${n} members`}`,
+        join: (parts) => {
+          const text = parts.join(', ');
+          return text.charAt(0).toUpperCase() + text.slice(1);
+        },
+      },
       retry: 'Retry',
       adminExpired: 'Your admin session has expired',
       signInAgain: 'Sign in again',
