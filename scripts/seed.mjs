@@ -21,7 +21,7 @@ async function call(method, path, body) {
     cookies.set(pair.slice(0, i), pair.slice(i + 1));
   }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${JSON.stringify(data)}`);
+  if (!res.ok && res.status !== 302) throw new Error(`${method} ${path} → ${res.status} ${JSON.stringify(data)}`);
   return data;
 }
 
@@ -32,6 +32,7 @@ const day = (offset) => {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 };
 
+await call('GET', '/admin/login');
 const ledger = await call('POST', '/admin/ledgers', { name: '国庆出游' });
 await call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: 'demo2026', validUntil: null });
 await call('POST', '/join', { code: 'demo2026' });
