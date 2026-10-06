@@ -118,7 +118,7 @@ function EmptyState({ onSuggest }: { onSuggest: (text: string) => void }) {
       <h3 className="mt-4 text-lg font-semibold tracking-tight">{t.greeting}</h3>
       <p className="mt-1 text-sm text-zinc-500 dark:text-zinc-400">{t.greetingSub}</p>
 
-      {needsMe && <WhoAreYou hint={t.whoAreYouHint} className="mt-5 justify-center" />}
+      {needsMe && <WhoAreYou hint={t.whoAreYouHint} center className="mt-5" />}
 
       <div className="mt-5 flex w-full flex-col gap-2">
         {suggestions.map((s, i) => (
@@ -140,15 +140,15 @@ function EmptyState({ onSuggest }: { onSuggest: (text: string) => void }) {
   );
 }
 
-function WhoAreYou({ hint, className, onPick }: { hint: string; className?: string; onPick?: () => void }) {
+function WhoAreYou({ hint, center, className, onPick }: { hint: string; center?: boolean; className?: string; onPick?: () => void }) {
   const { snapshot, key } = useLedger();
   return (
-    <div className="w-full rounded-2xl bg-brand-500/6 p-3 ring-1 ring-brand-500/15 dark:bg-brand-400/8">
+    <div className={cn('w-full rounded-2xl bg-brand-500/6 p-3 ring-1 ring-brand-500/15 dark:bg-brand-400/8', className)}>
       <p className="mb-2 text-[13px] font-medium text-brand-700 dark:text-brand-200">
         {t.whoAreYou}
         <span className="ml-1.5 font-normal text-zinc-500 dark:text-zinc-400">{hint}</span>
       </p>
-      <div className={cn('flex flex-wrap gap-1.5', className)}>
+      <div className={cn('flex flex-wrap gap-1.5', center && 'justify-center')}>
         {snapshot.members.map((m) => (
           <button
             key={m.id}
