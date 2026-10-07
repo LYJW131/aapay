@@ -62,8 +62,9 @@ interface PromptContext {
 }
 
 export function systemPrompt({ info, real, draft, pending, me, participants, today, locale }: PromptContext): string {
+  const confirmed = new Set(real.members.map((m) => m.id));
   const members = draft.members.length
-    ? draft.members.map((m) => `- ${quote(m.name)} (id ${m.id})`).join('\n')
+    ? draft.members.map((m) => `- ${quote(m.name)} (id ${m.id})${confirmed.has(m.id) ? '' : ' [proposed, not added yet]'}`).join('\n')
     : '(none yet: add members with add_member before recording expenses)';
   const pendingList = pending.length
     ? pending.map((c) => `- ${c.op} id ${c.id}: ${changeLine(c, real, draft)}`).join('\n')
@@ -85,7 +86,7 @@ export function systemPrompt({ info, real, draft, pending, me, participants, tod
     '- add_expense, update_expense, delete_expense, add_member, update_member, record_settlement and delete_settlement only propose a change. Nothing is saved until the user confirms it in the app. Never say something was recorded, saved or done; say it will be recorded once they confirm (e.g. "确认后记入", "Confirm to add them").',
     '- When the user asks for several changes, issue all of the proposal calls together in the same turn.',
     `- If the amount is missing, or who paid is missing${me ? ' and it was not the user' : ''}, ask one short question instead of guessing.${me ? ' If the payer is not mentioned, the user paid.' : ''}`,
-    '- get_ledger, list_transactions and list_activity look things up; their results already include the pending changes. Use the ids they return to update or delete records.',
+    '- get_ledger, list_transactions and list_activity return only what is already in the ledger (confirmed). Pending proposals are listed separately in pendingChanges and are not part of the ledger yet. When the user asks how things stand now (how many members, balances, totals), answer from the confirmed data and mention pending proposals separately as not yet added. Use the ids from the results and from pendingChanges to update or delete records.',
     '- Answer questions directly: look the data up first, then state the answer itself (who, how much) in one sentence.',
     '- For balances, settling up, spending by category, trends or lists of transactions, also call show to display a live card instead of listing many numbers in text. Turn periods such as this week or this month into from and to dates.',
     '- Keep member names and descriptions exactly as written.',

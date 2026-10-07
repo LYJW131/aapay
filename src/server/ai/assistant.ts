@@ -26,7 +26,7 @@ import {
 import { GeminiError, streamGemini, type FunctionDeclaration, type GeminiContent, type GeminiFunctionCall, type GeminiPart } from './gemini.ts';
 import { ItemStream, type ItemEvent } from './item-stream.ts';
 import { fold } from './pending.ts';
-import { EXTRACTION_SCHEMA, extractionPrompt, imagesNote, MAX_EXTRACTED, SHOW_DESCRIPTION, systemPrompt } from './prompts.ts';
+import { changeLine, EXTRACTION_SCHEMA, extractionPrompt, imagesNote, MAX_EXTRACTED, SHOW_DESCRIPTION, systemPrompt } from './prompts.ts';
 
 export const MAX_ROUNDS = 6;
 const EXTRACT_STEP = 'read_images';
@@ -248,7 +248,13 @@ async function execute(run: Run, request: AssistantRequest, draft: Draft, call: 
   if (!tool) throw new ToolError(`Unknown tool ${call.name}`);
   const parsed = parseArgs(tool.input, args);
   if (!tool.write) {
-    return tool.read(parsed, { data: draft.data, info: run.info, today: request.today, auditLog: (q) => run.api.auditLog(q) });
+    const result = await tool.read(parsed, { data: draft.real, info: run.info, today: request.today, auditLog: (q) => run.api.auditLog(q) });
+    if (!draft.pending.length) return result;
+    return {
+      ...result,
+      pendingChanges: draft.pending.map((c) => ({ op: c.op, id: c.id, summary: changeLine(c, draft.real, draft.data) })),
+      note: 'The results above only cover the confirmed ledger. pendingChanges are proposals the user has not confirmed yet; they are not in the ledger.',
+    };
   }
   const before = draft.data;
   const change = tool.plan(parsed, { data: before, today: request.today });

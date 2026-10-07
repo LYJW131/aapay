@@ -132,7 +132,7 @@ describe('assistant endpoint', () => {
     expect(body).not.toHaveProperty('toolConfig');
   });
 
-  it('runs read tools on the draft and sends model parts back verbatim', async () => {
+  it('reads the confirmed ledger, lists pending proposals apart and sends model parts back verbatim', async () => {
     const first: Chunk[] = [
       call('get_ledger', {}, { id: 'c1', thoughtSignature: 'sig-1' }),
       call('list_transactions', { member: '小雨' }, { id: 'c2' }),
@@ -162,8 +162,13 @@ describe('assistant endpoint', () => {
     expect(second[1].parts[0].thoughtSignature).toBe('sig-1');
     const [ledgerReply, listReply] = second[2].parts;
     expect(second[2].role).toBe('user');
-    expect(ledgerReply.functionResponse).toMatchObject({ id: 'c1', name: 'get_ledger', response: { summary: { expenseCount: 1, totalSpent: 35 } } });
-    expect(listReply.functionResponse).toMatchObject({ id: 'c2', name: 'list_transactions', response: { matched: 1, items: [{ title: '打车' }] } });
+    expect(ledgerReply.functionResponse).toMatchObject({
+      id: 'c1',
+      name: 'get_ledger',
+      response: { summary: { expenseCount: 0, totalSpent: 0 }, pendingChanges: [{ op: 'expense.create', id: pending[0]!.id }] },
+    });
+    expect(ledgerReply.functionResponse.response.pendingChanges[0].summary).toContain('打车');
+    expect(listReply.functionResponse).toMatchObject({ id: 'c2', name: 'list_transactions', response: { matched: 0, pendingChanges: [{ id: pending[0]!.id }] } });
   });
 
   it('proposes changes one by one and lets the model fix a rejected proposal', async () => {
