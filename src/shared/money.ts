@@ -35,3 +35,19 @@ export function splitEvenly(total: Cents, memberIds: readonly string[]): { membe
   const remainder = total - base * n;
   return memberIds.map((memberId, i) => ({ memberId, amount: base + (i < remainder ? 1 : 0) }));
 }
+
+export function splitByWeights(total: Cents, weights: readonly { memberId: string; weight: number }[]): { memberId: string; amount: Cents }[] {
+  const sum = weights.reduce((acc, w) => acc + w.weight, 0);
+  if (sum <= 0) return weights.map(({ memberId }) => ({ memberId, amount: 0 }));
+  const parts = weights.map(({ memberId, weight }, index) => {
+    const base = Math.floor((total * weight) / sum);
+    return { memberId, amount: base, remainder: total * weight - base * sum, index };
+  });
+  let left = total - parts.reduce((acc, p) => acc + p.amount, 0);
+  for (const p of [...parts].sort((a, b) => b.remainder - a.remainder || a.index - b.index)) {
+    if (left <= 0) break;
+    p.amount += 1;
+    left -= 1;
+  }
+  return parts.map(({ memberId, amount }) => ({ memberId, amount }));
+}

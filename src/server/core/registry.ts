@@ -12,7 +12,7 @@ import type {
   SessionRole,
 } from '../../shared/types.ts';
 import { AppError, conflict, notFound } from './errors.ts';
-import { newId } from './ids.ts';
+import { newId } from '../../shared/ids.ts';
 import { first, migrate, type SqlDriver, type SqlValue } from './sql.ts';
 
 const DAY = 86_400_000;
@@ -319,10 +319,12 @@ const toPassphrase = (r: PassphraseRow): Passphrase => ({
 const ACTIVE = '(p.valid_from <= ? AND (p.valid_until IS NULL OR p.valid_until > ?))';
 
 export class RegistryService {
-  constructor(
-    private readonly db: SqlDriver,
-    private readonly emit: (event: RegistryEvent) => void,
-  ) {
+  private readonly db: SqlDriver;
+  private readonly emit: (event: RegistryEvent) => void;
+
+  constructor(db: SqlDriver, emit: (event: RegistryEvent) => void) {
+    this.db = db;
+    this.emit = emit;
     migrate(db, MIGRATIONS);
   }
 

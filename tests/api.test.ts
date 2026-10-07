@@ -1,11 +1,12 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import type { UpgradeWebSocket } from 'hono/ws';
 import { createApp } from '../src/server/app.ts';
 import { loadConfig } from '../src/server/config.ts';
 import { createNodePlatform } from '../src/server/node/platform.ts';
+import { newId } from '../src/shared/ids.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'aapay-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -48,7 +49,7 @@ describe('API (isolated mode)', () => {
   const { call, login, resetCookies } = setup({ ADMIN_AUTH: 'none' });
 
   it('runs the full admin → passphrase → member flow', async () => {
-    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true, recognize: false });
+    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true, assistant: { builtin: false, model: 'gemini-flash-lite-latest' } });
     expect((await call('GET', '/session')).data).toEqual({ session: null, admin: null });
     expect((await call('GET', '/admin/ledgers')).status).toBe(401);
     expect(await login('/oauth/authorize?client_id=x')).toMatchObject({ status: 302, location: '/oauth/authorize?client_id=x' });
@@ -66,27 +67,50 @@ describe('API (isolated mode)', () => {
     expect(joined.status).toBe(200);
     expect(joined.data).toMatchObject({ role: 'member', passphrase: 'Camp2026', ledger: { name: '周末露营' } });
 
-    const a = (await call('POST', '/ledger/members', { name: '阿杰' })).data.event.member;
-    const b = (await call('POST', '/ledger/members', { name: '小雨' })).data.event.member;
-    const bad = await call('POST', '/ledger/expenses', { title: '', amount: 1, payerId: a.id, date: '2026-10-01', participantIds: [a.id] });
-    expect(bad).toEqual({ status: 400, data: { error: '用途不能为空' } });
-    const english = { 'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8' };
-    const badEn = await call('POST', '/ledger/expenses', { title: '', amount: 1, payerId: a.id, date: '2026-10-01', participantIds: [a.id] }, english);
-    expect(badEn.data.error).toBe('Description is required');
-    expect((await call('POST', '/ledger/members', { name: '阿杰' }, english)).data.error).toBe('A member named “阿杰” already exists');
-    expect((await call('POST', '/ledger/members', { name: '阿杰' })).data.error).toBe('成员「阿杰」已存在');
-
-    const msg = (
-      await call(
-        'POST',
-        '/ledger/expenses',
-        { title: '营地', amount: 20000, payerId: a.id, date: '2026-10-01', participantIds: [a.id, b.id] },
-        { 'x-client-id': 'tab-1' },
-      )
+    const changes = (list: unknown[], headers?: Record<string, string>) => call('POST', '/ledger/changes', { changes: list }, headers);
+    const a = { id: newId() };
+    const b = { id: newId() };
+    const joinedMembers = (
+      await changes([
+        { op: 'member.create', id: a.id, member: { name: '阿杰' } },
+        { op: 'member.create', id: b.id, member: { name: '小雨' } },
+      ])
     ).data;
-    expect(msg).toMatchObject({ v: 3, origin: 'tab-1', event: { type: 'expense.saved' } });
+    expect(joinedMembers.messages.map((m: { v: number }) => m.v)).toEqual([1, 2]);
+    expect(joinedMembers.undo).toEqual([
+      { op: 'member.delete', id: b.id },
+      { op: 'member.delete', id: a.id },
+    ]);
 
-    await call('POST', '/ledger/settlements', { fromId: b.id, toId: a.id, amount: 10000, date: '2026-10-02' });
+    const expense = (extra: object) => ({
+      op: 'expense.create',
+      id: newId(),
+      expense: { title: '营地', amount: 20000, payerId: a.id, date: '2026-10-01', category: 'lodging', split: { mode: 'even', memberIds: [a.id, b.id] }, ...extra },
+    });
+    const english = { 'accept-language': 'en-US,en;q=0.9,zh-CN;q=0.8' };
+    expect(await changes([expense({ title: '' })])).toEqual({ status: 400, data: { error: '用途不能为空' } });
+    expect((await changes([expense({ title: '' })], english)).data.error).toBe('Description is required');
+    const uneven = { split: { mode: 'exact', shares: [{ memberId: a.id, amount: 100 }, { memberId: b.id, amount: 100 }] } };
+    expect((await changes([expense(uneven)])).data.error).toBe('各人金额之和需等于总额');
+    expect((await changes([expense(uneven)], english)).data.error).toBe('Shares must add up to the total');
+    expect((await changes([expense({ category: 'snacks' })], english)).data.error).toBe('Invalid category');
+    expect((await changes([], english)).data.error).toBe('Nothing to save');
+    expect((await changes([{ op: 'member.create', id: newId(), member: { name: '阿杰' } }], english)).data.error).toBe('A member named “阿杰” already exists');
+    expect(await changes([{ op: 'member.create', id: a.id, member: { name: '新人' } }])).toEqual({ status: 409, data: { error: '这条记录已存在' } });
+
+    const created = (await changes([expense({})], { 'x-client-id': 'tab-1' })).data;
+    expect(created.messages).toMatchObject([{ v: 3, origin: 'tab-1', event: { type: 'expense.saved', expense: { category: 'lodging' } } }]);
+    expect(created.messages[0]).not.toHaveProperty('via');
+    const assisted = (
+      await call('POST', '/ledger/changes', {
+        changes: [{ op: 'settlement.create', id: newId(), settlement: { fromId: b.id, toId: a.id, amount: 10000, date: '2026-10-02' } }],
+        via: 'assistant',
+      })
+    ).data;
+    expect(assisted.messages[0]).toMatchObject({ v: 4, via: 'assistant', batch: { size: 1 } });
+    const audit = (await call('GET', '/ledger/audit?limit=1')).data.records[0];
+    expect(JSON.parse(audit.payload)).toMatchObject({ via: 'assistant', actor: { kind: 'member', passphrase: 'Camp2026' } });
+
     const snap = (await call('GET', '/ledger')).data;
     expect(snap).toMatchObject({ version: 4, ledger: { id: ledger.id } });
     expect(snap.expenses).toHaveLength(1);
@@ -104,6 +128,37 @@ describe('API (isolated mode)', () => {
 
     await call('DELETE', `/admin/ledgers/${ledger.id}`);
     expect((await call('GET', '/session')).data.session).toBeNull();
+    resetCookies();
+  });
+
+  it('maps rejected change sets to 400, 404 and 409', async () => {
+    await login();
+    const ledger = (await call('POST', '/admin/ledgers', { name: '改动校验' })).data;
+    await call('POST', `/admin/ledgers/${ledger.id}/enter`);
+    const changes = (list: unknown[]) => call('POST', '/ledger/changes', { changes: list });
+    const member = (name: string) => ({ op: 'member.create', id: newId(), member: { name } });
+    const a = newId();
+    const id = newId();
+    const expense = (title: string) => ({ title, amount: 1000, payerId: a, date: '2026-10-01', category: null, split: { mode: 'even', memberIds: [a] } });
+    await changes([{ op: 'member.create', id: a, member: { name: '阿杰' } }, { op: 'expense.create', id, expense: expense('晚饭') }]);
+    const seen = (await call('GET', '/ledger')).data.expenses[0].updatedAt;
+
+    expect(await changes([])).toEqual({ status: 400, data: { error: '没有要保存的改动' } });
+    expect(await changes(Array.from({ length: 101 }, (_, i) => member(`成员${i}`)))).toEqual({ status: 400, data: { error: '一次最多 100 项改动' } });
+    expect(await changes([{ op: 'member.create', id: 'bad id', member: { name: '新人' } }])).toEqual({ status: 400, data: { error: '记录 ID 无效' } });
+    expect(await changes([{ op: 'expense.update', id: newId(), expense: expense('午饭') }])).toEqual({ status: 404, data: { error: '这笔支出不存在或已被删除' } });
+    expect(await changes([{ op: 'expense.delete', id: newId() }])).toEqual({ status: 404, data: { error: '这笔支出不存在或已被删除' } });
+    expect(await changes([{ op: 'member.delete', id: newId() }])).toEqual({ status: 404, data: { error: '成员不存在' } });
+    expect(await changes([{ op: 'settlement.delete', id: newId() }])).toEqual({ status: 404, data: { error: '这笔还款不存在或已被删除' } });
+
+    expect((await changes([{ op: 'expense.update', id, expense: expense('夜宵'), ifUpdatedAt: seen }])).status).toBe(200);
+    expect(await changes([{ op: 'expense.delete', id, ifUpdatedAt: seen }])).toEqual({ status: 409, data: { error: '这笔账刚被改过，请刷新后再试' } });
+    expect(await changes([member('小雨'), { op: 'expense.update', id, expense: expense('早饭'), ifUpdatedAt: seen }])).toMatchObject({ status: 409 });
+    const after = (await call('GET', '/ledger')).data;
+    expect(after.members.map((m: { name: string }) => m.name)).toEqual(['阿杰']);
+    expect(after.expenses[0].title).toBe('夜宵');
+
+    await call('DELETE', `/admin/ledgers/${ledger.id}`);
     resetCookies();
   });
 
@@ -178,121 +233,7 @@ describe('API (shared mode)', () => {
     const { call } = setup({ MODE: 'shared' });
     const { session } = (await call('GET', '/session')).data;
     expect(session).toMatchObject({ role: 'shared', ledger: { id: 'shared' } });
-    expect((await call('POST', '/ledger/members', { name: '室友' })).status).toBe(200);
+    expect((await call('POST', '/ledger/changes', { changes: [{ op: 'member.create', id: newId(), member: { name: '室友' } }] })).status).toBe(200);
     expect((await call('POST', '/join', { code: 'abc' })).status).toBe(404);
-  });
-});
-
-describe('API (bill recognition)', () => {
-  const image = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
-  const completion = (content: unknown) => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(content) }] } }] });
-  afterEach(() => vi.unstubAllGlobals());
-
-  function gemini(reply: (url: string, body: any) => unknown) {
-    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => Response.json(await reply(url, JSON.parse(init.body as string))));
-  }
-
-  async function joined(env: Record<string, string> = { GEMINI_API_KEY: 'test-key' }) {
-    const api = setup({ ADMIN_AUTH: 'none', ...env });
-    await api.login();
-    const ledger = (await api.call('POST', '/admin/ledgers', { name: '识别测试' })).data;
-    await api.call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: 'scan2026', validUntil: null });
-    api.resetCookies();
-    expect((await api.call('POST', '/ledger/recognize', { image })).status).toBe(401);
-    await api.call('POST', '/join', { code: 'scan2026' });
-    return api;
-  }
-
-  it('turns the model reply into drafts in cents', async () => {
-    const seen: { url: string; body: any }[] = [];
-    gemini((url, body) => {
-      seen.push({ url, body });
-      return completion({
-        items: [
-          { title: ' 鑫震源山塘街店 ', amount: -147, date: '2026-10-01' },
-          { title: '滴滴出行', amount: 39.16, date: '2026-10-01' },
-        ],
-      });
-    });
-    const { call } = await joined();
-    expect((await call('GET', '/config')).data.recognize).toBe(true);
-    const res = await call('POST', '/ledger/recognize', { image });
-    expect(res).toEqual({
-      status: 200,
-      data: {
-        items: [
-          { title: '鑫震源山塘街店', amount: 14700, date: '2026-10-01' },
-          { title: '滴滴出行', amount: 3916, date: '2026-10-01' },
-        ],
-      },
-    });
-    expect(seen[0]!.url).toContain('/models/gemini-flash-lite-latest:generateContent');
-    expect(seen[0]!.body.contents[0].parts[0].inlineData).toEqual({ mimeType: 'image/jpeg', data: '/9j/4AAQSkZJRg==' });
-  });
-
-  it('uses DeepSeek when DEEPSEEK_API_KEY is set', async () => {
-    const seen: { url: string; body: any; auth: string }[] = [];
-    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-      seen.push({ url, body: JSON.parse(init.body as string), auth: (init.headers as Record<string, string>).authorization! });
-      return Response.json({
-        choices: [{ message: { content: JSON.stringify({ items: [{ title: '瑞幸咖啡', amount: 16.9, date: '2026-10-04' }] }) } }],
-      });
-    });
-    const { call } = await joined({ DEEPSEEK_API_KEY: 'ds-key', GEMINI_API_KEY: 'test-key' });
-    expect((await call('GET', '/config')).data.recognize).toBe(true);
-    expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
-      items: [{ title: '瑞幸咖啡', amount: 1690, date: '2026-10-04' }],
-    });
-    expect(seen[0]).toMatchObject({
-      url: 'https://api.deepseek.com/chat/completions',
-      auth: 'Bearer ds-key',
-      body: { model: 'deepseek-flash', thinking: { type: 'disabled' }, response_format: { type: 'json_object' } },
-    });
-    expect(seen[0]!.body.messages[1].content[0].image_url.url).toBe(image);
-
-    const other = await joined({ DEEPSEEK_API_KEY: 'ds-key', DEEPSEEK_MODEL: 'deepseek-v4-pro' });
-    await other.call('POST', '/ledger/recognize', { image });
-    expect(seen[1]!.body.model).toBe('deepseek-v4-pro');
-  });
-
-  it('drops fields the model got wrong and rejects non-bills', async () => {
-    let reply: unknown = completion({
-      items: [
-        { title: '外卖', amount: 0, date: '10月4日' },
-        { title: null, amount: null, date: '2026-10-04' },
-      ],
-    });
-    let url = '';
-    gemini((u) => {
-      url = u;
-      return reply;
-    });
-    const { call } = await joined({ GEMINI_API_KEY: 'test-key', GEMINI_MODEL: 'gemini-2.5-flash' });
-    expect((await call('POST', '/ledger/recognize', { image })).data).toEqual({
-      items: [{ title: '外卖', amount: null, date: null }],
-    });
-    expect(url).toContain('/models/gemini-2.5-flash:generateContent');
-    reply = completion({ items: [] });
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(422);
-    reply = completion({ title: '旧格式', amount: 1, date: null });
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
-    reply = { candidates: [{ content: { parts: [{ text: '我看不清' }] } }] };
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
-  });
-
-  it('validates the image, reports model failures and limits the rate', async () => {
-    vi.stubGlobal('fetch', async () => Response.json({ error: { message: 'User location is not supported' } }, { status: 400 }));
-    const { call } = await joined();
-    expect((await call('POST', '/ledger/recognize', { image: 'https://example.com/a.jpg' })).status).toBe(400);
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(502);
-    const statuses = [];
-    for (let i = 0; i < 10; i++) statuses.push((await call('POST', '/ledger/recognize', { image })).status);
-    expect(statuses.at(-1)).toBe(429);
-  });
-
-  it('is unavailable without a Gemini API key', async () => {
-    const { call } = await joined({});
-    expect((await call('GET', '/config')).data.recognize).toBe(false);
-    expect((await call('POST', '/ledger/recognize', { image })).status).toBe(404);
   });
 });

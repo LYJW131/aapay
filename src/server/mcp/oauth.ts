@@ -9,7 +9,8 @@ import type { AuthorizeInfo, McpScope } from '../../shared/types.ts';
 import type { AppEnv } from '../app.ts';
 import { SESSION_COOKIE } from '../auth/cookies.ts';
 import { AppError, notFound } from '../core/errors.ts';
-import { newId, newToken, sha256 } from '../core/ids.ts';
+import { newId } from '../../shared/ids.ts';
+import { newToken, sha256 } from '../core/ids.ts';
 import { OAUTH_TTL, type GrantSource, type IssuedGrant, type NewConnection, type OAuthClient } from '../core/registry.ts';
 import { clientIp, findSession } from '../session.ts';
 import { body } from '../validate.ts';
@@ -22,13 +23,14 @@ const JWT_BEARER = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
 const GRANT_TYPES = ['authorization_code', 'refresh_token'] as const;
 
 export class OAuthError extends Error {
-  constructor(
-    readonly code: string,
-    description: string,
-    readonly status: 400 | 401 | 429 = 400,
-  ) {
+  readonly code: string;
+  readonly status: 400 | 401 | 429;
+
+  constructor(code: string, description: string, status: 400 | 401 | 429 = 400) {
     super(description);
     this.name = 'OAuthError';
+    this.code = code;
+    this.status = status;
   }
 }
 

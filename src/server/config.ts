@@ -1,5 +1,4 @@
 import type { AdminAuthMode, Mode } from '../shared/types.ts';
-import type { Recognizer } from './recognize.ts';
 
 export interface Config {
   mode: Mode;
@@ -13,7 +12,13 @@ export interface Config {
   publicUrl: string | null;
   timezone: string;
   auditKey: Uint8Array | null;
-  recognizer: Recognizer | null;
+  assistant: AssistantConfig | null;
+}
+
+export interface AssistantConfig {
+  apiKey: string | null;
+  model: string;
+  idleTimeout: number;
 }
 
 const MODES = ['isolated', 'shared'] as const;
@@ -61,10 +66,9 @@ export function loadConfig(env: object): Config {
     publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
     timezone: str('TIMEZONE') || 'Asia/Shanghai',
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
-    recognizer: str('DEEPSEEK_API_KEY')
-      ? { provider: 'deepseek', apiKey: str('DEEPSEEK_API_KEY'), model: str('DEEPSEEK_MODEL') || 'deepseek-flash' }
-      : str('GEMINI_API_KEY')
-        ? { provider: 'gemini', apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-flash-lite-latest' }
+    assistant:
+      pick('ASSISTANT', SWITCH, 'enabled') === 'enabled'
+        ? { apiKey: str('GEMINI_API_KEY') || null, model: str('GEMINI_MODEL') || 'gemini-flash-lite-latest', idleTimeout: 45_000 }
         : null,
   };
 

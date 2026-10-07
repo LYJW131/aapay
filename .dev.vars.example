@@ -1,2 +1,4 @@
 # 本地 `npm run dev` 使用（复制为 .dev.vars）。本地没有 Cloudflare Access，直接放行管理员。
 ADMIN_AUTH=none
+# 启用 AI 助手：填写 Gemini API 密钥（可选 GEMINI_MODEL）
+# GEMINI_API_KEY=

@@ -8,4 +8,8 @@ export const LIMITS = {
   ledgerName: 16,
   codeMin: 3,
   codeMax: 24,
+  changes: 100,
+  assistantText: 4000,
+  assistantHistory: 40,
+  assistantImages: 6,
 } as const;

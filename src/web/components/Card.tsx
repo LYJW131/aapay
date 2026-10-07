@@ -24,7 +24,7 @@ export function Card({
 }) {
   const [collapsed, setCollapsed] = usePersistentState(`aapay:card:${id}:collapsed`, defaultCollapsed);
   return (
-    <section className={cn('card animate-fade-in p-5', className)}>
+    <section data-card={id} className={cn('card animate-fade-in p-5', className)}>
       <header
         className="flex min-h-8 cursor-pointer items-center justify-between gap-3 select-none"
         onClick={() => setCollapsed(!collapsed)}

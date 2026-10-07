@@ -371,6 +371,81 @@ describe('OAuth + MCP flow', () => {
   });
 });
 
+describe('MCP ledger tools', () => {
+  it('records categories and custom splits by amount or weight', async () => {
+    const s = setup();
+    await seedLedger(s, '合租', 'flat2026');
+    const token = (await s.connect({ code: 'flat2026' })).access_token;
+    for (const name of ['阿杰', '小雨', 'Tom']) await s.tool(token, 'add_member', { name });
+
+    const guessed = await s.tool(token, 'add_expense', { title: '超市买菜', amount: 90, payer: '阿杰', date: '2026-10-01' });
+    expect(guessed.structuredContent.created).toMatchObject({ category: 'groceries', split: 'even', participants: [{ share: 30 }, { share: 30 }, { share: 30 }] });
+
+    const byAmount = await s.tool(token, 'add_expense', {
+      title: '房租',
+      amount: 3000,
+      payer: '小雨',
+      category: 'housing',
+      shares: [{ member: 'Tom', amount: 1000 }, { member: '阿杰', amount: 1200 }, { member: '小雨', amount: 800 }],
+      date: '2026-10-02',
+    });
+    expect(byAmount.structuredContent.created).toMatchObject({
+      category: 'housing',
+      split: 'custom',
+      participants: [{ name: '阿杰', share: 1200 }, { name: '小雨', share: 800 }, { name: 'Tom', share: 1000 }],
+    });
+
+    const byWeight = await s.tool(token, 'add_expense', {
+      title: '烧烤',
+      amount: 100,
+      payer: 'Tom',
+      shares: [{ member: '阿杰', weight: 2 }, { member: '小雨', weight: 1 }],
+      date: '2026-10-03',
+    });
+    expect(byWeight.structuredContent.created).toMatchObject({ category: 'food', split: 'custom', participants: [{ share: 66.67 }, { share: 33.33 }] });
+
+    const equalWeights = await s.tool(token, 'add_expense', { title: '咖啡', amount: 30, payer: 'Tom', shares: [{ member: 'Tom', weight: 1 }, { member: '小雨', weight: 1 }] });
+    expect(equalWeights.structuredContent.created.split).toBe('even');
+
+    const errors = await Promise.all([
+      s.tool(token, 'add_expense', { title: '错', amount: 10, payer: 'Tom', shares: [{ member: 'Tom', amount: 4 }, { member: '小雨', amount: 5 }] }),
+      s.tool(token, 'add_expense', { title: '错', amount: 10, payer: 'Tom', shares: [{ member: 'Tom', amount: 5 }, { member: '小雨', weight: 1 }] }),
+      s.tool(token, 'add_expense', { title: '错', amount: 10, payer: 'Tom', participants: ['Tom'], shares: [{ member: 'Tom', amount: 10 }] }),
+      s.tool(token, 'add_expense', { title: '错', amount: 10, payer: 'Tom', category: 'snacks' }),
+    ]);
+    expect(errors.map((e) => e.isError)).toEqual([true, true, true, true]);
+    expect(errors[0]!.content[0]!.text).toBe('Shares add up to 9 but the amount is 10');
+    expect(errors[1]!.content[0]!.text).toContain('not a mix');
+    expect(errors[2]!.content[0]!.text).toContain('not both');
+
+    const rent = byAmount.structuredContent.created.id;
+    const renamed = await s.tool(token, 'update_expense', { id: rent, title: '十月房租' });
+    expect(renamed.structuredContent.after).toMatchObject({ title: '十月房租', category: 'housing', split: 'custom', participants: [{ share: 1200 }, { share: 800 }, { share: 1000 }] });
+    const needsShares = await s.tool(token, 'update_expense', { id: rent, amount: 3300 });
+    expect(needsShares).toMatchObject({ isError: true, content: [{ text: expect.stringContaining('custom split') }] });
+    const evened = await s.tool(token, 'update_expense', { id: rent, amount: 3300, participants: ['阿杰', '小雨', 'Tom'], category: 'other' });
+    expect(evened.structuredContent.after).toMatchObject({ amount: 3300, category: 'other', split: 'even', participants: [{ share: 1100 }, { share: 1100 }, { share: 1100 }] });
+
+    const groceries = guessed.structuredContent.created.id;
+    const rescaled = await s.tool(token, 'update_expense', { id: groceries, amount: 120 });
+    expect(rescaled.structuredContent.after).toMatchObject({ category: 'groceries', participants: [{ share: 40 }, { share: 40 }, { share: 40 }] });
+
+    const food = (await s.tool(token, 'list_transactions', { category: 'food' })).structuredContent;
+    expect(food.items.map((i: { title: string }) => i.title).sort()).toEqual(['咖啡', '烧烤']);
+    expect((await s.tool(token, 'list_transactions', { category: 'uncategorized' })).structuredContent.matched).toBe(0);
+
+    const overview = (await s.tool(token, 'get_ledger')).structuredContent;
+    expect(overview.byCategory).toEqual([
+      { category: 'other', label: 'Other', count: 1, total: 3300 },
+      { category: 'food', label: 'Food & drinks', count: 2, total: 130 },
+      { category: 'groceries', label: 'Groceries', count: 1, total: 120 },
+    ]);
+
+    const activity = (await s.tool(token, 'list_activity', { limit: 1 })).structuredContent.entries[0];
+    expect(activity.details).toEqual(['Amount: ¥90.00 → ¥120.00']);
+  });
+});
+
 describe('OAuth request validation', () => {
   const s = setup();
   const register = async (meta: Record<string, unknown>) => s.request('POST', '/oauth/register', { json: meta });

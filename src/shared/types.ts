@@ -1,4 +1,6 @@
 import type { AuditRecord } from './audit.ts';
+import type { Category } from './categories.ts';
+import type { Via } from './changes.ts';
 import type { Cents } from './money.ts';
 
 // 记账日期由客户端按本地时区决定
@@ -23,6 +25,7 @@ export interface Expense {
   amount: Cents;
   payerId: string;
   date: IsoDate;
+  category: Category | null;
   shares: Share[];
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -77,6 +80,8 @@ export type LedgerEvent =
 export interface LiveMessage {
   v?: number;
   origin?: string;
+  via?: Via;
+  batch?: { id: string; size: number };
   event: LedgerEvent;
   at: Timestamp;
   audit?: AuditRecord;
@@ -106,13 +111,7 @@ export interface PublicConfig {
   mode: Mode;
   adminAuth: AdminAuthMode;
   mcp: boolean;
-  recognize: boolean;
-}
-
-export interface BillDraft {
-  title: string | null;
-  amount: Cents | null;
-  date: string | null;
+  assistant: { builtin: boolean; model: string } | null;
 }
 
 export interface AdminIdentity {

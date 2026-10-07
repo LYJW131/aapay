@@ -1,6 +1,5 @@
 import { Plus, ShieldAlert } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
-import { lazy, Suspense, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { toast } from 'sonner';
 import { formatMoney } from '../../../shared/money.ts';
 import type { AdminIdentity, LiveMessage, PublicConfig, SessionInfo, Snapshot } from '../../../shared/types.ts';
@@ -13,10 +12,12 @@ import { ledger } from '../../i18n/ledger.ts';
 import { useMediaQuery, useMinuteTick, usePersistentState } from '../../lib/hooks.ts';
 import { load } from '../../lib/storage.ts';
 import { adminModules } from '../admin/preload.ts';
+import { AssistantDock } from '../assistant/AssistantDock.tsx';
 import { AboutCard } from './About.tsx';
 import { ActivityLog } from './activity.ts';
 import { LedgerContext, type LedgerContextValue } from './context.tsx';
 import { ExpenseForm } from './ExpenseForm.tsx';
+import { inCategory, type CategoryFilter, type LedgerFilters } from './filters.ts';
 import { Header } from './Header.tsx';
 import { MembersCard } from './Members.tsx';
 import { OverviewCard } from './Overview.tsx';
@@ -55,6 +56,91 @@ function describe({ event }: LiveMessage, before: Snapshot, after: Snapshot): st
   }
 }
 
+function summarize(messages: LiveMessage[], before: Snapshot): string | null {
+  const existed = (id: string) => before.expenses.some((e) => e.id === id);
+  const added = new Map<string, number>();
+  const edited = new Set<string>();
+  const deleted = new Set<string>();
+  let settlementsAdded = 0;
+  let settlementsDeleted = 0;
+  let membersAdded = 0;
+  let membersRemoved = 0;
+  for (const { event } of messages) {
+    switch (event.type) {
+      case 'expense.saved':
+        if (existed(event.expense.id)) edited.add(event.expense.id);
+        else added.set(event.expense.id, event.expense.amount);
+        break;
+      case 'expense.deleted':
+        if (added.delete(event.id)) break;
+        edited.delete(event.id);
+        deleted.add(event.id);
+        break;
+      case 'settlement.saved':
+        settlementsAdded++;
+        break;
+      case 'settlement.deleted':
+        settlementsDeleted++;
+        break;
+      case 'member.saved':
+        if (!before.members.some((m) => m.id === event.member.id)) membersAdded++;
+        break;
+      case 'member.deleted':
+        membersRemoved++;
+        break;
+    }
+  }
+  const b = t.batch;
+  const total = [...added.values()].reduce((sum, a) => sum + a, 0);
+  const parts = [
+    added.size > 0 && b.expensesAdded(added.size, formatMoney(total)),
+    edited.size > 0 && b.expensesEdited(edited.size),
+    deleted.size > 0 && b.expensesDeleted(deleted.size),
+    settlementsAdded > 0 && b.settlementsAdded(settlementsAdded),
+    settlementsDeleted > 0 && b.settlementsDeleted(settlementsDeleted),
+    membersAdded > 0 && b.membersAdded(membersAdded),
+    membersRemoved > 0 && b.membersRemoved(membersRemoved),
+  ].filter((p) => p !== false);
+  return parts.length ? b.join(parts) : null;
+}
+
+function remoteNotifier(current: () => Snapshot | null) {
+  const pending = new Map<string, { before: Snapshot; messages: LiveMessage[]; timer: ReturnType<typeof setTimeout> }>();
+  const show = (messages: LiveMessage[], before: Snapshot) => {
+    const after = current();
+    const [first] = messages;
+    if (!after || !first) return;
+    const text = messages.length === 1 ? describe(first, before, after) : summarize(messages, before);
+    if (!text) return;
+    const source = first.via === 'assistant' ? t.assistant : first.origin?.startsWith('mcp:') ? first.origin.slice(4) : null;
+    toast(source ? `${source} · ${text}` : text, { icon: source ? '✨' : '🔔' });
+  };
+  const flush = (id: string) => {
+    const group = pending.get(id);
+    if (!group) return;
+    clearTimeout(group.timer);
+    pending.delete(id);
+    show(group.messages, group.before);
+  };
+  const notify = (message: LiveMessage, before: Snapshot) => {
+    const { batch } = message;
+    if (!batch || batch.size <= 1) return show([message], before);
+    let group = pending.get(batch.id);
+    if (!group) {
+      // 同批消息有漏收（出现版本缺口时改拉快照）就凑不齐，由定时器兜底
+      group = { before, messages: [], timer: setTimeout(() => flush(batch.id), 800) };
+      pending.set(batch.id, group);
+    }
+    group.messages.push(message);
+    if (group.messages.length >= batch.size) flush(batch.id);
+  };
+  const dispose = () => {
+    for (const group of pending.values()) clearTimeout(group.timer);
+    pending.clear();
+  };
+  return { notify, dispose };
+}
+
 export function LedgerPage({
   session,
   initialSnapshot,
@@ -76,18 +162,14 @@ export function LedgerPage({
 }) {
   const prefix = `aapay:${session.ledger.id}:`;
   const [activity] = useState(() => new ActivityLog(prefix));
+  const [remote] = useState(() => remoteNotifier(() => store.getState().snapshot));
   const [store] = useState(
     () =>
       new LedgerStore({
         onAudit: (record, own) => activity.receive(record, own),
         onClosed: (reason) =>
           onExit(reason === 'unauthorized' && session.role === 'admin' ? common.adminExpired : t.closed[reason]),
-        onRemote: (message, before) => {
-          const after = store.getState().snapshot;
-          const text = after && describe(message, before, after);
-          const via = message.origin?.startsWith('mcp:') ? message.origin.slice(4) : null;
-          if (text) toast(via ? `${via} · ${text}` : text, { icon: via ? '✨' : '🔔' });
-        },
+        onRemote: (message, before) => remote.notify(message, before),
       }, initialSnapshot),
   );
   const state = useSyncExternalStore(store.subscribe, store.getState);
@@ -106,13 +188,27 @@ export function LedgerPage({
     return () => {
       clearTimeout(prefetch);
       store.stop();
+      remote.dispose();
     };
-  }, [store, activity]);
+  }, [store, activity, remote]);
 
   const [range, setRange] = usePersistentState<RangeFilter>(`${prefix}range`, { key: 'all' });
   const [memberId, setMemberId] = usePersistentState<string | null>(`${prefix}member`, null);
+  const [category, setCategory] = usePersistentState<CategoryFilter>(`${prefix}category`, null);
+  const [query, setQuery] = useState('');
+  const setFilters = useCallback(
+    (patch: Partial<LedgerFilters>) => {
+      if (patch.range !== undefined) setRange(patch.range);
+      if (patch.memberId !== undefined) setMemberId(patch.memberId);
+      if (patch.category !== undefined) setCategory(patch.category);
+      if (patch.query !== undefined) setQuery(patch.query);
+    },
+    [setRange, setMemberId, setCategory],
+  );
 
   const snapshot = state.snapshot;
+  const validMember = memberId && snapshot?.members.some((m) => m.id === memberId) ? memberId : null;
+  const filters = useMemo<LedgerFilters>(() => ({ range, memberId: validMember, category, query }), [range, validMember, category, query]);
   const context = useMemo<LedgerContextValue | null>(
     () =>
       snapshot && {
@@ -122,19 +218,19 @@ export function LedgerPage({
         activity,
         memberById: new Map(snapshot.members.map((m) => [m.id, m])),
         key: (name) => prefix + name,
-        recognize: config.recognize,
+        filters,
+        setFilters,
       },
-    [snapshot, session, store, activity, prefix, config.recognize],
+    [snapshot, session, store, activity, prefix, filters, setFilters],
   );
 
   const filtered = useMemo(() => {
-    if (!snapshot) return { expenses: [], settlements: [], memberId: null };
+    if (!snapshot) return { expenses: [], settlements: [] };
     const bounds = resolveRange(range);
-    const validMember = memberId && snapshot.members.some((m) => m.id === memberId) ? memberId : null;
     const keep = (r: Snapshot['expenses'][number] | Snapshot['settlements'][number]) =>
-      inRange(r.date, bounds) && (!validMember || involves(r, validMember));
-    return { expenses: snapshot.expenses.filter(keep), settlements: snapshot.settlements.filter(keep), memberId: validMember };
-  }, [snapshot, range, memberId]);
+      inRange(r.date, bounds) && (!validMember || involves(r, validMember)) && inCategory(r, category);
+    return { expenses: snapshot.expenses.filter(keep), settlements: snapshot.settlements.filter(keep) };
+  }, [snapshot, range, validMember, category]);
 
   useEffect(() => {
     if (snapshot) document.title = `${snapshot.ledger.emoji} ${snapshot.ledger.name} · AAPay`;
@@ -155,68 +251,54 @@ export function LedgerPage({
 
   return (
     <LedgerContext value={context}>
-      <Header live={state.live} config={config} admin={!!admin} onSwitch={onSwitch} onLeave={() => onExit()} />
-      <main className="mx-auto max-w-6xl px-4 pt-4 pb-32 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-12">
-        {admin && (
-          <div className="mb-4 lg:col-span-2 lg:mb-0">
-            <Suspense fallback={null}>
-              <AdminCard admin={admin} current={session} onEnter={onSwitch} />
-            </Suspense>
-          </div>
-        )}
-        {!admin && adminExpired && (
-          <div className="card mb-4 flex items-center gap-3 px-5 py-4 lg:col-span-2 lg:mb-0">
-            <ShieldAlert className="size-[18px] shrink-0 text-amber-500" />
-            <span className="flex-1 text-sm">{t.adminExpired}</span>
-            <Button size="sm" variant="soft" onClick={() => window.location.assign('/admin')}>
-              {t.signInAgain}
-            </Button>
-          </div>
-        )}
-        <aside className="space-y-4">
-          {desktop && (
-            <Card id="compose" title={t.addExpense} icon={<Plus />}>
-              <ExpenseForm />
-            </Card>
+      <AssistantDock config={config.assistant} onCompose={() => setComposerOpen(true)}>
+        <Header live={state.live} config={config} admin={!!admin} onSwitch={onSwitch} onLeave={() => onExit()} />
+        <main className="mx-auto max-w-6xl px-4 pt-4 pb-4 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-8">
+          {admin && (
+            <div className="mb-4 lg:col-span-2 lg:mb-0">
+              <Suspense fallback={null}>
+                <AdminCard admin={admin} current={session} onEnter={onSwitch} />
+              </Suspense>
+            </div>
           )}
-          <MembersCard />
-          {desktop && <AboutCard />}
-        </aside>
-        <div className="mt-4 space-y-4 lg:mt-0">
-          <OverviewCard
-            range={range}
-            onRange={setRange}
-            memberId={filtered.memberId}
-            onMember={setMemberId}
-            expenses={filtered.expenses}
-          />
-          <SettlementCard />
-          <Timeline expenses={filtered.expenses} settlements={filtered.settlements} range={range} />
-          {!desktop && <AboutCard />}
-        </div>
-      </main>
-
-      <AnimatePresence>
-        {!desktop && snapshot!.members.length > 0 && (
-          <motion.button
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.6, opacity: 0 }}
-            whileTap={{ scale: 0.92 }}
-            onClick={() => setComposerOpen(true)}
-            className="fixed right-5 bottom-[max(1.25rem,env(safe-area-inset-bottom))] z-20 flex h-14 items-center gap-2 rounded-full bg-gradient-to-br from-brand-500 to-accent-500 pr-6 pl-5 font-semibold text-white shadow-[0_12px_32px_-8px] shadow-brand-500/70"
-          >
-            <Plus className="size-5" strokeWidth={2.5} />
-            {t.addExpense}
-          </motion.button>
+          {!admin && adminExpired && (
+            <div className="card mb-4 flex items-center gap-3 px-5 py-4 lg:col-span-2 lg:mb-0">
+              <ShieldAlert className="size-[18px] shrink-0 text-amber-500" />
+              <span className="flex-1 text-sm">{t.adminExpired}</span>
+              <Button size="sm" variant="soft" onClick={() => window.location.assign('/admin')}>
+                {t.signInAgain}
+              </Button>
+            </div>
+          )}
+          <aside className="space-y-4">
+            {desktop && (
+              <Card id="compose" title={t.addExpense} icon={<Plus />}>
+                <ExpenseForm />
+              </Card>
+            )}
+            <MembersCard />
+            {desktop && <AboutCard />}
+          </aside>
+          <div className="mt-4 space-y-4 lg:mt-0">
+            <OverviewCard
+              range={range}
+              onRange={setRange}
+              memberId={validMember}
+              onMember={setMemberId}
+              expenses={filtered.expenses}
+            />
+            <SettlementCard />
+            <Timeline expenses={filtered.expenses} settlements={filtered.settlements} range={range} />
+            {!desktop && <AboutCard />}
+          </div>
+        </main>
+        {!desktop && (
+          <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title={t.addExpense}>
+            <ExpenseForm onDone={() => setComposerOpen(false)} />
+          </Sheet>
         )}
-      </AnimatePresence>
+      </AssistantDock>
       <WelcomeSheet open={welcomeOpen} onClose={() => setWelcomeOpen(false)} />
-      {!desktop && (
-        <Sheet open={composerOpen} onClose={() => setComposerOpen(false)} title={t.addExpense}>
-          <ExpenseForm onDone={() => setComposerOpen(false)} />
-        </Sheet>
-      )}
     </LedgerContext>
   );
 }

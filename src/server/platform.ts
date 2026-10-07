@@ -11,7 +11,7 @@ export interface LedgerHost {
   destroy(): Promise<void>;
 }
 
-export type RateLimitBucket = 'join' | 'login' | 'recognize';
+export type RateLimitBucket = 'join' | 'login' | 'assistant';
 
 export interface Platform {
   registry: Remote<RegistryService>;

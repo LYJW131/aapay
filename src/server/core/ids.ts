@@ -1,12 +1,3 @@
-const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-
-export function newId(size = 16): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(size));
-  let id = '';
-  for (const b of bytes) id += ALPHABET[b % 62];
-  return id;
-}
-
 export function newToken(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

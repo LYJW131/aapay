@@ -3,23 +3,18 @@ import { getCookie } from 'hono/cookie';
 import { createMiddleware } from 'hono/factory';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
-import {
-  expenseInput,
-  joinInput,
-  ledgerInput,
-  loginInput,
-  memberInput,
-  passphraseInput,
-  recognizeInput,
-  settlementInput,
-} from '../shared/schema.ts';
+import { streamSSE } from 'hono/streaming';
+import { assistantInput, changesInput, joinInput, ledgerInput, loginInput, passphraseInput } from '../shared/schema.ts';
+import { GEMINI_KEY_HEADER, GEMINI_KEY_PATTERN, GEMINI_MODEL_HEADER, GEMINI_MODEL_PATTERN } from '../shared/assistant.ts';
 import { translateError } from '../shared/errors.ts';
 import { localPath } from '../shared/redirect.ts';
 import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, SessionState, Snapshot } from '../shared/types.ts';
 import { adminActions } from './admin.ts';
+import { streamAssistant, UPSTREAM_STATUS, upstreamError } from './ai/assistant.ts';
+import { checkGemini, GeminiError } from './ai/gemini.ts';
 import { authenticateAdmin, externalAdmin, passwordMatches } from './auth/admin.ts';
 import { clearSessionCookie, CONSOLE_COOKIE, SESSION_COOKIE, setSessionCookie } from './auth/cookies.ts';
-import { todayIn, type Config } from './config.ts';
+import type { Config } from './config.ts';
 import { AppError, notFound, unauthorized } from './core/errors.ts';
 import { newToken, sha256 } from './core/ids.ts';
 import {
@@ -33,7 +28,6 @@ import {
 } from './mcp/oauth.ts';
 import { mcpRoutes } from './mcp/server.ts';
 import type { Platform } from './platform.ts';
-import { recognizeBills } from './recognize.ts';
 import { actorOf, clientIp, findSession } from './session.ts';
 import { body, localeOf, query } from './validate.ts';
 
@@ -49,6 +43,20 @@ export type AppEnv = {
     consoleHash: string;
   };
 };
+
+function geminiKey(c: Context<AppEnv>) {
+  const config = c.var.config.assistant;
+  if (!config) throw notFound('assistantDisabled');
+  const own = c.req.header(GEMINI_KEY_HEADER)?.trim();
+  if (!own) {
+    if (!config.apiKey) throw new AppError(400, 'assistantNeedsKey');
+    return { byok: false, gemini: { apiKey: config.apiKey, model: config.model, idleTimeout: config.idleTimeout } };
+  }
+  if (!GEMINI_KEY_PATTERN.test(own)) throw new AppError(400, 'assistantKeyInvalid');
+  const model = c.req.header(GEMINI_MODEL_HEADER)?.trim() || config.model;
+  if (!GEMINI_MODEL_PATTERN.test(model)) throw new AppError(400, 'assistantModelNotFound');
+  return { byok: true, gemini: { apiKey: own, model, idleTimeout: config.idleTimeout } };
+}
 
 const mutation = (c: Context<AppEnv>) => ({ actor: actorOf(c.var.session), origin: c.req.header('x-client-id')?.slice(0, 64) });
 
@@ -94,47 +102,31 @@ const ledgerRoutes = new Hono<AppEnv>()
     const tag = passphrase ? `p:${passphrase.toLowerCase()}` : role;
     return c.var.platform.ledger(ledger.id).connect(c, tag);
   })
-  .post('/members', body(memberInput), async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.createMember(c.req.valid('json'), mutation(c))),
-  )
-  .patch('/members/:id', body(memberInput), async (c) =>
-    c.json(
-      await c.var.platform
-        .ledger(c.var.session.ledger.id)
-        .api.updateMember(c.req.param('id'), c.req.valid('json'), mutation(c)),
-    ),
-  )
-  .delete('/members/:id', async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.deleteMember(c.req.param('id'), mutation(c))),
-  )
-  .post('/expenses', body(expenseInput), async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.createExpense(c.req.valid('json'), mutation(c))),
-  )
-  .patch('/expenses/:id', body(expenseInput), async (c) =>
-    c.json(
-      await c.var.platform
-        .ledger(c.var.session.ledger.id)
-        .api.updateExpense(c.req.param('id'), c.req.valid('json'), mutation(c)),
-    ),
-  )
-  .delete('/expenses/:id', async (c) =>
-    c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.deleteExpense(c.req.param('id'), mutation(c))),
-  )
-  .post('/settlements', body(settlementInput), async (c) =>
-    c.json(
-      await c.var.platform.ledger(c.var.session.ledger.id).api.createSettlement(c.req.valid('json'), mutation(c)),
-    ),
-  )
-  .delete('/settlements/:id', async (c) =>
-    c.json(
-      await c.var.platform.ledger(c.var.session.ledger.id).api.deleteSettlement(c.req.param('id'), mutation(c)),
-    ),
-  )
-  .post('/recognize', body(recognizeInput), async (c) => {
-    const { platform, config, session } = c.var;
-    if (!config.recognizer) throw notFound('recognizeDisabled');
-    if (!(await platform.rateLimit('recognize', session.ledger.id))) throw new AppError(429, 'recognizeRateLimited');
-    return c.json(await recognizeBills(config.recognizer, c.req.valid('json').image, todayIn(config.timezone), localeOf(c)));
+  .post('/changes', body(changesInput), async (c) => {
+    const { changes, via } = c.req.valid('json');
+    return c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.applyChanges(changes, { ...mutation(c), via }));
+  })
+  .post('/assistant', body(assistantInput), async (c) => {
+    const { platform, session } = c.var;
+    const key = geminiKey(c);
+    if (!(await platform.rateLimit('assistant', session.ledger.id))) throw new AppError(429, 'assistantRateLimited');
+    const request = c.req.valid('json');
+    const deps = { ...key, api: platform.ledger(session.ledger.id).api, info: session.ledger, locale: localeOf(c) };
+    c.header('X-Accel-Buffering', 'no');
+    return streamSSE(c, (stream) => streamAssistant(stream, request, deps));
+  })
+  .post('/assistant/key', async (c) => {
+    const { gemini, byok } = geminiKey(c);
+    if (!byok) throw new AppError(400, 'assistantNeedsKey');
+    if (!(await c.var.platform.rateLimit('assistant', c.var.session.ledger.id))) throw new AppError(429, 'assistantRateLimited');
+    try {
+      await checkGemini(gemini);
+    } catch (err) {
+      if (!(err instanceof GeminiError)) throw err;
+      const key = upstreamError(err, true);
+      throw new AppError(UPSTREAM_STATUS[key], key);
+    }
+    return c.json({ model: gemini.model });
   })
   .get('/audit', query(auditQuery), async (c) =>
     c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.auditLog(c.req.valid('query'))),
@@ -217,7 +209,7 @@ function buildApi() {
         mode: c.var.config.mode,
         adminAuth: c.var.config.adminAuth,
         mcp: c.var.config.mcp,
-        recognize: c.var.config.recognizer !== null,
+        assistant: c.var.config.assistant && { builtin: c.var.config.assistant.apiKey !== null, model: c.var.config.assistant.model },
       } satisfies PublicConfig),
     )
     .get('/session', async (c) => {

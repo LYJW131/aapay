@@ -2,6 +2,7 @@ import { ArrowRight, Check, HandCoins, PartyPopper, Plus, Trash2 } from 'lucide-
 import { AnimatePresence } from 'motion/react';
 import { useMemo, useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import { newId } from '../../../shared/ids.ts';
 import { centsToInput, formatMoney, parseAmount } from '../../../shared/money.ts';
 import { LIMITS } from '../../../shared/limits.ts';
 import { computeBalances, suggestTransfers, type Transfer } from '../../../shared/settle.ts';
@@ -13,11 +14,12 @@ import { Collapse, Reveal } from '../../components/Collapse.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { common } from '../../i18n/common.ts';
 import { expense } from '../../i18n/expense.ts';
-import { api, errorMessage } from '../../lib/api.ts';
+import { errorMessage } from '../../lib/api.ts';
 import { cn } from '../../lib/cn.ts';
 import { formatDateTime, today } from '../../lib/dates.ts';
 import { useLedger } from './context.tsx';
 import { MemberChip } from './ExpenseForm.tsx';
+import { undoAction } from './undo.ts';
 
 export function SettlementCard() {
   const { snapshot, memberById, store } = useLedger();
@@ -41,20 +43,11 @@ export function SettlementCard() {
     const key = `${t.fromId}-${t.toId}`;
     setPaying(key);
     try {
-      const message = await store.mutate(
-        api.ledger.settlements.$post({ json: { fromId: t.fromId, toId: t.toId, amount: t.amount, date: today() } }),
-      );
-      const id = message.event.type === 'settlement.saved' ? message.event.settlement.id : null;
+      const { undo } = await store.apply([
+        { op: 'settlement.create', id: newId(), settlement: { fromId: t.fromId, toId: t.toId, amount: t.amount, date: today() } },
+      ]);
       toast.success(expense.recorded(memberById.get(t.fromId)?.name ?? '', memberById.get(t.toId)?.name ?? '', formatMoney(t.amount)), {
-        action: id
-          ? {
-              label: expense.settle.undo,
-              onClick: () =>
-                void store.mutate(api.ledger.settlements[':id'].$delete({ param: { id } })).catch((err) =>
-                  toast.error(errorMessage(err)),
-                ),
-            }
-          : undefined,
+        action: undoAction(store, undo),
       });
     } catch (err) {
       toast.error(errorMessage(err));
@@ -202,8 +195,12 @@ function SettlementForm({ draft, onDone }: { draft: Partial<Transfer>; onDone: (
     if (!cents) return toast.error(expense.settle.invalidAmount);
     setSaving(true);
     try {
-      await store.mutate(api.ledger.settlements.$post({ json: { fromId, toId, amount: cents, date, note: note.trim() || null } }));
-      toast.success(expense.recorded(memberById.get(fromId)?.name ?? '', memberById.get(toId)?.name ?? '', formatMoney(cents)));
+      const { undo } = await store.apply([
+        { op: 'settlement.create', id: newId(), settlement: { fromId, toId, amount: cents, date, note: note.trim() || null } },
+      ]);
+      toast.success(expense.recorded(memberById.get(fromId)?.name ?? '', memberById.get(toId)?.name ?? '', formatMoney(cents)), {
+        action: undoAction(store, undo),
+      });
       onDone();
     } catch (err) {
       toast.error(errorMessage(err));
@@ -268,8 +265,8 @@ export function SettlementDetail({ settlement, onDone }: { settlement: Settlemen
   async function remove() {
     setDeleting(true);
     try {
-      await store.mutate(api.ledger.settlements[':id'].$delete({ param: { id: settlement.id } }));
-      toast.success(expense.settle.deleted);
+      const { undo } = await store.apply([{ op: 'settlement.delete', id: settlement.id }]);
+      toast.success(expense.settle.deleted, { action: undoAction(store, undo) });
       onDone();
     } catch (err) {
       toast.error(errorMessage(err));

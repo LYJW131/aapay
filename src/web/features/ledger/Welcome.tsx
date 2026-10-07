@@ -1,13 +1,14 @@
 import { UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import { newId } from '../../../shared/ids.ts';
 import { LIMITS } from '../../../shared/limits.ts';
 import type { Member } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { connect } from '../../i18n/connect.ts';
-import { api, errorMessage } from '../../lib/api.ts';
+import { errorMessage } from '../../lib/api.ts';
 import { useLedger } from './context.tsx';
 import { MemberChip, saveDefaultPayer } from './ExpenseForm.tsx';
 
@@ -34,8 +35,10 @@ export function WelcomeSheet({ open, onClose }: { open: boolean; onClose: () => 
     setAdding(true);
     setFrozen(snapshot.members);
     try {
-      const message = await store.mutate(api.ledger.members.$post({ json: { name: name.trim() } }));
-      if (message.event.type === 'member.saved') pick(message.event.member.id, message.event.member.name);
+      const id = newId();
+      const member = { name: name.trim() };
+      await store.apply([{ op: 'member.create', id, member }]);
+      pick(id, member.name);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
