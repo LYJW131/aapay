@@ -40,22 +40,14 @@ const BADGE: Record<Kind, string> = {
 };
 
 export function ChangeSetView({ message }: { message: AssistantMessage }) {
-  const [expanded, setExpanded] = useState(false);
   const set = message.changeSet;
   const live = !!set && set.changes.length > 0 && (set.status === 'pending' || set.status === 'applying' || set.status === 'conflict');
   const showGroup = live || message.drafts.length > 0;
-  const compact = live && !expanded && !!set.carried && set.status === 'pending' && message.drafts.length === 0;
   if (!set && !showGroup) return null;
   return (
     <LayoutGroup id={message.id}>
       <AutoHeight className="-m-1 p-1">
-        {compact ? (
-          <Compact set={set} onExpand={() => setExpanded(true)} />
-        ) : showGroup ? (
-          <Group message={message} set={live ? set : null} />
-        ) : (
-          set && <Summary messageId={message.id} set={set} />
-        )}
+        {showGroup ? <Group message={message} set={live ? set : null} /> : set && <Summary messageId={message.id} set={set} />}
         {set && set.dropped.length > 0 && (
           <ul className="mt-2 space-y-1 px-1 text-xs text-zinc-500 dark:text-zinc-400">
             {set.dropped.map((d) => (
@@ -68,29 +60,6 @@ export function ChangeSetView({ message }: { message: AssistantMessage }) {
         )}
       </AutoHeight>
     </LayoutGroup>
-  );
-}
-
-function Compact({ set, onExpand }: { set: ChangeSet; onExpand: () => void }) {
-  const store = useChatStore();
-  const { streaming } = useChatState();
-  const total = changeTotal(set.changes);
-  return (
-    <div className="flex min-h-12 animate-fade-in flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl bg-surface py-1.5 pr-1.5 pl-4 text-[13px] ring-1 ring-zinc-900/6 dark:bg-white/4 dark:ring-white/10">
-      <span className="font-semibold text-zinc-800 dark:text-zinc-100">{t.pendingTitle}</span>
-      <span className="text-zinc-400">·</span>
-      <span className="tabular text-zinc-500 dark:text-zinc-400">{t.items(set.changes.length)}</span>
-      {total > 0 && <span className="text-zinc-400">·</span>}
-      {total > 0 && <span className="tabular font-medium text-zinc-700 dark:text-zinc-200">{t.total(formatMoney(total))}</span>}
-      <span className="ml-auto flex gap-1">
-        <Button size="sm" variant="ghost" onClick={onExpand}>
-          {t.expand}
-        </Button>
-        <Button size="sm" variant="primary" disabled={streaming} icon={<Check className="size-3.5" />} onClick={() => void store.apply()}>
-          {t.confirm}
-        </Button>
-      </span>
-    </div>
   );
 }
 

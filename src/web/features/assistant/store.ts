@@ -36,7 +36,6 @@ export interface ChangeSet {
   dropped: DroppedChange[];
   morph: Record<string, string>;
   fresh: string[];
-  carried?: boolean;
   applied?: number;
   undo?: Change[];
   redo?: Change[];
@@ -247,12 +246,7 @@ export class AssistantStore {
       this.set({ messages: [...this.state.messages, user, { ...reply, state: 'done' as const, needsMe: true }].slice(-MAX_MESSAGES) });
       return;
     }
-    const open = this.pending();
-    if (!carried && open && OPEN.includes(open.set.status)) reply.changeSet = { ...open.set, fresh: [], morph: {}, carried: true };
-    const messages = this.state.messages.map((m) =>
-      m.role === 'assistant' && m.changeSet && OPEN.includes(m.changeSet.status) ? { ...m, changeSet: { ...m.changeSet, status: 'superseded' as const } } : m,
-    );
-    this.set({ messages: [...messages, user, reply].slice(-MAX_MESSAGES), streaming: true });
+    this.set({ messages: [...this.state.messages, user, reply].slice(-MAX_MESSAGES), streaming: true });
     const body = this.request(images);
 
     const controller = new AbortController();
@@ -359,7 +353,6 @@ export class AssistantStore {
             dropped: [...(m.changeSet?.dropped ?? []), ...(event.dropped ?? [])],
             morph,
             fresh,
-            carried: !!m.changeSet?.carried && fresh.length === 0,
           },
         };
       }),
