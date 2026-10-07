@@ -44,7 +44,7 @@ export function ChangeSetView({ message }: { message: AssistantMessage }) {
   const set = message.changeSet;
   const live = !!set && set.changes.length > 0 && (set.status === 'pending' || set.status === 'applying' || set.status === 'conflict');
   const showGroup = live || message.drafts.length > 0;
-  const compact = live && !expanded && set.status === 'pending' && set.fresh.length === 0 && message.drafts.length === 0;
+  const compact = live && !expanded && !!set.carried && set.status === 'pending' && message.drafts.length === 0;
   if (!set && !showGroup) return null;
   return (
     <LayoutGroup id={message.id}>

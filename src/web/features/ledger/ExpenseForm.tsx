@@ -287,7 +287,7 @@ export function ExpenseForm({
             </Button>
           </div>
         </Collapse>
-        <form onSubmit={submit} className="space-y-5 pb-1">
+        <form onSubmit={submit} className="space-y-5 pt-1 pb-1">
           {canSnap && <input ref={fileInput} type="file" accept="image/*" multiple hidden onChange={snap} />}
           <div className="flex items-baseline gap-2 rounded-2xl bg-zinc-100/80 px-4 py-3 ring-brand-500/60 transition focus-within:bg-white focus-within:ring-2 dark:bg-white/6 dark:focus-within:bg-white/8">
             <span className="text-2xl font-semibold text-zinc-400">¥</span>

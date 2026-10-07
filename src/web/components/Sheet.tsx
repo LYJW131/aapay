@@ -27,6 +27,8 @@ export function Sheet({ open, onClose, title, description, children, className }
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
   const [entered, setEntered] = useState(false);
+  const close = useRef(onClose);
+  close.current = onClose;
 
   useEffect(() => {
     if (!open) return setEntered(false);
@@ -40,7 +42,7 @@ export function Sheet({ open, onClose, title, description, children, className }
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
     const { overflow } = document.body.style;
     document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', onKey);
@@ -50,7 +52,7 @@ export function Sheet({ open, onClose, title, description, children, className }
       document.body.style.overflow = overflow;
       window.removeEventListener('keydown', onKey);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   const hidden = desktop ? { opacity: 0, scale: 0.96, y: 12 } : { y: '100%' };
   const shown = desktop ? { opacity: 1, scale: 1, y: 0 } : { y: 0 };

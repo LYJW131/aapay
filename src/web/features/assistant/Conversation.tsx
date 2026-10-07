@@ -61,7 +61,8 @@ export function Conversation({ onSuggest, onNavigate }: { onSuggest: (text: stri
   }, [last]);
 
   return (
-    <div
+    <motion.div
+      layoutScroll
       ref={scroller}
       onWheel={touch}
       onTouchMove={touch}
@@ -83,7 +84,7 @@ export function Conversation({ onSuggest, onNavigate }: { onSuggest: (text: stri
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 

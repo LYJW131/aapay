@@ -208,8 +208,8 @@ function Dock({ onCompose, children }: { onCompose: () => void; children: ReactN
             role={open ? 'dialog' : undefined}
             aria-label={open ? t.title : undefined}
             className="pointer-events-auto relative w-full max-w-[560px] min-w-0"
-            onFocus={() => setFocused(true)}
-            onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && setFocused(false)}
+            onFocus={(e) => e.currentTarget.contains(e.target) && setFocused(true)}
+            onBlur={(e) => e.currentTarget.contains(e.target) && !e.currentTarget.contains(e.relatedTarget as Node | null) && setFocused(false)}
           >
             <AnimatePresence>
               {!open && pendingCount > 0 && (
