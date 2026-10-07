@@ -1,7 +1,6 @@
 services:
   aapay:
-    build: .
-    image: aapay:latest
+    image: ghcr.io/lyjw131/aapay:latest
     container_name: aapay
     restart: unless-stopped
     env_file: .env
