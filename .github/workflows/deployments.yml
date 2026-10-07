@@ -1,0 +1,68 @@
+name: Deployments
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+
+concurrency:
+  group: deployments-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  deployments: write
+  checks: read
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      REF_NAME: ${{ github.ref_name }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Track Workers Builds
+        run: |
+          if [ "$REF_NAME" = "main" ]; then
+            environment=production
+            url=https://aapay.lyjw.dev
+            production=true
+          else
+            environment=preview
+            slug=$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
+            url="https://${slug}-aapay.lyjw.workers.dev"
+            production=false
+          fi
+
+          id=$(jq -n --arg ref "$SHA" --arg env "$environment" --argjson prod $production \
+            '{ref: $ref, environment: $env, auto_merge: false, required_contexts: [], production_environment: $prod, transient_environment: ($prod | not), description: "Workers Builds"}' \
+            | gh api "repos/$REPO/deployments" --input - --jq .id)
+
+          status() {
+            gh api "repos/$REPO/deployments/$id/statuses" \
+              -f state="$1" -f log_url="$2" -f environment_url="$url" >/dev/null
+          }
+
+          status in_progress "$RUN_URL"
+
+          while true; do
+            run=$(gh api "repos/$REPO/commits/$SHA/check-runs" \
+              --jq '[.check_runs[] | select(.app.slug == "cloudflare-workers-and-pages")][0] // empty')
+            if [ -n "$run" ] && [ "$(echo "$run" | jq -r .status)" = completed ]; then
+              break
+            fi
+            sleep 15
+          done
+
+          log=$(echo "$run" | jq -r .details_url)
+          if [ "$(echo "$run" | jq -r .conclusion)" = success ]; then
+            status success "$log"
+          else
+            status failure "$log"
+            exit 1
+          fi
