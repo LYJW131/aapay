@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { BuildInfo } from '../../shared/types.ts';
 
 export const BUILD = __BUILD__;
-export const REPO_URL = 'https://github.com/LYJW131/aapay';
+export const REPO_URL = BUILD.repo;
 
 const INTERVAL = 30 * 60_000;
 const MIN_GAP = 60_000;

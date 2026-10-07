@@ -4,6 +4,7 @@
   "main": "src/server/cloudflare/worker.ts",
   "compatibility_date": "2026-09-30",
   "observability": { "enabled": true },
+  "preview_urls": true,
 
   // 需与 src/server/app.ts 的 SERVER_PATHS 一致；其余路径由静态资源返回（SPA 回退，包括 /oauth/authorize）
   "assets": {
@@ -25,20 +26,13 @@
     { "name": "ASSISTANT_LIMITER", "namespace_id": "4104", "simple": { "limit": 30, "period": 60 } }
   ],
 
+  // 自定义域名与其余变量在构建时从环境变量注入（见 vite.config.ts 与 README「部署到 Cloudflare」），不要把部署信息写在这里
   "vars": {
     "MODE": "isolated",
-    "ADMIN_AUTH": "access",
-    "ACCESS_TEAM_DOMAIN": "lyjw2007.cloudflareaccess.com",
-    "ACCESS_AUD": "b01dccf26beb9889b2e29d57e9680ebff6268ab9bd4da1b27b9d8eb0952bbb83",
-    "ADMIN_EMAILS": "lyjw2007@gmail.com"
+    "ADMIN_AUTH": "password"
   },
 
-  "routes": [{ "pattern": "aapay.lyjw.dev", "custom_domain": true }],
-  "workers_dev": false,
-  "preview_urls": true,
-
-  // 非 v2 分支由 Workers Builds 跑 wrangler preview：每个 Preview 的 DO 存储独立，与生产数据隔离。
-  // *-aapay.lyjw.workers.dev 整个域名在 Access 应用「AAPay Previews」后面，ACCESS_AUD 用的是那个应用的
+  // wrangler preview 不继承顶层的绑定与变量；每个 Preview 的 DO 存储独立，与生产数据隔离
   "previews": {
     "durable_objects": {
       "bindings": [
@@ -53,10 +47,7 @@
     ],
     "vars": {
       "MODE": "isolated",
-      "ADMIN_AUTH": "access",
-      "ACCESS_TEAM_DOMAIN": "lyjw2007.cloudflareaccess.com",
-      "ACCESS_AUD": "76c8c6b24d58e44c36849899271c9f26fbd152ca0a651ffd4d05f57771d16377",
-      "ADMIN_EMAILS": "lyjw2007@gmail.com"
+      "ADMIN_AUTH": "password"
     }
   }
 }

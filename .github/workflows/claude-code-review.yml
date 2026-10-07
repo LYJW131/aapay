@@ -12,6 +12,8 @@ on:
 
 jobs:
   claude-review:
+    # 来自 fork 的 PR 拿不到仓库密钥
+    if: github.event.pull_request.head.repo.full_name == github.repository
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
