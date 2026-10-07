@@ -10,7 +10,7 @@ AAPay：多人记账与结算。一套 TypeScript 代码同时部署到 Cloudfla
 - 不保留兼容行为：改了接口、数据结构、路由或交互，就直接替换旧实现并删除旧路径，不加兼容分支、旧格式解析、废弃别名或 fallback。线上数据的迁移不属于兼容行为，见下文「数据迁移」。
 - 用中文和用户交流；提交信息用中文，前缀 `feat:` / `fix:` / `refactor:` / `docs:`。
 - 推送 `main` 分支即发布生产：Cloudflare Workers Builds 会对 `main` 自动执行 `npm run typecheck && npm test && npm run build`，通过后 `npx wrangler deploy` 到 https://aapay.lyjw.dev（只改 `*.md`、`docs/` 不触发）。所以推送前必须在本地跑通类型检查和测试。
-- 推送其他分支会构建 Worker Preview（`npx wrangler preview`），地址 `<分支名>-aapay.lyjw.workers.dev`，整个域名由 Access 应用「AAPay Previews」保护。Preview 的配置写在 `wrangler.jsonc` 的 `previews` 块（不继承顶层 vars）。`wrangler preview` 每次部署只带配置里的变量，不会沿用之前设置的密钥，所以 Preview 的部署命令用 `--secrets-file` 从构建密钥 `PREVIEW_AUDIT_SIGNING_KEY` 注入 `AUDIT_SIGNING_KEY`，所有 Preview 共用这一把。每个 Preview 的 DO 存储独立、与生产数据隔离。Preview 不会注入 `GEMINI_API_KEY`，所以 AI 助手在 Preview 上是关闭的；要在 Preview 上测试，需要把它加进构建密钥和 `--secrets-file` 的内容。
+- 推送其他分支会构建 Worker Preview（`npx wrangler preview`），地址 `<分支名>-aapay.lyjw.workers.dev`，整个域名由 Access 应用「AAPay Previews」保护。Preview 的配置写在 `wrangler.jsonc` 的 `previews` 块（不继承顶层 vars）。`wrangler preview` 每次部署只带配置里的变量，不会沿用之前设置的密钥，所以 Preview 的部署命令用 `--secrets-file` 从构建密钥注入：`PREVIEW_AUDIT_SIGNING_KEY` → `AUDIT_SIGNING_KEY`，`PREVIEW_GEMINI_API_KEY` → `GEMINI_API_KEY`，所有 Preview 共用。每个 Preview 的 DO 存储独立、与生产数据隔离。
 
 <EXTREMELY-IMPORTANT>
 
