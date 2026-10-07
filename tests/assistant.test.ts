@@ -106,7 +106,7 @@ describe('assistant endpoint', () => {
     ]);
 
     const body = requests[0]!.body;
-    expect(requests[0]!.url).toContain('/models/gemini-3.5-flash-lite:streamGenerateContent?alt=sse');
+    expect(requests[0]!.url).toContain('/models/gemini-flash-lite-latest:streamGenerateContent?alt=sse');
     const system = body.systemInstruction.parts[0].text as string;
     expect(system).toContain(`"${ledger.name}"`);
     expect(system).toContain('"老王"');
@@ -561,7 +561,7 @@ describe('assistant endpoint', () => {
     const disabled = await off.ask({});
     expect(disabled.res.status).toBe(404);
     expect(JSON.parse(disabled.raw)).toEqual({ error: '未启用 AI 助手' });
-    expect(await (await setup()).json('GET', '/config')).toMatchObject({ assistant: { builtin: true, model: 'gemini-3.5-flash-lite' } });
+    expect(await (await setup()).json('GET', '/config')).toMatchObject({ assistant: { builtin: true, model: 'gemini-flash-lite-latest' } });
   });
 });
 
@@ -582,13 +582,13 @@ describe('bring your own Gemini key', () => {
     const { ask } = await setup();
     await ask({}, 'zh-CN', { 'x-gemini-model': 'gemini-9-pro' });
     expect(requests[0]!.headers['x-goog-api-key']).toBe('test-key');
-    expect(requests[0]!.url).toContain('/models/gemini-3.5-flash-lite:');
+    expect(requests[0]!.url).toContain('/models/gemini-flash-lite-latest:');
   });
 
   it('asks for a key when the server has none', async () => {
     stubGemini([]);
     const { ask, json } = await setup({});
-    expect((await json('GET', '/config')).assistant).toEqual({ builtin: false, model: 'gemini-3.5-flash-lite' });
+    expect((await json('GET', '/config')).assistant).toEqual({ builtin: false, model: 'gemini-flash-lite-latest' });
     const { res, raw } = await ask({});
     expect(res.status).toBe(400);
     expect(JSON.parse(raw)).toEqual({ error: '请先填写你的 Gemini API Key' });
@@ -622,8 +622,8 @@ describe('bring your own Gemini key', () => {
     const requests = stubGemini([new Response('{}'), new Response('{}', { status: 404 })]);
     const { request } = await setup({});
     const ok = await request('POST', '/ledger/assistant/key', undefined, { 'x-gemini-key': OWN });
-    expect(await ok.json()).toEqual({ model: 'gemini-3.5-flash-lite' });
-    expect(requests[0]!.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite');
+    expect(await ok.json()).toEqual({ model: 'gemini-flash-lite-latest' });
+    expect(requests[0]!.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest');
     expect(requests[0]!.headers['x-goog-api-key']).toBe(OWN);
     const missing = await request('POST', '/ledger/assistant/key', undefined, { 'x-gemini-key': OWN, 'x-gemini-model': 'gemini-nope' });
     expect(missing.status).toBe(400);

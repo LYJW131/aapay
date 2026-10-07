@@ -68,7 +68,7 @@ export function loadConfig(env: object): Config {
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
     assistant:
       pick('ASSISTANT', SWITCH, 'enabled') === 'enabled'
-        ? { apiKey: str('GEMINI_API_KEY') || null, model: str('GEMINI_MODEL') || 'gemini-3.5-flash-lite', idleTimeout: 45_000 }
+        ? { apiKey: str('GEMINI_API_KEY') || null, model: str('GEMINI_MODEL') || 'gemini-flash-lite-latest', idleTimeout: 45_000 }
         : null,
   };
 

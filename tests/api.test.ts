@@ -49,7 +49,7 @@ describe('API (isolated mode)', () => {
   const { call, login, resetCookies } = setup({ ADMIN_AUTH: 'none' });
 
   it('runs the full admin → passphrase → member flow', async () => {
-    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true, assistant: { builtin: false, model: 'gemini-3.5-flash-lite' } });
+    expect((await call('GET', '/config')).data).toEqual({ mode: 'isolated', adminAuth: 'none', mcp: true, assistant: { builtin: false, model: 'gemini-flash-lite-latest' } });
     expect((await call('GET', '/session')).data).toEqual({ session: null, admin: null });
     expect((await call('GET', '/admin/ledgers')).status).toBe(401);
     expect(await login('/oauth/authorize?client_id=x')).toMatchObject({ status: 302, location: '/oauth/authorize?client_id=x' });

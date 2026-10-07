@@ -141,7 +141,7 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 | `AUDIT_SIGNING_KEY` | 可选，操作动态的 Ed25519 签名私钥（32 字节随机数的 base64url，可用 `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"` 生成；Cloudflare 上请用 secret）。不填则只有哈希链没有签名；设置后不要更换，否则成员的浏览器会提示签名公钥变化 | — |
 | `ASSISTANT` | `enabled` / `disabled`：是否开放 AI 助手（对话记账、查账、识别账单图片） | `enabled` |
 | `GEMINI_API_KEY` | 可选，站点提供的 Gemini API 密钥（Cloudflare 上用 secret 配置）；不填时用户要在 AI 助手设置里填自己的 Key（只存在其浏览器里，按请求经服务端转交 Gemini，不落库） | — |
-| `GEMINI_MODEL` | 可选，AI 助手默认的 Gemini 模型；用户自带 Key 时可以改用别的模型 | `gemini-3.5-flash-lite` |
+| `GEMINI_MODEL` | 可选，AI 助手默认的 Gemini 模型；用户自带 Key 时可以改用别的模型 | `gemini-flash-lite-latest` |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
 
 管理员认证方式：
