@@ -79,5 +79,7 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # 个人版拒绝 provenance 的 application/vnd.oci.empty.v1+json
+          provenance: false
           cache-from: type=gha
           cache-to: type=gha,mode=max

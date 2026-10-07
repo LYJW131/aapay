@@ -10,7 +10,7 @@ AAPay：多人记账与结算。一套 TypeScript 代码同时部署到 Cloudfla
 - 不保留兼容行为：改了接口、数据结构、路由或交互，就直接替换旧实现并删除旧路径，不加兼容分支、旧格式解析、废弃别名或 fallback。线上数据的迁移不属于兼容行为，见下文「数据迁移」。
 - 用中文和用户交流；提交信息用中文，前缀 `feat:` / `fix:` / `refactor:` / `docs:`。
 - 推送 `main` 分支即发布生产：Cloudflare Workers Builds 会对 `main` 自动执行 `npm run typecheck && npm test && npm run build`，通过后 `npx wrangler deploy` 到 https://aapay.lyjw.dev（只改 `*.md`、`docs/` 不触发）。所以推送前必须在本地跑通类型检查和测试。
-- 推送 `main` 或 `v*` 标签还会触发 `.github/workflows/image.yml`：类型检查与测试通过后构建 `linux/amd64` + `linux/arm64` 镜像，同时推到 `ghcr.io/lyjw131/aapay` 和阿里云 ACR 个人版（杭州）`crpi-762preaq1jtfja6k.cn-hangzhou.personal.cr.aliyuncs.com/lyjw131/aapay`（`main` 为 `latest`，标签为语义化版本）。ACR 登录用仓库密钥 `ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD`，密码是控制台「访问凭证」里的 Registry 密码。构建阶段用 `--platform=$BUILDPLATFORM` 在原生架构上跑，产物是纯 JS，只有运行阶段按目标架构打包。
+- 推送 `main` 或 `v*` 标签还会触发 `.github/workflows/image.yml`：类型检查与测试通过后构建 `linux/amd64` + `linux/arm64` 镜像，同时推到 `ghcr.io/lyjw131/aapay` 和阿里云 ACR 个人版（杭州）`crpi-762preaq1jtfja6k.cn-hangzhou.personal.cr.aliyuncs.com/lyjw131/aapay`（`main` 为 `latest`，标签为语义化版本）。ACR 登录用仓库密钥 `ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD`，密码是控制台「访问凭证」里的 Registry 密码。构建关掉 provenance：个人版拒绝 attestation 的 `application/vnd.oci.empty.v1+json`。构建阶段用 `--platform=$BUILDPLATFORM` 在原生架构上跑，产物是纯 JS，只有运行阶段按目标架构打包。
 - 推送其他分支会构建 Worker Preview（`npx wrangler preview`），地址 `<分支名>-aapay.lyjw.workers.dev`，整个域名由 Access 应用「AAPay Previews」保护。Preview 的配置写在 `wrangler.jsonc` 的 `previews` 块（不继承顶层 vars）。`wrangler preview` 每次部署只带配置里的变量，不会沿用之前设置的密钥，所以 Preview 的部署命令用 `--secrets-file` 从构建密钥注入：`PREVIEW_AUDIT_SIGNING_KEY` → `AUDIT_SIGNING_KEY`，`PREVIEW_GEMINI_API_KEY` → `GEMINI_API_KEY`，所有 Preview 共用。每个 Preview 的 DO 存储独立、与生产数据隔离。
 
 <EXTREMELY-IMPORTANT>
