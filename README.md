@@ -116,9 +116,9 @@ cp .env.example .env    # 按需修改，至少设置管理员认证方式
 docker compose up -d
 ```
 
-`docker-compose.yml` 直接拉取 `ghcr.io/lyjw131/aapay:latest`（`linux/amd64` 与 `linux/arm64`），升级时运行 `docker compose pull && docker compose up -d`。服务监听 `8787`，数据保存在 `./data`（`registry.db` + `ledgers/*.db`）。镜像基于 `node:24-alpine`，使用 Node 内置的 `node:sqlite`，不含任何原生依赖。
+`docker-compose.yml` 直接拉取 `ghcr.io/lyjw131/aapay:latest`（`linux/amd64` 与 `linux/arm64`），升级时运行 `docker compose pull && docker compose up -d`。国内拉取同一份镜像用 `crpi-762preaq1jtfja6k.cn-hangzhou.personal.cr.aliyuncs.com/lyjw131/aapay:latest`（公开仓库，不用登录）。服务监听 `8787`，数据保存在 `./data`（`registry.db` + `ledgers/*.db`）。镜像基于 `node:24-alpine`，使用 Node 内置的 `node:sqlite`，不含任何原生依赖。
 
-镜像由 `.github/workflows/image.yml` 构建：推送 `main` 时先跑类型检查与测试，通过后发布 `latest` 与 `sha-<提交>`；推送 `v1.2.3` 这样的标签时发布 `1.2.3`、`1.2`、`1`。想用自己改过的代码，可以 `docker build -t aapay .` 后把 compose 里的 `image` 改成 `aapay`。
+镜像由 `.github/workflows/image.yml` 构建：推送 `main` 时先跑类型检查与测试，通过后把同一组标签发布到 GHCR 和阿里云 ACR；`main` 为 `latest` 与 `sha-<提交>`，`v1.2.3` 这样的标签为 `1.2.3`、`1.2`、`1`。想用自己改过的代码，可以 `docker build -t aapay .` 后把 compose 里的 `image` 改成 `aapay`。
 
 不想用 Docker 也可以直接运行：
 
