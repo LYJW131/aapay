@@ -102,6 +102,7 @@ export type AdminAuthMode = 'access' | 'password' | 'proxy' | 'none' | 'disabled
 
 export interface BuildInfo {
   runtime: 'cloudflare' | 'node';
+  repo: string;
   commit: string;
   message: string;
   builtAt: Timestamp;

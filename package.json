@@ -3,8 +3,21 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "AAPay — 多人记账与结算，支持 Cloudflare Workers 与 Docker 部署",
+  "description": "多人记账与结算：口令加入、实时同步、AI 助手与远程 MCP，一键部署到 Cloudflare Workers 或 Docker",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LYJW131/aapay.git"
+  },
+  "bugs": "https://github.com/LYJW131/aapay/issues",
+  "keywords": [
+    "expense-splitting",
+    "splitwise",
+    "cloudflare-workers",
+    "durable-objects",
+    "mcp",
+    "self-hosted"
+  ],
   "engines": {
     "node": ">=22.13"
   },
@@ -52,5 +65,18 @@
     "vite": "^8.3.2",
     "vitest": "^5.0.3",
     "wrangler": "^4.146.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "MODE": {
+        "description": "`isolated`：多账本，凭口令加入（推荐）；`shared`：单一公共账本，打开即用，没有管理后台"
+      },
+      "ADMIN_AUTH": {
+        "description": "管理员登录方式。一键部署用 `password`，配合下面的 `ADMIN_PASSWORD`；也可以之后改成 `access`（Cloudflare Access），见 [README](https://github.com/LYJW131/aapay#部署到-cloudflare)"
+      },
+      "ADMIN_PASSWORD": {
+        "description": "管理员密码，至少 8 位。部署后打开 `/admin` 用它登录，创建账本和分享口令"
+      }
+    }
   }
 }

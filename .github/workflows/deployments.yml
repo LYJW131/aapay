@@ -17,6 +17,8 @@ permissions:
 
 jobs:
   track:
+    # 仓库变量 PRODUCTION_URL（如 https://aapay.example.com）与 PREVIEW_HOST（如 aapay.<子域>.workers.dev）由部署者设置，没设置时跳过
+    if: vars.PRODUCTION_URL != ''
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -25,17 +27,19 @@ jobs:
       SHA: ${{ github.sha }}
       REF_NAME: ${{ github.ref_name }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+      PREVIEW_HOST: ${{ vars.PREVIEW_HOST }}
     steps:
       - name: Track Workers Builds
         run: |
           if [ "$REF_NAME" = "main" ]; then
             environment=production
-            url=https://aapay.lyjw.dev
+            url=$PRODUCTION_URL
             production=true
           else
             environment=preview
             slug=$(echo "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g')
-            url="https://${slug}-aapay.lyjw.workers.dev"
+            url=${PREVIEW_HOST:+"https://${slug}-${PREVIEW_HOST}"}
             production=false
           fi
 
@@ -45,7 +49,7 @@ jobs:
 
           status() {
             gh api "repos/$REPO/deployments/$id/statuses" \
-              -f state="$1" -f log_url="$2" -f environment_url="$url" >/dev/null
+              -f state="$1" -f log_url="$2" ${url:+-f environment_url="$url"} >/dev/null
           }
 
           status in_progress "$RUN_URL"
