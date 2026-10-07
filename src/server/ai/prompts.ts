@@ -111,7 +111,7 @@ export function extractionPrompt(today: string, locale: Locale): string {
     }.`,
     '- amount: the amount actually paid, in yuan, positive: after discounts and coupons, not the list price, a subtotal or the price of a single item.',
     `- date: the date of the expense, YYYY-MM-DD. If the image shows no year, infer it from today (${today}). Use null when no date is visible.`,
-    `- category: one of ${CATEGORIES.join(', ')} (food: food & drinks, groceries: supermarket & daily necessities, transport, lodging, fun: entertainment, shopping, housing: rent & utilities, health, gifts). Use other when unsure.`,
+    `- category: one of ${CATEGORIES.join(', ')} (food: food & drinks, groceries: supermarket & daily necessities, transport, lodging, fun: entertainment, shopping, housing: rent & utilities). Use other when unsure.`,
     'Only extract expenses: skip income, refunds and incoming transfers; monthly or category totals and statistics are not transactions either.',
     'A receipt or an order counts as one expense; do not split it into items. Output them from top to bottom as they appear in the image.',
     `When there are no expenses or the image is unreadable, items is an empty array. At most ${MAX_EXTRACTED} items.`,

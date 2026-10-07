@@ -11,8 +11,6 @@ const TINTS: Record<Category, string> = {
   fun: 'bg-fuchsia-100 dark:bg-fuchsia-400/15',
   shopping: 'bg-pink-100 dark:bg-pink-400/15',
   housing: 'bg-amber-100 dark:bg-amber-400/15',
-  health: 'bg-emerald-100 dark:bg-emerald-400/15',
-  gifts: 'bg-rose-100 dark:bg-rose-400/15',
   other: 'bg-slate-100 dark:bg-slate-400/15',
 };
 

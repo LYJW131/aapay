@@ -1,5 +1,5 @@
 import type { AuditAction, AuditActor, AuditExpense } from './audit.ts';
-import { CATEGORY_EMOJI, CATEGORY_LABELS, type Category } from './categories.ts';
+import { CATEGORY_EMOJI, CATEGORY_LABELS, isCategory } from './categories.ts';
 import type { Via } from './changes.ts';
 import { defineMessages, type Locale } from './i18n.ts';
 import { formatMoney } from './money.ts';
@@ -117,8 +117,9 @@ export function actorLabel(actor: AuditActor, locale: Locale, via?: Via): string
   return via ? `${label} · ${viaLabel(via, locale)}` : label;
 }
 
-export function categoryLabel(category: Category | null | undefined, locale: Locale) {
-  return category ? `${CATEGORY_EMOJI[category]} ${CATEGORY_LABELS[locale][category]}` : TEXT[locale].uncategorized;
+export function categoryLabel(category: string | null | undefined, locale: Locale) {
+  if (!category) return TEXT[locale].uncategorized;
+  return isCategory(category) ? `${CATEGORY_EMOJI[category]} ${CATEGORY_LABELS[locale][category]}` : category;
 }
 
 const splitText = (t: (typeof TEXT)[Locale], e: AuditExpense) =>

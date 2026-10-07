@@ -78,6 +78,9 @@ export const MIGRATIONS = [
   `
   ALTER TABLE expenses ADD COLUMN category TEXT;
   `,
+  `
+  UPDATE expenses SET category = 'other' WHERE category IN ('health', 'gifts');
+  `,
 ];
 
 export interface MutationContext {

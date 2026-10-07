@@ -23,8 +23,8 @@ describe('categories', () => {
     expect(guessCategory('淘宝')).toBe('shopping');
     expect(guessCategory('十月房租')).toBe('housing');
     expect(guessCategory('电费')).toBe('housing');
-    expect(guessCategory('挂号')).toBe('health');
-    expect(guessCategory('份子钱')).toBe('gifts');
+    expect(guessCategory('挂号')).toBeNull();
+    expect(guessCategory('份子钱')).toBeNull();
     expect(guessCategory('杂项')).toBeNull();
     expect(guessCategory('  ')).toBeNull();
   });

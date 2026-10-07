@@ -484,4 +484,15 @@ describe('ledger migration', () => {
     expect(service.snapshot().expenses[0]!.category).toBe('food');
     expect(verifyAudit(records(), null, null)).toMatchObject({ ok: true, checkpoint: { seq: 4 } });
   });
+
+  it('moves expenses filed under removed categories to other', () => {
+    const db = openSqlite(join(dir, `${crypto.randomUUID()}.db`));
+    migrate(db, MIGRATIONS.slice(0, 3));
+    db.run("INSERT INTO members (id, name, avatar, created_at) VALUES ('member000001', '阿杰', '🦊', 1)");
+    for (const [id, category] of [['expense00001', 'health'], ['expense00002', 'gifts'], ['expense00003', 'food']]) {
+      db.run("INSERT INTO expenses (id, title, amount, payer_id, date, created_at, updated_at, category) VALUES (?, 'x', 100, 'member000001', '2026-10-01', 1, 1, ?)", id!, category!);
+    }
+    const categories = new LedgerService(db, () => undefined).snapshot().expenses.map((e) => [e.id, e.category]);
+    expect(Object.fromEntries(categories)).toEqual({ expense00001: 'other', expense00002: 'other', expense00003: 'food' });
+  });
 });
