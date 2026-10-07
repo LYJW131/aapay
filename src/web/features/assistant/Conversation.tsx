@@ -219,7 +219,6 @@ function Steps({ steps }: { steps: Step[] }) {
       {stepGroups(steps).map((g) => (
         <motion.li
           key={g.label}
-          layout="position"
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           className={cn(
