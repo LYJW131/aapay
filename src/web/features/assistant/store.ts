@@ -245,7 +245,12 @@ export class AssistantStore {
       this.set({ messages: [...this.state.messages, user, { ...reply, state: 'done' as const, needsMe: true }].slice(-MAX_MESSAGES) });
       return;
     }
-    this.set({ messages: [...this.state.messages, user, reply].slice(-MAX_MESSAGES), streaming: true });
+    const open = this.pending();
+    if (!carried && open && OPEN.includes(open.set.status)) reply.changeSet = { ...open.set, fresh: [], morph: {} };
+    const messages = this.state.messages.map((m) =>
+      m.role === 'assistant' && m.changeSet && OPEN.includes(m.changeSet.status) ? { ...m, changeSet: { ...m.changeSet, status: 'superseded' as const } } : m,
+    );
+    this.set({ messages: [...messages, user, reply].slice(-MAX_MESSAGES), streaming: true });
     const body = this.request(images);
 
     const controller = new AbortController();
@@ -332,8 +337,8 @@ export class AssistantStore {
 
   private receivePending(id: string, event: Extract<AssistantEvent, { type: 'pending' }>) {
     const previous = this.pending();
-    const before = new Set((this.find(id)?.changeSet ?? previous?.set)?.changes.map(changeKey) ?? []);
-    const fresh = event.changes.map(changeKey).filter((k) => !before.has(k));
+    const before = new Map((this.find(id)?.changeSet ?? previous?.set)?.changes.map((c) => [changeKey(c), JSON.stringify(c)]) ?? []);
+    const fresh = event.changes.filter((c) => before.get(changeKey(c)) !== JSON.stringify(c)).map(changeKey);
     this.set({
       messages: this.state.messages.map((m) => {
         if (m.role !== 'assistant') return m;
