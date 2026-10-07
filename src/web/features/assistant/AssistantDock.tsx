@@ -227,10 +227,9 @@ function Dock({ onCompose, children }: { onCompose: () => void; children: ReactN
                 </motion.button>
               )}
             </AnimatePresence>
-            <span
-              aria-hidden
-              className={cn('ai-glow ai-halo pointer-events-none absolute -inset-[14px] rounded-[40px] opacity-0 transition-opacity duration-700', glowing && 'opacity-40 dark:opacity-35')}
-            />
+            <span aria-hidden className={cn('ai-halo pointer-events-none absolute -inset-12 opacity-0 transition-opacity duration-700', glowing && 'opacity-70 dark:opacity-55')}>
+              <span className="ai-glow absolute inset-11 rounded-[30px] blur-[14px]" />
+            </span>
             <span aria-hidden className={cn('ai-glow ai-ring pointer-events-none absolute -inset-[1.5px] z-10 rounded-[27.5px] opacity-0 transition-opacity duration-500', glowing && 'opacity-100')} />
             <div
               className={cn(

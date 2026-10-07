@@ -250,8 +250,7 @@
 }
 
 @utility ai-halo {
-  padding: 14px;
-  filter: blur(12px);
+  padding: 56px;
   mask:
     linear-gradient(#000 0 0) content-box exclude,
     linear-gradient(#000 0 0);
