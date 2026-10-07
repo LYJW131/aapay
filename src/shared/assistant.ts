@@ -2,6 +2,11 @@ import type { Category } from './categories.ts';
 import type { Change } from './changes.ts';
 import type { IsoDate } from './types.ts';
 
+export const GEMINI_KEY_HEADER = 'x-gemini-key';
+export const GEMINI_MODEL_HEADER = 'x-gemini-model';
+export const GEMINI_KEY_PATTERN = /^[\w.-]{20,200}$/;
+export const GEMINI_MODEL_PATTERN = /^[a-z0-9][a-z0-9.-]{0,63}$/;
+
 export interface AssistantTurn {
   role: 'user' | 'assistant';
   text: string;

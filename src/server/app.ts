@@ -5,11 +5,13 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { streamSSE } from 'hono/streaming';
 import { assistantInput, changesInput, joinInput, ledgerInput, loginInput, passphraseInput } from '../shared/schema.ts';
+import { GEMINI_KEY_HEADER, GEMINI_KEY_PATTERN, GEMINI_MODEL_HEADER, GEMINI_MODEL_PATTERN } from '../shared/assistant.ts';
 import { translateError } from '../shared/errors.ts';
 import { localPath } from '../shared/redirect.ts';
 import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, SessionState, Snapshot } from '../shared/types.ts';
 import { adminActions } from './admin.ts';
-import { streamAssistant } from './ai/assistant.ts';
+import { streamAssistant, UPSTREAM_STATUS, upstreamError } from './ai/assistant.ts';
+import { checkGemini, GeminiError } from './ai/gemini.ts';
 import { authenticateAdmin, externalAdmin, passwordMatches } from './auth/admin.ts';
 import { clearSessionCookie, CONSOLE_COOKIE, SESSION_COOKIE, setSessionCookie } from './auth/cookies.ts';
 import type { Config } from './config.ts';
@@ -41,6 +43,20 @@ export type AppEnv = {
     consoleHash: string;
   };
 };
+
+function geminiKey(c: Context<AppEnv>) {
+  const config = c.var.config.assistant;
+  if (!config) throw notFound('assistantDisabled');
+  const own = c.req.header(GEMINI_KEY_HEADER)?.trim();
+  if (!own) {
+    if (!config.apiKey) throw new AppError(400, 'assistantNeedsKey');
+    return { byok: false, gemini: { apiKey: config.apiKey, model: config.model, idleTimeout: config.idleTimeout } };
+  }
+  if (!GEMINI_KEY_PATTERN.test(own)) throw new AppError(400, 'assistantKeyInvalid');
+  const model = c.req.header(GEMINI_MODEL_HEADER)?.trim() || config.model;
+  if (!GEMINI_MODEL_PATTERN.test(model)) throw new AppError(400, 'assistantModelNotFound');
+  return { byok: true, gemini: { apiKey: own, model, idleTimeout: config.idleTimeout } };
+}
 
 const mutation = (c: Context<AppEnv>) => ({ actor: actorOf(c.var.session), origin: c.req.header('x-client-id')?.slice(0, 64) });
 
@@ -91,13 +107,26 @@ const ledgerRoutes = new Hono<AppEnv>()
     return c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.applyChanges(changes, { ...mutation(c), via }));
   })
   .post('/assistant', body(assistantInput), async (c) => {
-    const { platform, config, session } = c.var;
-    if (!config.gemini) throw notFound('assistantDisabled');
+    const { platform, session } = c.var;
+    const key = geminiKey(c);
     if (!(await platform.rateLimit('assistant', session.ledger.id))) throw new AppError(429, 'assistantRateLimited');
     const request = c.req.valid('json');
-    const deps = { gemini: config.gemini, api: platform.ledger(session.ledger.id).api, info: session.ledger, locale: localeOf(c) };
+    const deps = { ...key, api: platform.ledger(session.ledger.id).api, info: session.ledger, locale: localeOf(c) };
     c.header('X-Accel-Buffering', 'no');
     return streamSSE(c, (stream) => streamAssistant(stream, request, deps));
+  })
+  .post('/assistant/key', async (c) => {
+    const { gemini, byok } = geminiKey(c);
+    if (!byok) throw new AppError(400, 'assistantNeedsKey');
+    if (!(await c.var.platform.rateLimit('assistant', c.var.session.ledger.id))) throw new AppError(429, 'assistantRateLimited');
+    try {
+      await checkGemini(gemini);
+    } catch (err) {
+      if (!(err instanceof GeminiError)) throw err;
+      const key = upstreamError(err, true);
+      throw new AppError(UPSTREAM_STATUS[key], key);
+    }
+    return c.json({ model: gemini.model });
   })
   .get('/audit', query(auditQuery), async (c) =>
     c.json(await c.var.platform.ledger(c.var.session.ledger.id).api.auditLog(c.req.valid('query'))),
@@ -180,7 +209,7 @@ function buildApi() {
         mode: c.var.config.mode,
         adminAuth: c.var.config.adminAuth,
         mcp: c.var.config.mcp,
-        assistant: c.var.config.gemini !== null,
+        assistant: c.var.config.assistant && { builtin: c.var.config.assistant.apiKey !== null, model: c.var.config.assistant.model },
       } satisfies PublicConfig),
     )
     .get('/session', async (c) => {

@@ -33,7 +33,7 @@ function parseSse(raw: string) {
 
 async function setup(env: Record<string, string> = { GEMINI_API_KEY: 'test-key' }, idleTimeout?: number) {
   const loaded = loadConfig({ ADMIN_AUTH: 'none', ...env });
-  const config = idleTimeout && loaded.gemini ? { ...loaded, gemini: { ...loaded.gemini, idleTimeout } } : loaded;
+  const config = idleTimeout && loaded.assistant ? { ...loaded, assistant: { ...loaded.assistant, idleTimeout } } : loaded;
   const platform = createNodePlatform(join(dir, crypto.randomUUID()), (() => undefined) as unknown as UpgradeWebSocket);
   const app = createApp(async (c, next) => {
     c.set('config', config);
@@ -72,12 +72,12 @@ async function setup(env: Record<string, string> = { GEMINI_API_KEY: 'test-key' 
     ],
   });
 
-  const ask = async (body: Record<string, unknown>, locale = 'zh-CN') => {
+  const ask = async (body: Record<string, unknown>, locale = 'zh-CN', headers: Record<string, string> = {}) => {
     const res = await request(
       'POST',
       '/ledger/assistant',
       { messages: [{ role: 'user', text: '你好' }], me: ids.me, participants: null, today: TODAY, ...body },
-      { 'accept-language': locale },
+      { 'accept-language': locale, ...headers },
     );
     const raw = await res.text();
     return { res, raw, events: res.headers.get('content-type')?.startsWith('text/event-stream') ? parseSse(raw) : [] };
@@ -556,11 +556,78 @@ describe('assistant endpoint', () => {
     expect(statuses[30]).toBe(429);
     expect(JSON.parse((await ask({})).raw)).toEqual({ error: 'AI 助手太忙了，请稍后再试' });
 
-    const off = await setup({});
-    expect(await off.json('GET', '/config')).toMatchObject({ assistant: false });
+    const off = await setup({ ASSISTANT: 'disabled' });
+    expect(await off.json('GET', '/config')).toMatchObject({ assistant: null });
     const disabled = await off.ask({});
     expect(disabled.res.status).toBe(404);
     expect(JSON.parse(disabled.raw)).toEqual({ error: '未启用 AI 助手' });
-    expect(await (await setup()).json('GET', '/config')).toMatchObject({ assistant: true });
+    expect(await (await setup()).json('GET', '/config')).toMatchObject({ assistant: { builtin: true, model: 'gemini-3.5-flash-lite' } });
+  });
+});
+
+describe('bring your own Gemini key', () => {
+  const OWN = 'AQ.own-key-0123456789abcdef';
+
+  it('uses the key and model from the request headers over the built-in ones', async () => {
+    const requests = stubGemini([[text('好')]]);
+    const { ask } = await setup();
+    const { events } = await ask({}, 'zh-CN', { 'x-gemini-key': OWN, 'x-gemini-model': 'gemini-9-pro' });
+    expect(events.at(-1)).toEqual({ type: 'done' });
+    expect(requests[0]!.headers['x-goog-api-key']).toBe(OWN);
+    expect(requests[0]!.url).toContain('/models/gemini-9-pro:streamGenerateContent');
+  });
+
+  it('ignores the model header without an own key', async () => {
+    const requests = stubGemini([[text('好')]]);
+    const { ask } = await setup();
+    await ask({}, 'zh-CN', { 'x-gemini-model': 'gemini-9-pro' });
+    expect(requests[0]!.headers['x-goog-api-key']).toBe('test-key');
+    expect(requests[0]!.url).toContain('/models/gemini-3.5-flash-lite:');
+  });
+
+  it('asks for a key when the server has none', async () => {
+    stubGemini([]);
+    const { ask, json } = await setup({});
+    expect((await json('GET', '/config')).assistant).toEqual({ builtin: false, model: 'gemini-3.5-flash-lite' });
+    const { res, raw } = await ask({});
+    expect(res.status).toBe(400);
+    expect(JSON.parse(raw)).toEqual({ error: '请先填写你的 Gemini API Key' });
+  });
+
+  it('turns the assistant off entirely with ASSISTANT=disabled', async () => {
+    const { ask, json } = await setup({ ASSISTANT: 'disabled', GEMINI_API_KEY: 'test-key' });
+    expect((await json('GET', '/config')).assistant).toBeNull();
+    expect((await ask({}, 'zh-CN', { 'x-gemini-key': OWN })).res.status).toBe(404);
+  });
+
+  it('rejects malformed keys and models before calling Gemini', async () => {
+    const requests = stubGemini([]);
+    const { ask } = await setup({});
+    expect((await ask({}, 'zh-CN', { 'x-gemini-key': 'short' })).res.status).toBe(400);
+    expect((await ask({}, 'zh-CN', { 'x-gemini-key': OWN, 'x-gemini-model': '../files' })).res.status).toBe(400);
+    expect(requests).toHaveLength(0);
+  });
+
+  it('reports upstream key problems in terms of the user key', async () => {
+    stubGemini([
+      new Response(JSON.stringify({ error: { message: 'API key not valid. Please pass a valid API key.' } }), { status: 400 }),
+      new Response('{}', { status: 429 }),
+    ]);
+    const { ask } = await setup({});
+    expect((await ask({}, 'zh-CN', { 'x-gemini-key': OWN })).events.at(-1)).toEqual({ type: 'error', message: 'Gemini API Key 无效' });
+    expect((await ask({}, 'zh-CN', { 'x-gemini-key': OWN })).events.at(-1)).toEqual({ type: 'error', message: '你的 Gemini API Key 额度已用完或请求太频繁' });
+  });
+
+  it('checks a key against the chosen model without generating anything', async () => {
+    const requests = stubGemini([new Response('{}'), new Response('{}', { status: 404 })]);
+    const { request } = await setup({});
+    const ok = await request('POST', '/ledger/assistant/key', undefined, { 'x-gemini-key': OWN });
+    expect(await ok.json()).toEqual({ model: 'gemini-3.5-flash-lite' });
+    expect(requests[0]!.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite');
+    expect(requests[0]!.headers['x-goog-api-key']).toBe(OWN);
+    const missing = await request('POST', '/ledger/assistant/key', undefined, { 'x-gemini-key': OWN, 'x-gemini-model': 'gemini-nope' });
+    expect(missing.status).toBe(400);
+    expect(await missing.json()).toEqual({ error: '找不到这个 Gemini 模型' });
+    expect((await request('POST', '/ledger/assistant/key')).status).toBe(400);
   });
 });

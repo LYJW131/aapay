@@ -28,7 +28,7 @@
 - **多日账本**：账目按天分组展示，每天带小计；支持「全部 / 今天 / 近 7 天 / 本月 / 自定义」范围与按成员筛选，附每日（或每月）支出柱状图，点击柱子可下钻到当天
 - **结算**：综合全部支出与已记录的还款，计算每人净额并给出**最少转账方案**；点「已付」即记下一笔「谁向谁支付了多少」（可撤销），也可手动记录任意还款
 - **记账**：金额、用途（常用用途一键填入）、日期、分类、付款人、分摊成员；分摊可选均分、按份数（如大人 2 份、小孩 1 份）或按金额（每人填多少，合计等于总额）；付款人一选就记住、下次自动预选，分摊成员沿用上一笔；从邀请链接首次进入时会问「你是哪一位」，选择已有成员或把自己加进来即设为默认付款人；支出可编辑、删除
-- **AI 助手**（需配置 `GEMINI_API_KEY`）：账本页底部的输入条，支持一句话、拍照（或粘贴小票）和语音记账，也能改账、加成员、记还款，或问「这个月花在哪了」
+- **AI 助手**（用站点配置的 `GEMINI_API_KEY`，或每个人在设置里填自己的 Gemini Key）：账本页底部的输入条，支持一句话、拍照（或粘贴小票）和语音记账，也能改账、加成员、记还款，或问「这个月花在哪了」
   - 回复流式输出；一句话里的多笔变更会依次生成卡片，照片识别时每张卡片逐字段生成
   - 写操作只生成待确认的变更卡片，确认后原子执行；执行后可撤销，撤销后还能重新执行
   - 确认前可以在对话里继续说「改成 30」「去掉小王」，也可以直接编辑卡片，提议会在原卡片上更新
@@ -105,7 +105,7 @@ node scripts/seed.mjs            # 可选：生成演示账本（口令 demo2026
 
 也可以用 **Workers Builds** 自动部署：在 Worker 的 Settings → Builds 关联 GitHub 仓库，构建命令 `npm run typecheck && npm test && npm run build`，部署命令 `npx wrangler deploy`，环境变量 `NODE_VERSION=24`。之后推送到监听的分支就会自动测试并上线（本项目监听 `main`，只改 `*.md` / `docs/` 不触发）。
 
-Durable Objects 与限流由 `wrangler.jsonc` 自动创建，无需手动建数据库。「AI 助手」调用 Gemini，用 `npx wrangler secret put GEMINI_API_KEY` 配置密钥，每个账本每分钟最多 30 次请求。登录时 Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），通过后签发本站的管理员会话；绕过 Access 直连 Worker 拿不到会话，也就无法访问管理接口。
+Durable Objects 与限流由 `wrangler.jsonc` 自动创建，无需手动建数据库。「AI 助手」调用 Gemini，可用 `npx wrangler secret put GEMINI_API_KEY` 配置站点密钥（不配则用户自带 Key），每个账本每分钟最多 30 次请求。登录时 Worker 会独立校验 Access 签发的 JWT（签名、issuer、audience，可选 `ADMIN_EMAILS` 白名单），通过后签发本站的管理员会话；绕过 Access 直连 Worker 拿不到会话，也就无法访问管理接口。
 
 ## 部署到 Docker
 
@@ -139,8 +139,9 @@ Cloudflare（`wrangler.jsonc` 的 `vars` / `wrangler secret put`）与 Docker（
 | `PUBLIC_URL` | 可选，对外访问地址（如 `https://aapay.example.com`），作为 OAuth issuer 与 MCP 资源标识；不填则按请求推断（信任 `X-Forwarded-Proto/Host`），反向代理后建议填写 | — |
 | `TIMEZONE` | 可选，AI 记账未指定日期时按此时区取「今天」 | `Asia/Shanghai` |
 | `AUDIT_SIGNING_KEY` | 可选，操作动态的 Ed25519 签名私钥（32 字节随机数的 base64url，可用 `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"` 生成；Cloudflare 上请用 secret）。不填则只有哈希链没有签名；设置后不要更换，否则成员的浏览器会提示签名公钥变化 | — |
-| `GEMINI_API_KEY` | 可选，Gemini API 密钥（Cloudflare 上用 secret 配置），填写后启用 AI 助手（对话记账、查账、识别账单图片） | — |
-| `GEMINI_MODEL` | 可选，AI 助手使用的 Gemini 模型 | `gemini-3.5-flash-lite` |
+| `ASSISTANT` | `enabled` / `disabled`：是否开放 AI 助手（对话记账、查账、识别账单图片） | `enabled` |
+| `GEMINI_API_KEY` | 可选，站点提供的 Gemini API 密钥（Cloudflare 上用 secret 配置）；不填时用户要在 AI 助手设置里填自己的 Key（只存在其浏览器里，按请求经服务端转交 Gemini，不落库） | — |
+| `GEMINI_MODEL` | 可选，AI 助手默认的 Gemini 模型；用户自带 Key 时可以改用别的模型 | `gemini-3.5-flash-lite` |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
 
 管理员认证方式：
@@ -217,7 +218,8 @@ tests/                  vitest：金额、结算、账本服务、完整 API 流
 | `GET` | `/api/ledger/live` | WebSocket 实时事件 |
 | `POST` | `/api/ledger/changes` | 唯一的账目写入口：一组变更（成员、支出、还款的增改删）原子执行，返回实时消息与可直接回放的撤销变更 |
 | `GET` | `/api/ledger/audit?before=&after=&limit=` | 操作动态（签名哈希链，附公钥与最新一条） |
-| `POST` | `/api/ledger/assistant` | AI 助手（SSE 流式）：对话、查账、识别账单图片；写操作只返回待确认的变更集，由前端确认后经 `/api/ledger/changes` 写入 |
+| `POST` | `/api/ledger/assistant` | AI 助手（SSE 流式）：对话、查账、识别账单图片；写操作只返回待确认的变更集，由前端确认后经 `/api/ledger/changes` 写入。请求头 `X-Gemini-Key` / `X-Gemini-Model` 可改用自己的 Key 与模型 |
+| `POST` | `/api/ledger/assistant/key` | 校验 `X-Gemini-Key` 能否使用 `X-Gemini-Model`（不生成内容） |
 | `GET` `POST` `PATCH` `DELETE` | `/api/admin/ledgers[/:id]` | 账本管理（含统计） |
 | `GET` `POST` | `/api/admin/ledgers/:id/passphrases` | 分享口令 |
 | `DELETE` | `/api/admin/passphrases/:id` | 撤销口令 |

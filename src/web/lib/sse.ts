@@ -52,12 +52,12 @@ export function parseSse(onMessage: (message: SseMessage) => void) {
   };
 }
 
-export async function* streamSse(url: string, body: unknown, signal?: AbortSignal): AsyncGenerator<SseMessage> {
+export async function* streamSse(url: string, body: unknown, signal?: AbortSignal, headers: Record<string, string> = {}): AsyncGenerator<SseMessage> {
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-client-id': CLIENT_ID, 'accept-language': locale, accept: 'text/event-stream' },
+      headers: { 'content-type': 'application/json', 'x-client-id': CLIENT_ID, 'accept-language': locale, accept: 'text/event-stream', ...headers },
       credentials: 'same-origin',
       body: JSON.stringify(body),
       signal,

@@ -1,7 +1,9 @@
-import { ChevronDown, Plus, Settings2, Trash2 } from 'lucide-react';
+import { ChevronDown, KeyRound, Plus, Settings2, Trash2 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { LIMITS } from '../../../shared/limits.ts';
+import type { PublicConfig } from '../../../shared/types.ts';
+import { Button } from '../../components/Button.tsx';
 import { Hint } from '../../components/Hint.tsx';
 import { Switch } from '../../components/Switch.tsx';
 import { assistant as t } from '../../i18n/assistant.ts';
@@ -12,14 +14,22 @@ import { useLedger } from '../ledger/context.tsx';
 import { Composer } from './Composer.tsx';
 import { AssistantContext, type AssistantApi, type AssistantOpenOptions } from './context.ts';
 import { AiAvatar, Conversation } from './Conversation.tsx';
+import { KeySheet } from './KeySheet.tsx';
+import { useOwnKey } from './own-key.ts';
 import { StoreContext, useChatState, useChatStore } from './state.ts';
 import { AssistantStore, findPending } from './store.ts';
 
 const UNAVAILABLE: AssistantApi = { available: false, open: () => undefined };
 const SPRING = { type: 'spring', stiffness: 380, damping: 36 } as const;
 
-export function AssistantDock({ enabled, onCompose, children }: { enabled: boolean; onCompose: () => void; children: ReactNode }) {
-  return enabled ? <Dock onCompose={onCompose}>{children}</Dock> : <Fallback onCompose={onCompose}>{children}</Fallback>;
+export function AssistantDock({ config, onCompose, children }: { config: PublicConfig['assistant']; onCompose: () => void; children: ReactNode }) {
+  return config ? (
+    <Dock config={config} onCompose={onCompose}>
+      {children}
+    </Dock>
+  ) : (
+    <Fallback onCompose={onCompose}>{children}</Fallback>
+  );
 }
 
 function Fallback({ onCompose, children }: { onCompose: () => void; children: ReactNode }) {
@@ -73,8 +83,11 @@ const editable = (el: Element | null) => !!el && (el instanceof HTMLInputElement
 
 const otherDialogOpen = () => !!document.querySelector('[role=dialog][aria-modal=true]:not([data-assistant])');
 
-function Dock({ onCompose, children }: { onCompose: () => void; children: ReactNode }) {
+function Dock({ config, onCompose, children }: { config: NonNullable<PublicConfig['assistant']>; onCompose: () => void; children: ReactNode }) {
   const ledgerContext = useLedger();
+  const own = useOwnKey();
+  const needsKey = !config.builtin && !own;
+  const [keyOpen, setKeyOpen] = useState(false);
   const [store] = useState(() => new AssistantStore({ ledger: ledgerContext.store, key: ledgerContext.key }));
   useEffect(() => () => store.dispose(), [store]);
 
@@ -121,11 +134,12 @@ function Dock({ onCompose, children }: { onCompose: () => void; children: ReactN
     (value: string, pics: string[]) => {
       if (store.getState().streaming) return;
       setOpen(true);
+      if (needsKey) return setKeyOpen(true);
       setText('');
       setImages([]);
       void store.send(value, pics);
     },
-    [store],
+    [store, needsKey],
   );
 
   const api = useMemo<AssistantApi>(
@@ -250,7 +264,16 @@ function Dock({ onCompose, children }: { onCompose: () => void; children: ReactN
                     className="overflow-hidden"
                   >
                     <div className="flex flex-col" style={{ height: panelHeight }}>
-                      <PanelHeader onClose={hide} />
+                      <PanelHeader onClose={hide} keyStatus={own ? t.key.own : config.builtin ? t.key.site : t.key.none} onKey={() => setKeyOpen(true)} />
+                      {needsKey && (
+                        <div className="flex shrink-0 items-center gap-3 border-b border-zinc-900/6 bg-brand-500/6 py-2 pr-2 pl-4 text-[13px] text-zinc-600 dark:border-white/8 dark:bg-brand-400/8 dark:text-zinc-300">
+                          <KeyRound className="size-4 shrink-0 text-brand-500" />
+                          <span className="min-w-0 flex-1">{t.key.needed}</span>
+                          <Button size="sm" variant="primary" onClick={() => setKeyOpen(true)}>
+                            {t.key.fill}
+                          </Button>
+                        </div>
+                      )}
                       <Conversation onSuggest={(s) => send(s, [])} onNavigate={() => !desktop && hide()} />
                     </div>
                   </motion.div>
@@ -291,17 +314,18 @@ function Dock({ onCompose, children }: { onCompose: () => void; children: ReactN
             )}
           </AnimatePresence>
         </div>
+        <KeySheet open={keyOpen} onClose={() => setKeyOpen(false)} builtin={config.builtin} model={config.model} />
       </StoreContext>
     </AssistantContext>
   );
 }
 
-function PanelHeader({ onClose }: { onClose: () => void }) {
+function PanelHeader({ onClose, keyStatus, onKey }: { onClose: () => void; keyStatus: string; onKey: () => void }) {
   return (
     <header className="flex shrink-0 items-center gap-2.5 border-b border-zinc-900/6 py-2.5 pr-2 pl-4 dark:border-white/8">
       <AiAvatar />
       <h2 className="flex-1 text-[15px] font-semibold tracking-tight">{t.title}</h2>
-      <SettingsMenu />
+      <SettingsMenu keyStatus={keyStatus} onKey={onKey} />
       <button
         type="button"
         onClick={onClose}
@@ -315,7 +339,7 @@ function PanelHeader({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SettingsMenu() {
+function SettingsMenu({ keyStatus, onKey }: { keyStatus: string; onKey: () => void }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   const store = useChatStore();
@@ -356,6 +380,18 @@ function SettingsMenu() {
               </span>
               <Switch checked={autoRun} onChange={(v) => store.setAutoRun(v)} label={t.autoRun} />
             </div>
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onKey();
+              }}
+              className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm transition hover:bg-zinc-900/5 dark:hover:bg-white/8"
+            >
+              <KeyRound className="size-4 text-zinc-500 dark:text-zinc-400" />
+              <span className="flex-1">{t.key.menu}</span>
+              <span className="text-[13px] text-zinc-400">{keyStatus}</span>
+            </button>
             <button
               type="button"
               disabled={messages.length === 0}

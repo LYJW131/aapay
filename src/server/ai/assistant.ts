@@ -7,8 +7,7 @@ import { translateError } from '../../shared/errors.ts';
 import type { Locale } from '../../shared/i18n.ts';
 import { isoDate, LIMITS } from '../../shared/schema.ts';
 import type { LedgerData, LedgerInfo, Member } from '../../shared/types.ts';
-import type { GeminiConfig } from '../config.ts';
-import { AppError } from '../core/errors.ts';
+import { AppError, type ErrorStatus } from '../core/errors.ts';
 import type { LedgerService } from '../core/ledger.ts';
 import type { Remote } from '../core/remote.ts';
 import {
@@ -23,7 +22,7 @@ import {
   ToolError,
   type WriteTool,
 } from '../tools/ledger.ts';
-import { GeminiError, streamGemini, type FunctionDeclaration, type GeminiContent, type GeminiFunctionCall, type GeminiPart } from './gemini.ts';
+import { GeminiError, streamGemini, type FunctionDeclaration, type GeminiKey, type GeminiContent, type GeminiFunctionCall, type GeminiPart } from './gemini.ts';
 import { ItemStream, type ItemEvent } from './item-stream.ts';
 import { fold } from './pending.ts';
 import { changeLine, EXTRACTION_SCHEMA, extractionPrompt, imagesNote, MAX_EXTRACTED, SHOW_DESCRIPTION, systemPrompt } from './prompts.ts';
@@ -32,7 +31,8 @@ export const MAX_ROUNDS = 6;
 const EXTRACT_STEP = 'read_images';
 
 export interface AssistantDeps {
-  gemini: GeminiConfig;
+  gemini: GeminiKey;
+  byok: boolean;
   api: Remote<LedgerService>;
   info: LedgerInfo;
   locale: Locale;
@@ -337,10 +337,28 @@ export async function runAssistant(run: Run, request: AssistantRequest) {
   await run.emit({ type: 'done' });
 }
 
-function failure(err: unknown, locale: Locale) {
+export const UPSTREAM_STATUS = {
+  assistantKeyInvalid: 400,
+  assistantModelNotFound: 400,
+  assistantKeyQuota: 429,
+  assistantRateLimited: 429,
+  assistantTimeout: 502,
+  assistantUnavailable: 502,
+} as const satisfies Record<string, ErrorStatus>;
+
+export function upstreamError({ status, message }: GeminiError, byok: boolean): keyof typeof UPSTREAM_STATUS {
+  if (byok) {
+    if (status === 401 || status === 403 || (status === 400 && /API.?key/i.test(message))) return 'assistantKeyInvalid';
+    if (status === 404) return 'assistantModelNotFound';
+    if (status === 429) return 'assistantKeyQuota';
+  }
+  return status === 429 ? 'assistantRateLimited' : status === 504 ? 'assistantTimeout' : 'assistantUnavailable';
+}
+
+function failure(err: unknown, { locale, byok }: AssistantDeps) {
   if (err instanceof GeminiError) {
     console.error('assistant upstream failed', err.status, err.message);
-    return translateError(locale, err.status === 429 ? 'assistantRateLimited' : err.status === 504 ? 'assistantTimeout' : 'assistantUnavailable');
+    return translateError(locale, upstreamError(err, byok));
   }
   console.error('assistant failed', err);
   return translateError(locale, 'assistantFailed');
@@ -357,7 +375,7 @@ export async function streamAssistant(stream: SSEStreamingApi, request: Assistan
     await runAssistant({ ...deps, signal: controller.signal, emit }, request);
   } catch (err) {
     if (!(err instanceof Aborted) && !controller.signal.aborted && !stream.aborted) {
-      await stream.writeSSE({ event: 'error', data: JSON.stringify({ type: 'error', message: failure(err, deps.locale) } satisfies AssistantEvent) });
+      await stream.writeSSE({ event: 'error', data: JSON.stringify({ type: 'error', message: failure(err, deps) } satisfies AssistantEvent) });
     }
   } finally {
     controller.abort();

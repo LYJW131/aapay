@@ -32,12 +32,17 @@ export interface GeminiRequest {
   generationConfig?: Record<string, unknown>;
 }
 
-export interface GeminiOptions {
+export interface GeminiKey {
   apiKey: string;
   model: string;
   idleTimeout: number;
+}
+
+export interface GeminiOptions extends GeminiKey {
   signal?: AbortSignal;
 }
+
+const BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 interface GeminiChunk {
   candidates?: { content?: { parts?: GeminiPart[] }; finishReason?: string }[];
@@ -112,7 +117,7 @@ export async function* streamGemini(request: GeminiRequest, { apiKey, model, idl
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
     const res = await wait(
-      fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
+      fetch(`${BASE}/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify(request),
@@ -143,4 +148,14 @@ export async function* streamGemini(request: GeminiRequest, { apiKey, model, idl
     reader?.cancel().catch(() => {});
     controller.abort();
   }
+}
+
+export async function checkGemini({ apiKey, model, idleTimeout }: GeminiKey) {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/${encodeURIComponent(model)}`, { headers: { 'x-goog-api-key': apiKey }, signal: AbortSignal.timeout(idleTimeout) });
+  } catch (err) {
+    throw new GeminiError(err instanceof DOMException && err.name === 'TimeoutError' ? 504 : 502, `Gemini unreachable: ${String(err)}`);
+  }
+  if (!res.ok) throw new GeminiError(res.status, `Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
 }

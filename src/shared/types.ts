@@ -111,7 +111,7 @@ export interface PublicConfig {
   mode: Mode;
   adminAuth: AdminAuthMode;
   mcp: boolean;
-  assistant: boolean;
+  assistant: { builtin: boolean; model: string } | null;
 }
 
 export interface AdminIdentity {

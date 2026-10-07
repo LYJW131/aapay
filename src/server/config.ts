@@ -12,11 +12,11 @@ export interface Config {
   publicUrl: string | null;
   timezone: string;
   auditKey: Uint8Array | null;
-  gemini: GeminiConfig | null;
+  assistant: AssistantConfig | null;
 }
 
-export interface GeminiConfig {
-  apiKey: string;
+export interface AssistantConfig {
+  apiKey: string | null;
   model: string;
   idleTimeout: number;
 }
@@ -66,7 +66,10 @@ export function loadConfig(env: object): Config {
     publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
     timezone: str('TIMEZONE') || 'Asia/Shanghai',
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
-    gemini: str('GEMINI_API_KEY') ? { apiKey: str('GEMINI_API_KEY'), model: str('GEMINI_MODEL') || 'gemini-3.5-flash-lite', idleTimeout: 45_000 } : null,
+    assistant:
+      pick('ASSISTANT', SWITCH, 'enabled') === 'enabled'
+        ? { apiKey: str('GEMINI_API_KEY') || null, model: str('GEMINI_MODEL') || 'gemini-3.5-flash-lite', idleTimeout: 45_000 }
+        : null,
   };
 
   if (config.mode === 'shared') config.adminAuth = 'disabled';

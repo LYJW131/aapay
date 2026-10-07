@@ -251,7 +251,7 @@ export function LedgerPage({
 
   return (
     <LedgerContext value={context}>
-      <AssistantDock enabled={config.assistant} onCompose={() => setComposerOpen(true)}>
+      <AssistantDock config={config.assistant} onCompose={() => setComposerOpen(true)}>
         <Header live={state.live} config={config} admin={!!admin} onSwitch={onSwitch} onLeave={() => onExit()} />
         <main className="mx-auto max-w-6xl px-4 pt-4 pb-4 lg:grid lg:grid-cols-[400px_minmax(0,1fr)] lg:items-start lg:gap-5 lg:pt-6 lg:pb-8">
           {admin && (

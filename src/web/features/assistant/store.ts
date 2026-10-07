@@ -13,6 +13,7 @@ import { streamSse } from '../../lib/sse.ts';
 import { load, save } from '../../lib/storage.ts';
 import { highlight } from '../ledger/highlight.ts';
 import type { LedgerStore } from '../ledger/store.ts';
+import { ownKeyHeaders } from './own-key.ts';
 
 export type Part = { kind: 'text'; text: string } | { kind: 'view'; view: AssistantView };
 
@@ -258,7 +259,7 @@ export class AssistantStore {
     this.controller = controller;
     let finished = false;
     try {
-      for await (const { event, data } of streamSse('/api/ledger/assistant', body, controller.signal)) {
+      for await (const { event, data } of streamSse('/api/ledger/assistant', body, controller.signal, ownKeyHeaders())) {
         let parsed: AssistantEvent;
         try {
           parsed = { type: event, ...(JSON.parse(data) as object) } as AssistantEvent;

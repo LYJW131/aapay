@@ -27,7 +27,7 @@ export type Reply = Chunk[] | Response;
 export function stubGemini(replies: Reply[] | ((body: any, index: number) => Reply)) {
   const requests: { url: string; headers: Record<string, string>; body: any }[] = [];
   vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
-    const body = JSON.parse(init.body as string);
+    const body = init.body ? JSON.parse(init.body as string) : null;
     const index = requests.length;
     requests.push({ url, headers: init.headers as Record<string, string>, body });
     const reply = typeof replies === 'function' ? replies(body, index) : replies[index];
