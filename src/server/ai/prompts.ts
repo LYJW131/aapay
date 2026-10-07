@@ -100,7 +100,7 @@ export function systemPrompt({ info, real, draft, pending, me, participants, tod
 export const SHOW_DESCRIPTION =
   'Show a live card in the chat. view: balances (net balance of each member), settle (the fewest transfers to settle up, with buttons to mark them paid), ' +
   'categories (spending by category; optional from, to, member), trend (spending over time; optional from, to, member, category), ' +
-  'transactions (matching expenses and settlements; optional from, to, member, category, query). The app computes the numbers from the confirmed ledger, so do not repeat them in text.';
+  'transactions (matching expenses, not settlements; optional from, to, member, category, query). The app computes the numbers from the confirmed ledger, so do not repeat them in text.';
 
 export function extractionPrompt(today: string, locale: Locale): string {
   return [

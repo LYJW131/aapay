@@ -1,7 +1,7 @@
 import { translateError, type ErrorArgs, type ErrorKey } from '../../shared/errors.ts';
 import { DEFAULT_LOCALE, type Locale } from '../../shared/i18n.ts';
 
-export type ErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 502;
+export type ErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 500 | 502 | 504;
 
 export class AppError extends Error {
   readonly status: ErrorStatus;

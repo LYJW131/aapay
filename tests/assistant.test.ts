@@ -630,4 +630,14 @@ describe('bring your own Gemini key', () => {
     expect(await missing.json()).toEqual({ error: '找不到这个 Gemini 模型' });
     expect((await request('POST', '/ledger/assistant/key')).status).toBe(400);
   });
+
+  it('reports a key check that times out as 504', async () => {
+    vi.stubGlobal('fetch', async () => {
+      throw new DOMException('timed out', 'TimeoutError');
+    });
+    const { request } = await setup({});
+    const res = await request('POST', '/ledger/assistant/key', undefined, { 'x-gemini-key': OWN });
+    expect(res.status).toBe(504);
+    expect(await res.json()).toEqual({ error: 'AI 助手响应超时，请重试' });
+  });
 });

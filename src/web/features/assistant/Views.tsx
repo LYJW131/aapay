@@ -262,10 +262,11 @@ function Trend({ range, memberId, category }: { range: ViewRange; memberId: stri
   const scoped = useScoped(range, memberId, category);
   const { monthly, list, max, total } = useMemo(() => {
     const oldest = scoped.reduce<IsoDate | null>((min, e) => (!min || e.date < min ? e.date : min), null);
-    const to = range.to ?? today();
+    const newest = scoped.reduce<IsoDate | null>((max, e) => (!max || e.date > max ? e.date : max), null);
+    const to = range.to ?? (newest && newest > today() ? newest : today());
     const from = range.from ?? (oldest && oldest < to ? oldest : addDays(to, -13));
     const result = buckets(scoped, memberId, from <= to ? from : to, to);
-    return { ...result, max: Math.max(1, ...result.list.map((b) => b.total)), total: result.list.reduce((s, b) => s + b.total, 0) };
+    return { ...result, max: Math.max(1, ...result.list.map((b) => b.total)), total: scoped.reduce((s, e) => s + shareOf(e, memberId), 0) };
   }, [scoped, range.from, range.to, memberId]);
 
   return (

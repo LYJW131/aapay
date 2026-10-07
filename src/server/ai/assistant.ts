@@ -342,7 +342,7 @@ export const UPSTREAM_STATUS = {
   assistantModelNotFound: 400,
   assistantKeyQuota: 429,
   assistantRateLimited: 429,
-  assistantTimeout: 502,
+  assistantTimeout: 504,
   assistantUnavailable: 502,
 } as const satisfies Record<string, ErrorStatus>;
 

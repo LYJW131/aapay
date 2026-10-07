@@ -134,7 +134,11 @@ function Dock({ config, onCompose, children }: { config: NonNullable<PublicConfi
     (value: string, pics: string[]) => {
       if (store.getState().streaming) return;
       setOpen(true);
-      if (needsKey) return setKeyOpen(true);
+      if (needsKey) {
+        setText(value);
+        setImages(pics);
+        return setKeyOpen(true);
+      }
       setText('');
       setImages([]);
       void store.send(value, pics);
