@@ -88,7 +88,20 @@ export default defineConfig(({ command }) => ({
   },
   build: {
     outDir: target === 'node' ? 'dist/client' : undefined,
-    chunkSizeWarningLimit: 800,
+  },
+  environments: {
+    client: {
+      build: {
+        rolldownOptions: {
+          output: {
+            codeSplitting: {
+              // lucide 按用到的图标摇树，内容随业务代码变化，留在业务块里，vendor 的哈希才能跨发布保持不变
+              groups: [{ name: 'vendor', test: /[\\/]node_modules[\\/](?!lucide-react[\\/])/, tags: ['$initial'] }],
+            },
+          },
+        },
+      },
+    },
   },
   server: {
     port: 5173,

@@ -37,12 +37,13 @@ if (existsSync(clientDir)) {
     '/*',
     serveStatic({
       root: clientDir,
+      precompressed: true,
       onFound: (path, c) => {
         c.header('Cache-Control', path.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
       },
     }),
   );
-  app.get('*', serveStatic({ root: clientDir, path: 'index.html', onFound: (_, c) => c.header('Cache-Control', 'no-cache') }));
+  app.get('*', serveStatic({ root: clientDir, path: 'index.html', precompressed: true, onFound: (_, c) => c.header('Cache-Control', 'no-cache') }));
 }
 
 const server = serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, (info) => {
