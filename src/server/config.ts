@@ -1,4 +1,5 @@
 import { AI_PROVIDERS, type AiProvider } from '../shared/assistant.ts';
+import { siteBaseUrl } from './ai/base-url.ts';
 import type { AdminAuthMode, Mode } from '../shared/types.ts';
 
 export interface Config {
@@ -21,6 +22,7 @@ export interface AssistantConfig {
   provider: AiProvider;
   keys: Record<AiProvider, string | null>;
   models: Record<AiProvider, string>;
+  openaiBaseUrl: string | null;
   idleTimeout: number;
 }
 
@@ -74,14 +76,31 @@ export function loadConfig(env: object): Config {
       pick('ASSISTANT', SWITCH, 'enabled') === 'enabled'
         ? {
             provider: pick('ASSISTANT_PROVIDER', AI_PROVIDERS, 'gemini'),
-            keys: { gemini: str('GEMINI_API_KEY') || null, deepseek: str('DEEPSEEK_API_KEY') || null },
-            models: { gemini: str('GEMINI_MODEL') || 'gemini-flash-lite-latest', deepseek: str('DEEPSEEK_MODEL') || 'deepseek-flash' },
+            keys: {
+              gemini: str('GEMINI_API_KEY') || null,
+              deepseek: str('DEEPSEEK_API_KEY') || null,
+              claude: str('CLAUDE_API_KEY') || null,
+              openai: str('OPENAI_API_KEY') || null,
+            },
+            models: {
+              gemini: str('GEMINI_MODEL') || 'gemini-flash-lite-latest',
+              deepseek: str('DEEPSEEK_MODEL') || 'deepseek-flash',
+              claude: str('CLAUDE_MODEL') || 'claude-haiku-5-5',
+              openai: str('OPENAI_MODEL'),
+            },
+            openaiBaseUrl: str('OPENAI_BASE_URL') ? siteBaseUrl(str('OPENAI_BASE_URL')) : null,
             idleTimeout: 45_000,
           }
         : null,
   };
 
   if (config.mode === 'shared') config.adminAuth = 'disabled';
+  if (str('OPENAI_BASE_URL') && config.assistant && !config.assistant.openaiBaseUrl) {
+    throw new Error(`配置 OPENAI_BASE_URL=${str('OPENAI_BASE_URL')} 无效，应形如 https://api.example.com/v1`);
+  }
+  if (config.assistant?.provider === 'openai' && (!config.assistant.openaiBaseUrl || !config.assistant.models.openai)) {
+    throw new Error('ASSISTANT_PROVIDER=openai 需要同时配置 OPENAI_BASE_URL 与 OPENAI_MODEL');
+  }
   if (config.adminAuth === 'access' && (!config.accessTeamDomain || !config.accessAud)) {
     throw new Error('ADMIN_AUTH=access 需要同时配置 ACCESS_TEAM_DOMAIN 与 ACCESS_AUD');
   }

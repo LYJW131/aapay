@@ -30,6 +30,8 @@ function KeyForm({ config, onDone }: { config: AssistantConfig; onDone: () => vo
   const [provider, setProvider] = useState<AiProvider>(own?.provider ?? config.provider);
   const [key, setKey] = useState(own?.key ?? '');
   const [model, setModel] = useState(own?.model ?? '');
+  const [baseUrl, setBaseUrl] = useState(own?.baseUrl ?? '');
+  const custom = provider === 'openai';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,13 +39,14 @@ function KeyForm({ config, onDone }: { config: AssistantConfig; onDone: () => vo
     setProvider(next);
     setKey(own?.provider === next ? own.key : '');
     setModel(own?.provider === next ? (own.model ?? '') : '');
+    setBaseUrl(own?.provider === next ? (own.baseUrl ?? '') : '');
     setError(null);
   }
 
   async function save(e: FormEvent) {
     e.preventDefault();
-    const next = { provider, key: key.trim(), model: model.trim().toLowerCase() || null };
-    if (!next.key) return;
+    const next = { provider, key: key.trim(), model: model.trim() || null, baseUrl: custom ? baseUrl.trim() || null : null };
+    if (!next.key || (custom && (!next.model || !next.baseUrl))) return;
     setBusy(true);
     setError(null);
     try {
@@ -69,12 +72,32 @@ function KeyForm({ config, onDone }: { config: AssistantConfig; onDone: () => vo
         <Label>{t.provider}</Label>
         <Segmented value={provider} options={PROVIDER_OPTIONS} onChange={switchProvider} label={t.provider} />
       </div>
+      {custom && (
+        <div>
+          <Label>{t.baseUrl}</Label>
+          <input
+            type="url"
+            value={baseUrl}
+            onChange={(e) => {
+              setBaseUrl(e.target.value);
+              setError(null);
+            }}
+            placeholder={t.baseUrlPlaceholder}
+            autoComplete="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            className="field font-mono"
+          />
+        </div>
+      )}
       <div>
         <Label
           aside={
-            <a href={KEY_PAGES[provider]} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline dark:text-brand-300">
-              {t.get}
-            </a>
+            KEY_PAGES[provider] && (
+              <a href={KEY_PAGES[provider]} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline dark:text-brand-300">
+                {t.get}
+              </a>
+            )
           }
         >
           <span className="flex items-center gap-1.5">
@@ -105,7 +128,7 @@ function KeyForm({ config, onDone }: { config: AssistantConfig; onDone: () => vo
             setModel(e.target.value);
             setError(null);
           }}
-          placeholder={config.models[provider]}
+          placeholder={config.models[provider] || t.modelRequired}
           autoComplete="off"
           autoCapitalize="off"
           spellCheck={false}
@@ -118,7 +141,7 @@ function KeyForm({ config, onDone }: { config: AssistantConfig; onDone: () => vo
             {t.remove}
           </Button>
         )}
-        <Button type="submit" variant="primary" size="lg" className="flex-1" loading={busy} disabled={!key.trim()} icon={<KeyRound className="size-4" />}>
+        <Button type="submit" variant="primary" size="lg" className="flex-1" loading={busy} disabled={!key.trim() || (custom && (!model.trim() || !baseUrl.trim()))} icon={<KeyRound className="size-4" />}>
           {t.save}
         </Button>
       </div>

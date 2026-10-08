@@ -75,7 +75,7 @@ Durable Objects 与限流会自动创建，不需要手动建数据库。部署�
 常用的几项：
 
 - **自定义域名**：添加构建变量 `CUSTOM_DOMAIN=aapay.example.com`（域名需托管在同一 Cloudflare 账号），重新部署后 Worker 绑定到这个域名，并关闭 `workers.dev` 地址
-- **AI 助手**：添加密钥 `GEMINI_API_KEY`（[获取 Gemini API Key](https://aistudio.google.com/apikey)），或设置变量 `ASSISTANT_PROVIDER=deepseek` 并添加密钥 `DEEPSEEK_API_KEY`（[获取 DeepSeek API Key](https://platform.deepseek.com/api_keys)）。不配置时，每个用户可以在 AI 助手设置里选服务商、填自己的 Key
+- **AI 助手**：添加密钥 `GEMINI_API_KEY`（[获取 Gemini API Key](https://aistudio.google.com/apikey)）；换服务商时设置变量 `ASSISTANT_PROVIDER` 并添加对应密钥：`deepseek` 用 `DEEPSEEK_API_KEY`（[获取](https://platform.deepseek.com/api_keys)），`claude` 用 `CLAUDE_API_KEY`（[获取](https://platform.claude.com/settings/keys)），`openai`（任意 OpenAI 兼容服务）用 `OPENAI_API_KEY` 并设置变量 `OPENAI_BASE_URL`、`OPENAI_MODEL`。不配置时，每个用户可以在 AI 助手设置里选服务商、填自己的 Key
 - **操作动态签名**：添加密钥 `AUDIT_SIGNING_KEY`，用 `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"` 生成，设置后不要更换
 - **其他变量**：「[配置](#配置)」表里的普通变量都可以用同名构建变量覆盖，例如 `TIMEZONE`、`ASSISTANT`
 
@@ -153,9 +153,10 @@ Cloudflare 与 Docker 使用同一套变量名：Cloudflare 上普通变量用�
 | `PUBLIC_URL` | 对外访问地址，作为 OAuth issuer 与 MCP 资源标识；不填按请求推断，反向代理后建议填写 | — |
 | `TIMEZONE` | AI 记账未指定日期时按此时区取「今天」 | `Asia/Shanghai` |
 | `ASSISTANT` | `enabled` / `disabled`：是否开放 AI 助手 | `enabled` |
-| `ASSISTANT_PROVIDER` | `gemini` / `deepseek`：站点使用的 AI 服务商 | `gemini` |
-| `GEMINI_API_KEY` / `DEEPSEEK_API_KEY` | 站点提供的密钥（密钥），只用 `ASSISTANT_PROVIDER` 那家的；不填时用户在 AI 助手设置里选服务商、填自己的 Key，只存在其浏览器里、按请求转交，不落库 | — |
-| `GEMINI_MODEL` / `DEEPSEEK_MODEL` | 各服务商的默认模型；用户自带 Key 时可以换别的模型 | `gemini-flash-lite-latest` / `deepseek-flash` |
+| `ASSISTANT_PROVIDER` | `gemini` / `deepseek` / `claude` / `openai`（OpenAI 兼容）：站点使用的 AI 服务商 | `gemini` |
+| `GEMINI_API_KEY` / `DEEPSEEK_API_KEY` / `CLAUDE_API_KEY` / `OPENAI_API_KEY` | 站点提供的密钥（密钥），只用 `ASSISTANT_PROVIDER` 那家的；不填时用户在 AI 助手设置里选服务商、填自己的 Key，只存在其浏览器里、按请求转交，不落库 | — |
+| `GEMINI_MODEL` / `DEEPSEEK_MODEL` / `CLAUDE_MODEL` | 各服务商的默认模型；用户自带 Key 时可以换别的模型 | `gemini-flash-lite-latest` / `deepseek-flash` / `claude-haiku-5-5` |
+| `OPENAI_BASE_URL` / `OPENAI_MODEL` | OpenAI 兼容服务的地址（如 `https://api.example.com/v1`）与模型名，`ASSISTANT_PROVIDER=openai` 时必填。兜底用：只走通用的流式对话与函数调用，识图按提示词输出 JSON；用户自带的地址只接受公网 https | — |
 | `AUDIT_SIGNING_KEY` | 操作动态的 Ed25519 签名私钥，32 字节 base64url（密钥）；不填则只有哈希链。设置后不要更换，否则成员的浏览器会提示公钥变化 | — |
 | `CUSTOM_DOMAIN` | 仅 Cloudflare 构建时：绑定的自定义域名 | — |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |

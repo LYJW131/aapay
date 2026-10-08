@@ -348,7 +348,7 @@ export function upstreamError({ status, message }: ModelError, byok: boolean): k
   if (byok) {
     if (status === 401 || status === 403 || (status === 400 && /API.?key/i.test(message))) return 'assistantKeyInvalid';
     if (status === 404 || (status === 400 && /model not exist|supported API model names/i.test(message))) return 'assistantModelNotFound';
-    if (status === 402 || status === 429) return 'assistantKeyQuota';
+    if (status === 402 || status === 429 || (status === 400 && /credit balance/i.test(message))) return 'assistantKeyQuota';
   }
   return status === 429 ? 'assistantRateLimited' : status === 504 ? 'assistantTimeout' : 'assistantUnavailable';
 }

@@ -47,6 +47,9 @@ const RUNTIME_VARS = [
   'ASSISTANT_PROVIDER',
   'GEMINI_MODEL',
   'DEEPSEEK_MODEL',
+  'CLAUDE_MODEL',
+  'OPENAI_BASE_URL',
+  'OPENAI_MODEL',
 ];
 
 function injectedVars() {

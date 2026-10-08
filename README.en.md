@@ -67,7 +67,7 @@ Durable Objects and rate limiters are created for you. Once deployed:
 Common settings:
 
 - **Custom domain**: add the build variable `CUSTOM_DOMAIN=aapay.example.com` (the zone must be on the same Cloudflare account). The next deploy binds the domain and turns off the `workers.dev` URL
-- **AI assistant**: add the secret `GEMINI_API_KEY` ([get a Gemini API key](https://aistudio.google.com/apikey)), or set the variable `ASSISTANT_PROVIDER=deepseek` and add the secret `DEEPSEEK_API_KEY` ([get a DeepSeek API key](https://platform.deepseek.com/api_keys)). Without one, each user can pick a provider and enter their own key in the assistant settings
+- **AI assistant**: add the secret `GEMINI_API_KEY` ([get a Gemini API key](https://aistudio.google.com/apikey)). To switch provider, set the variable `ASSISTANT_PROVIDER` and add its secret: `deepseek` uses `DEEPSEEK_API_KEY` ([get one](https://platform.deepseek.com/api_keys)), `claude` uses `CLAUDE_API_KEY` ([get one](https://platform.claude.com/settings/keys)), `openai` (any OpenAI-compatible service) uses `OPENAI_API_KEY` plus the variables `OPENAI_BASE_URL` and `OPENAI_MODEL`. Without one, each user can pick a provider and enter their own key in the assistant settings
 - **Signed activity log**: add the secret `AUDIT_SIGNING_KEY`, generated with `node -e "console.log(crypto.randomBytes(32).toString('base64url'))"`. Don't change it afterwards
 - **Other variables**: any plain variable from [Configuration](#configuration) can be set as a build variable of the same name, e.g. `TIMEZONE` or `ASSISTANT`
 
@@ -145,9 +145,10 @@ Cloudflare and Docker share the same variable names: on Cloudflare, plain variab
 | `PUBLIC_URL` | Public URL used as OAuth issuer and MCP resource; inferred from requests when unset, recommended behind a proxy | — |
 | `TIMEZONE` | Time zone for "today" when the AI doesn't get a date | `Asia/Shanghai` |
 | `ASSISTANT` | `enabled` / `disabled`: the AI assistant | `enabled` |
-| `ASSISTANT_PROVIDER` | `gemini` / `deepseek`: the AI provider the site uses | `gemini` |
-| `GEMINI_API_KEY` / `DEEPSEEK_API_KEY` | Site-wide key (secret); only the one for `ASSISTANT_PROVIDER` is used. Without it, users pick a provider and bring their own key, kept only in their browser and forwarded per request, never stored | — |
-| `GEMINI_MODEL` / `DEEPSEEK_MODEL` | Default model per provider; users with their own key can pick another | `gemini-flash-lite-latest` / `deepseek-flash` |
+| `ASSISTANT_PROVIDER` | `gemini` / `deepseek` / `claude` / `openai` (OpenAI-compatible): the AI provider the site uses | `gemini` |
+| `GEMINI_API_KEY` / `DEEPSEEK_API_KEY` / `CLAUDE_API_KEY` / `OPENAI_API_KEY` | Site-wide key (secret); only the one for `ASSISTANT_PROVIDER` is used. Without it, users pick a provider and bring their own key, kept only in their browser and forwarded per request, never stored | — |
+| `GEMINI_MODEL` / `DEEPSEEK_MODEL` / `CLAUDE_MODEL` | Default model per provider; users with their own key can pick another | `gemini-flash-lite-latest` / `deepseek-flash` / `claude-haiku-5-5` |
+| `OPENAI_BASE_URL` / `OPENAI_MODEL` | Base URL (e.g. `https://api.example.com/v1`) and model of an OpenAI-compatible service, required with `ASSISTANT_PROVIDER=openai`. A fallback: plain streaming chat and function calling, image reading via JSON in the prompt; a user's own base URL must be public https | — |
 | `AUDIT_SIGNING_KEY` | Ed25519 private key for the activity log, 32 bytes base64url (secret). Without it there's only the hash chain. Don't rotate it, or members' browsers will warn about a changed key | — |
 | `CUSTOM_DOMAIN` | Cloudflare builds only: the custom domain to bind | — |
 | `PORT` / `DATA_DIR` | Node / Docker only: port and data directory | `8787` / `./data` |

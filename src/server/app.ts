@@ -5,7 +5,8 @@ import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
 import { streamSSE } from 'hono/streaming';
 import { assistantInput, changesInput, joinInput, ledgerInput, loginInput, passphraseInput } from '../shared/schema.ts';
-import { AI_KEY_HEADER, AI_KEY_PATTERN, AI_MODEL_HEADER, AI_MODEL_PATTERN, AI_PROVIDER_HEADER, isAiProvider } from '../shared/assistant.ts';
+import { AI_BASE_URL_HEADER, AI_KEY_HEADER, AI_KEY_PATTERN, AI_MODEL_HEADER, AI_MODEL_PATTERN, AI_PROVIDER_HEADER, isAiProvider } from '../shared/assistant.ts';
+import { publicBaseUrl } from './ai/base-url.ts';
 import { translateError } from '../shared/errors.ts';
 import { localPath } from '../shared/redirect.ts';
 import type { AdminIdentity, LedgerOverview, PublicConfig, SessionInfo, SessionState, Snapshot } from '../shared/types.ts';
@@ -51,16 +52,20 @@ function modelKey(c: Context<AppEnv>): { byok: boolean; model: ModelKey } {
   const { idleTimeout } = config;
   const own = c.req.header(AI_KEY_HEADER)?.trim();
   if (!own) {
-    const apiKey = config.keys[config.provider];
+    const { provider } = config;
+    const apiKey = config.keys[provider];
     if (!apiKey) throw new AppError(400, 'assistantNeedsKey');
-    return { byok: false, model: { provider: config.provider, apiKey, model: config.models[config.provider], idleTimeout } };
+    return { byok: false, model: { provider, apiKey, model: config.models[provider], idleTimeout, ...(provider === 'openai' && { baseUrl: config.openaiBaseUrl! }) } };
   }
   const provider = c.req.header(AI_PROVIDER_HEADER)?.trim();
   if (!isAiProvider(provider)) throw badRequest('invalidParams');
   if (!AI_KEY_PATTERN.test(own)) throw new AppError(400, 'assistantKeyInvalid');
   const model = c.req.header(AI_MODEL_HEADER)?.trim() || config.models[provider];
   if (!AI_MODEL_PATTERN.test(model)) throw new AppError(400, 'assistantModelNotFound');
-  return { byok: true, model: { provider, apiKey: own, model, idleTimeout } };
+  if (provider !== 'openai') return { byok: true, model: { provider, apiKey: own, model, idleTimeout } };
+  const baseUrl = publicBaseUrl(c.req.header(AI_BASE_URL_HEADER) ?? '');
+  if (!baseUrl) throw new AppError(400, 'assistantBaseUrlInvalid');
+  return { byok: true, model: { provider, apiKey: own, model, baseUrl, idleTimeout } };
 }
 
 const mutation = (c: Context<AppEnv>) => ({ actor: actorOf(c.var.session), origin: c.req.header('x-client-id')?.slice(0, 64) });

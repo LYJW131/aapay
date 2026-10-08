@@ -10,6 +10,7 @@ export interface ToolCall {
 export interface Part {
   text?: string;
   thought?: boolean;
+  redacted?: boolean;
   signature?: string;
   image?: { mimeType: string; data: string };
   call?: ToolCall;
@@ -40,6 +41,7 @@ export interface ModelKey {
   provider: AiProvider;
   apiKey: string;
   model: string;
+  baseUrl?: string;
   idleTimeout: number;
 }
 
@@ -54,6 +56,16 @@ export class ModelError extends Error {
     super(message);
     this.name = 'ModelError';
     this.status = status;
+  }
+}
+
+export function parseToolArgs(raw: string): Record<string, unknown> | null {
+  if (!raw.trim()) return {};
+  try {
+    const value = JSON.parse(raw);
+    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+  } catch {
+    return null;
   }
 }
 
@@ -150,4 +162,45 @@ export async function probe(name: string, url: string, idleTimeout: number, init
     throw unreachable(err);
   });
   if (!res.ok) throw new ModelError(res.status, `${name} ${res.status}: ${body.slice(0, 300)}`);
+}
+
+// 只在等上游时计时，调用方处理事件期间不算；renews 不认可的事件（心跳之类）不续期
+export async function* withIdleTimeout<T>(
+  name: string,
+  source: AsyncIterable<T>,
+  { idleTimeout, signal, abort, renews, mapError }: { idleTimeout: number; signal?: AbortSignal; abort: () => void; renews: (item: T) => boolean; mapError: (err: unknown) => unknown },
+): AsyncGenerator<T> {
+  const iterator = source[Symbol.asyncIterator]();
+  let deadline = Date.now() + idleTimeout;
+  try {
+    for (;;) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let stop: (() => void) | undefined;
+      const timeout = new Promise<'timeout'>((resolve) => {
+        timer = setTimeout(() => resolve('timeout'), Math.max(0, deadline - Date.now()));
+      });
+      const cancelled = new Promise<'cancelled'>((resolve) => {
+        stop = () => resolve('cancelled');
+        if (signal?.aborted) stop();
+        else signal?.addEventListener('abort', stop, { once: true });
+      });
+      let next: IteratorResult<T> | 'timeout' | 'cancelled';
+      try {
+        next = await Promise.race([iterator.next(), timeout, cancelled]);
+      } catch (err) {
+        throw signal?.aborted ? signal.reason : mapError(err);
+      } finally {
+        clearTimeout(timer);
+        if (stop) signal?.removeEventListener('abort', stop);
+      }
+      if (next === 'cancelled') throw signal!.reason;
+      if (next === 'timeout') throw new ModelError(504, `${name} sent nothing for ${idleTimeout}ms`);
+      if (next.done) return;
+      yield next.value;
+      if (renews(next.value)) deadline = Date.now() + idleTimeout;
+    }
+  } finally {
+    abort();
+    void iterator.return?.().catch(() => {});
+  }
 }

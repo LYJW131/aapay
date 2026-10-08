@@ -2,15 +2,16 @@ import type { Category } from './categories.ts';
 import type { Change } from './changes.ts';
 import type { IsoDate } from './types.ts';
 
-export const AI_PROVIDERS = ['gemini', 'deepseek'] as const;
+export const AI_PROVIDERS = ['gemini', 'deepseek', 'claude', 'openai'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 export const isAiProvider = (value: unknown): value is AiProvider => AI_PROVIDERS.includes(value as AiProvider);
 
 export const AI_PROVIDER_HEADER = 'x-ai-provider';
 export const AI_KEY_HEADER = 'x-ai-key';
 export const AI_MODEL_HEADER = 'x-ai-model';
-export const AI_KEY_PATTERN = /^[\w.-]{20,200}$/;
-export const AI_MODEL_PATTERN = /^[a-z0-9][a-z0-9.-]{0,63}$/;
+export const AI_BASE_URL_HEADER = 'x-ai-base-url';
+export const AI_KEY_PATTERN = /^[\x21-\x7e]{8,512}$/;
+export const AI_MODEL_PATTERN = /^[\w][\w.:/@+-]{0,127}$/;
 
 export interface AssistantTurn {
   role: 'user' | 'assistant';

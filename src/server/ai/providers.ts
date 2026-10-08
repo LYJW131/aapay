@@ -1,11 +1,16 @@
-import { checkDeepSeek, streamDeepSeek } from './deepseek.ts';
+import { checkDeepSeek, checkOpenAI, streamDeepSeek, streamOpenAI } from './chat.ts';
+import { checkClaude, streamClaude } from './claude.ts';
 import { checkGemini, streamGemini } from './gemini.ts';
 import type { ModelKey, ModelOptions, ModelRequest, Part } from './model.ts';
+import type { AiProvider } from '../../shared/assistant.ts';
 
-export function streamModel(request: ModelRequest, options: ModelOptions): AsyncGenerator<Part[]> {
-  return options.provider === 'deepseek' ? streamDeepSeek(request, options) : streamGemini(request, options);
-}
+const PROVIDERS: Record<AiProvider, { stream: (request: ModelRequest, options: ModelOptions) => AsyncGenerator<Part[]>; check: (key: ModelKey) => Promise<void> }> = {
+  gemini: { stream: streamGemini, check: checkGemini },
+  deepseek: { stream: streamDeepSeek, check: checkDeepSeek },
+  claude: { stream: streamClaude, check: checkClaude },
+  openai: { stream: streamOpenAI, check: checkOpenAI },
+};
 
-export function checkModel(key: ModelKey): Promise<void> {
-  return key.provider === 'deepseek' ? checkDeepSeek(key) : checkGemini(key);
-}
+export const streamModel = (request: ModelRequest, options: ModelOptions) => PROVIDERS[options.provider].stream(request, options);
+
+export const checkModel = (key: ModelKey) => PROVIDERS[key.provider].check(key);

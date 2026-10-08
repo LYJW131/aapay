@@ -10,6 +10,7 @@ import { createNodePlatform } from '../src/server/node/platform.ts';
 import type { AssistantEvent } from '../src/shared/assistant.ts';
 import { newId } from '../src/shared/ids.ts';
 import { dsCall, dsFinish, dsText, dsThink, dsUsage, stubDeepSeek } from './helpers/deepseek.ts';
+import { start, stop as claudeStop, stubClaude, textBlock, thinkingBlock, toolBlock } from './helpers/claude.ts';
 import { call, parts, stubGemini, text, type Chunk } from './helpers/gemini.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'aapay-assistant-'));
@@ -563,7 +564,7 @@ describe('assistant endpoint', () => {
     expect(disabled.res.status).toBe(404);
     expect(JSON.parse(disabled.raw)).toEqual({ error: '未启用 AI 助手' });
     expect(await (await setup()).json('GET', '/config')).toMatchObject({
-      assistant: { provider: 'gemini', builtin: true, models: { gemini: 'gemini-flash-lite-latest', deepseek: 'deepseek-flash' } },
+      assistant: { provider: 'gemini', builtin: true, models: { gemini: 'gemini-flash-lite-latest', deepseek: 'deepseek-flash', claude: 'claude-haiku-5-5', openai: '' } },
     });
   });
 });
@@ -602,7 +603,7 @@ describe('bring your own key', () => {
   it('asks for a key when the server has none for its provider', async () => {
     stubGemini([]);
     const { ask, json } = await setup({ ASSISTANT_PROVIDER: 'deepseek', GEMINI_API_KEY: 'test-key' });
-    expect((await json('GET', '/config')).assistant).toEqual({ provider: 'deepseek', builtin: false, models: { gemini: 'gemini-flash-lite-latest', deepseek: 'deepseek-flash' } });
+    expect((await json('GET', '/config')).assistant).toEqual({ provider: 'deepseek', builtin: false, models: { gemini: 'gemini-flash-lite-latest', deepseek: 'deepseek-flash', claude: 'claude-haiku-5-5', openai: '' } });
     const { res, raw } = await ask({});
     expect(res.status).toBe(400);
     expect(JSON.parse(raw)).toEqual({ error: '请先填写你的 API Key' });
@@ -738,5 +739,65 @@ describe('assistant on DeepSeek', () => {
     expect(drafts.length).toBeGreaterThan(2);
     expect(drafts.find((d) => d.key === 'd0' && d.fields.amount !== undefined)!.fields.amount).toBe(166.5);
     expect(ofType(events, 'pending').at(-1)!.changes.map((c: any) => c.expense.amount)).toEqual([16650, 4800]);
+  });
+});
+
+describe('assistant on Claude and OpenAI-compatible providers', () => {
+  const OWN = 'sk-own-key-0123456789abcdef';
+
+  it('runs the tool loop on Claude and sends thinking back unchanged', async () => {
+    const requests = stubClaude([
+      [start, ...thinkingBlock(0, 'sig-1'), ...toolBlock(1, 'toolu_a', 'add_member', '{"name":"Mia"}'), ...claudeStop('tool_use')],
+      [start, ...textBlock(0, '已拟好，', '确认后加入。'), ...claudeStop()],
+    ]);
+    const { ask } = await setup({ ASSISTANT_PROVIDER: 'claude', CLAUDE_API_KEY: 'sk-ant-site-0123456789' });
+    const { events } = await ask({ messages: [{ role: 'user', text: '加个成员 Mia' }] });
+    expect(ofType(events, 'pending').at(-1)!.changes.map((c: any) => c.member?.name)).toEqual(['Mia']);
+    expect(ofType(events, 'text').map((e) => e.delta).join('')).toBe('已拟好，确认后加入。');
+    expect(requests[0]!.headers.get('x-api-key')).toBe('sk-ant-site-0123456789');
+    expect(requests[0]!.body.model).toBe('claude-haiku-5-5');
+    expect(requests[1]!.body.messages.at(-2)).toEqual({
+      role: 'assistant',
+      content: [
+        { type: 'thinking', thinking: '', signature: 'sig-1' },
+        { type: 'tool_use', id: 'toolu_a', name: 'add_member', input: { name: 'Mia' } },
+      ],
+    });
+    expect(requests[1]!.body.messages.at(-1).content[0]).toMatchObject({ type: 'tool_result', tool_use_id: 'toolu_a' });
+  });
+
+  it('checks a Claude key by looking the model up', async () => {
+    const requests = stubClaude([Response.json({ id: 'claude-haiku-5-5', type: 'model' }), Response.json({ type: 'error', error: { type: 'not_found_error', message: 'model: nope' } }, { status: 404 })]);
+    const { request } = await setup({});
+    const own = { 'x-ai-provider': 'claude', 'x-ai-key': OWN };
+    expect(await (await request('POST', '/ledger/assistant/key', undefined, own)).json()).toEqual({ provider: 'claude', model: 'claude-haiku-5-5' });
+    expect(requests[0]).toMatchObject({ method: 'GET', url: 'https://api.anthropic.com/v1/models/claude-haiku-5-5' });
+    const missing = await request('POST', '/ledger/assistant/key', undefined, { ...own, 'x-ai-model': 'nope' });
+    expect(await missing.json()).toEqual({ error: '找不到这个模型' });
+  });
+
+  it('uses a public OpenAI-compatible base URL from the user and refuses private ones', async () => {
+    const requests = stubDeepSeek([[dsText('好'), dsFinish('stop')]]);
+    const { ask } = await setup({});
+    const own = (baseUrl: string) => ({ 'x-ai-provider': 'openai', 'x-ai-key': OWN, 'x-ai-model': 'Qwen/Qwen3-Max', 'x-ai-base-url': baseUrl });
+    expect((await ask({}, 'zh-CN', own('https://llm.example.com/v1/'))).events.at(-1)).toEqual({ type: 'done' });
+    expect(requests[0]!.url).toBe('https://llm.example.com/v1/chat/completions');
+    for (const bad of ['http://llm.example.com/v1', 'https://192.168.1.2/v1', 'https://localhost:8000/v1']) {
+      const { res, raw } = await ask({}, 'zh-CN', own(bad));
+      expect(res.status).toBe(400);
+      expect(JSON.parse(raw)).toEqual({ error: '服务地址需为公网 https 地址' });
+    }
+    expect((await ask({}, 'zh-CN', { 'x-ai-provider': 'openai', 'x-ai-key': OWN, 'x-ai-base-url': 'https://llm.example.com/v1' })).res.status).toBe(400);
+    expect(requests).toHaveLength(1);
+  });
+
+  it('runs the site on an OpenAI-compatible server and validates its config', async () => {
+    const requests = stubDeepSeek([[dsText('好'), dsFinish('stop')]]);
+    const { ask } = await setup({ ASSISTANT_PROVIDER: 'openai', OPENAI_BASE_URL: 'http://ollama.lan:11434/v1', OPENAI_MODEL: 'qwen3:8b', OPENAI_API_KEY: 'ollama-key' });
+    await ask({});
+    expect(requests[0]!.url).toBe('http://ollama.lan:11434/v1/chat/completions');
+    expect(requests[0]!.body.model).toBe('qwen3:8b');
+    expect(() => loadConfig({ ASSISTANT_PROVIDER: 'openai', OPENAI_MODEL: 'x' })).toThrow('OPENAI_BASE_URL');
+    expect(() => loadConfig({ OPENAI_BASE_URL: 'not a url' })).toThrow('OPENAI_BASE_URL');
   });
 });

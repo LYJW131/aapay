@@ -1,6 +1,14 @@
-import { ModelError, parseData, probe, sseStream, type ModelKey, type ModelOptions, type ModelRequest, type Part, type ToolCall } from './model.ts';
+import { ModelError, parseData, parseToolArgs, probe, sseStream, type ModelKey, type ModelOptions, type ModelRequest, type Part, type ToolCall } from './model.ts';
 
-const BASE = 'https://api.deepseek.com';
+interface Flavor {
+  name: string;
+  base: (key: ModelKey) => string;
+  // DeepSeek 思考模式：显式开启思考，带工具调用的 assistant 消息必须带 reasoning_content（空字符串也行），否则 400
+  deepseek: boolean;
+}
+
+const DEEPSEEK: Flavor = { name: 'DeepSeek', base: () => 'https://api.deepseek.com', deepseek: true };
+const OPENAI: Flavor = { name: 'OpenAI-compatible', base: (key) => key.baseUrl!, deepseek: false };
 
 interface ToolCallDelta {
   index: number;
@@ -8,9 +16,9 @@ interface ToolCallDelta {
   function?: { name?: string; arguments?: string };
 }
 
-interface DeepSeekChunk {
+interface ChatChunk {
   choices?: {
-    delta?: { content?: string | null; reasoning_content?: string | null; tool_calls?: ToolCallDelta[] };
+    delta?: { content?: string | null; reasoning_content?: string | null; reasoning?: string | null; tool_calls?: ToolCallDelta[] };
     finish_reason?: string | null;
   }[];
   error?: { code?: number | string; message?: string };
@@ -18,7 +26,7 @@ interface DeepSeekChunk {
 
 const FAILED_FINISH: Record<string, number> = { content_filter: 502, insufficient_system_resource: 503 };
 
-function messages(request: ModelRequest) {
+function messages(request: ModelRequest, flavor: Flavor) {
   const system = request.json
     ? `${request.system}\n\nRespond with only a json object that matches this JSON Schema:\n${JSON.stringify(request.json)}`
     : request.system;
@@ -28,8 +36,7 @@ function messages(request: ModelRequest) {
       const text = m.parts.filter((p) => p.text && !p.thought).map((p) => p.text).join('');
       const reasoning = m.parts.filter((p) => p.text && p.thought).map((p) => p.text).join('');
       const calls = m.parts.flatMap((p) => (p.call ? [{ id: p.call.id, type: 'function', function: { name: p.call.name, arguments: JSON.stringify(p.call.args ?? {}) } }] : []));
-      // 思考模式下带工具调用的 assistant 消息缺 reasoning_content 字段会被拒（400），空字符串可以
-      out.push({ role: 'assistant', content: text, reasoning_content: reasoning, ...(calls.length && { tool_calls: calls }) });
+      out.push({ role: 'assistant', content: text, ...((flavor.deepseek || reasoning) && { reasoning_content: reasoning }), ...(calls.length && { tool_calls: calls }) });
       continue;
     }
     for (const p of m.parts) if (p.result) out.push({ role: 'tool', tool_call_id: p.result.id, content: JSON.stringify(p.result.response) });
@@ -45,16 +52,6 @@ function messages(request: ModelRequest) {
   return out;
 }
 
-function parseArgs(raw: string): Record<string, unknown> | null {
-  if (!raw.trim()) return {};
-  try {
-    const value = JSON.parse(raw);
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
-  } catch {
-    return null;
-  }
-}
-
 class ToolCalls {
   private readonly open = new Map<number, { id?: string; name: string; args: string }>();
   private readonly closed = new Set<number>();
@@ -62,7 +59,7 @@ class ToolCalls {
   add(pieces: ToolCallDelta[]) {
     for (const piece of pieces) {
       if (this.closed.has(piece.index)) {
-        if (piece.function?.arguments?.trim()) throw new ModelError(502, `DeepSeek streamed tool call ${piece.index} after it looked complete`);
+        if (piece.function?.arguments?.trim()) throw new ModelError(502, `Tool call ${piece.index} streamed after it looked complete`);
         continue;
       }
       const call = this.open.get(piece.index) ?? { name: '', args: '' };
@@ -78,14 +75,14 @@ class ToolCalls {
     const indexes = [...this.open.keys()].sort((a, b) => a - b);
     for (const index of indexes.slice(0, -1)) {
       const call = this.open.get(index)!;
-      const args = parseArgs(call.args);
+      const args = parseToolArgs(call.args);
       if (!args || !call.args.trim()) break;
       yield [{ call: this.close(index, args) }];
     }
   }
 
   *flush(): Generator<Part[]> {
-    for (const index of [...this.open.keys()].sort((a, b) => a - b)) yield [{ call: this.close(index, parseArgs(this.open.get(index)!.args)) }];
+    for (const index of [...this.open.keys()].sort((a, b) => a - b)) yield [{ call: this.close(index, parseToolArgs(this.open.get(index)!.args)) }];
   }
 
   private close(index: number, args: Record<string, unknown> | null): ToolCall {
@@ -96,22 +93,22 @@ class ToolCalls {
   }
 }
 
-export async function* streamDeepSeek(request: ModelRequest, options: ModelOptions): AsyncGenerator<Part[]> {
+async function* streamChat(request: ModelRequest, options: ModelOptions, flavor: Flavor): AsyncGenerator<Part[]> {
   const body = {
     model: options.model,
-    messages: messages(request),
+    messages: messages(request, flavor),
     stream: true,
-    thinking: { type: 'enabled' },
+    ...(flavor.deepseek && { thinking: { type: 'enabled' } }),
     ...(request.tools?.length && {
       tools: request.tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })),
       ...(request.toolChoice === 'none' && { tool_choice: 'none' }),
     }),
-    ...(request.json && { response_format: { type: 'json_object' } }),
-    ...(request.temperature !== undefined && { temperature: request.temperature }),
+    ...(flavor.deepseek && request.json && { response_format: { type: 'json_object' } }),
+    ...(flavor.deepseek && request.temperature !== undefined && { temperature: request.temperature }),
   };
   const stream = sseStream(
-    'DeepSeek',
-    `${BASE}/chat/completions`,
+    flavor.name,
+    `${flavor.base(options)}/chat/completions`,
     { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${options.apiKey}` }, body: JSON.stringify(body) },
     options,
   );
@@ -122,12 +119,13 @@ export async function* streamDeepSeek(request: ModelRequest, options: ModelOptio
       finished = true;
       break;
     }
-    const chunk = parseData<DeepSeekChunk>('DeepSeek', data);
-    if (chunk.error) throw new ModelError(typeof chunk.error.code === 'number' ? chunk.error.code : 502, chunk.error.message ?? 'DeepSeek stream error');
+    const chunk = parseData<ChatChunk>(flavor.name, data);
+    if (chunk.error) throw new ModelError(typeof chunk.error.code === 'number' ? chunk.error.code : 502, chunk.error.message ?? `${flavor.name} stream error`);
     const choice = chunk.choices?.[0];
     if (!choice) continue;
     const delta = choice.delta ?? {};
-    if (delta.reasoning_content) yield [{ text: delta.reasoning_content, thought: true }];
+    const reasoning = delta.reasoning_content ?? delta.reasoning;
+    if (reasoning) yield [{ text: reasoning, thought: true }];
     if (delta.content) yield [{ text: delta.content }];
     if (delta.tool_calls?.length) {
       calls.add(delta.tool_calls);
@@ -135,18 +133,37 @@ export async function* streamDeepSeek(request: ModelRequest, options: ModelOptio
     }
     if (choice.finish_reason) {
       const failed = FAILED_FINISH[choice.finish_reason];
-      if (failed) throw new ModelError(failed, `DeepSeek finished with ${choice.finish_reason}`);
+      if (failed) throw new ModelError(failed, `${flavor.name} finished with ${choice.finish_reason}`);
       finished = true;
       yield* calls.flush();
     }
   }
-  if (!finished) throw new ModelError(502, 'DeepSeek stream ended before it finished');
+  // 兼容服务各家实现不一，不发结束标记也照常收尾；DeepSeek 一定会发，没有就是被截断
+  if (!finished && flavor.deepseek) throw new ModelError(502, 'DeepSeek stream ended before it finished');
+  yield* calls.flush();
 }
 
+export const streamDeepSeek = (request: ModelRequest, options: ModelOptions) => streamChat(request, options, DEEPSEEK);
+export const streamOpenAI = (request: ModelRequest, options: ModelOptions) => streamChat(request, options, OPENAI);
+
 export async function checkDeepSeek({ apiKey, model, idleTimeout }: ModelKey) {
-  await probe('DeepSeek', `${BASE}/chat/completions`, idleTimeout, {
+  await probe('DeepSeek', 'https://api.deepseek.com/chat/completions', idleTimeout, {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
     body: JSON.stringify({ model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1, thinking: { type: 'disabled' } }),
   });
+}
+
+export async function checkOpenAI({ apiKey, baseUrl, model, idleTimeout }: ModelKey) {
+  const headers = { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` };
+  try {
+    await probe(OPENAI.name, `${baseUrl}/models`, idleTimeout, { headers });
+  } catch (err) {
+    if (!(err instanceof ModelError) || (err.status !== 404 && err.status !== 405)) throw err;
+    await probe(OPENAI.name, `${baseUrl}/chat/completions`, idleTimeout, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 1 }),
+    });
+  }
 }
