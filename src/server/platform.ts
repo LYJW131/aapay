@@ -18,4 +18,5 @@ export interface Platform {
   ledger(id: string): LedgerHost;
   connectConsole(c: Context): Response | Promise<Response>;
   rateLimit(bucket: RateLimitBucket, key: string): Promise<boolean>;
+  clientIp(c: Context, trustProxy: boolean): string;
 }

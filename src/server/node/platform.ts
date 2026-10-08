@@ -1,4 +1,5 @@
 import { mkdirSync, rmSync } from 'node:fs';
+import type { IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import type { Context } from 'hono';
 import type { UpgradeWebSocket, WSContext } from 'hono/ws';
@@ -133,5 +134,10 @@ export function createNodePlatform(
     },
     connectConsole: (c) => consoleRoom.connect(c, 'console'),
     rateLimit: async (bucket, key) => limiters[bucket].take(key),
+    clientIp(c, trustProxy) {
+      // 只有最后一项是紧邻的代理追加的，前面的都可能由客户端伪造
+      const forwarded = trustProxy ? c.req.header('x-forwarded-for')?.split(',').at(-1)?.trim() : undefined;
+      return forwarded || (c.env as { incoming?: IncomingMessage } | undefined)?.incoming?.socket.remoteAddress || 'local';
+    },
   };
 }

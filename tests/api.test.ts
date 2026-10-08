@@ -228,6 +228,24 @@ describe('API (admin auth)', () => {
   });
 });
 
+describe('API (rate limit key)', () => {
+  const join = (call: ReturnType<typeof setup>['call'], forwardedFor: string) =>
+    call('POST', '/join', { code: 'wrongcode' }, { 'x-forwarded-for': forwardedFor }).then((r) => r.status);
+
+  it('ignores forwarded headers unless TRUST_PROXY is enabled', async () => {
+    const { call } = setup({});
+    for (let i = 0; i < 10; i++) expect(await join(call, `10.0.0.${i}`)).toBe(401);
+    expect(await join(call, '10.0.0.99')).toBe(429);
+  });
+
+  it('keys on the address the nearest proxy appended, not on spoofable earlier entries', async () => {
+    const { call } = setup({ TRUST_PROXY: 'enabled' });
+    for (let i = 0; i < 10; i++) expect(await join(call, `10.0.0.${i}, 203.0.113.7`)).toBe(401);
+    expect(await join(call, '10.0.0.99, 203.0.113.7')).toBe(429);
+    expect(await join(call, '203.0.113.7, 198.51.100.8')).toBe(401);
+  });
+});
+
 describe('API (shared mode)', () => {
   it('lets everyone in without a passphrase', async () => {
     const { call } = setup({ MODE: 'shared' });

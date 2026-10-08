@@ -126,7 +126,7 @@ docker compose up -d
 
 - 镜像 `ghcr.io/lyjw131/aapay`，支持 `linux/amd64` 与 `linux/arm64`；`latest` 跟随 `main`，`1.2.3` / `1.2` / `1` 对应发布标签。国内可用阿里云镜像 `crpi-762preaq1jtfja6k.cn-hangzhou.personal.cr.aliyuncs.com/lyjw131/aapay`（同一份镜像，无需登录）
 - 基于 `node:24-alpine`，使用 Node 内置的 `node:sqlite`，不含原生依赖
-- 放在反向代理后面时建议设置 `PUBLIC_URL`，并关闭代理对 `/api/ledger/assistant` 的响应缓冲（服务端已带 `X-Accel-Buffering: no`）
+- 放在反向代理后面时建议设置 `PUBLIC_URL`、开启 `TRUST_PROXY`，并关闭代理对 `/api/ledger/assistant` 的响应缓冲（服务端已带 `X-Accel-Buffering: no`）
 
 不用 Docker 也可以直接运行（需要 Node.js ≥ 22.13）：
 
@@ -158,6 +158,7 @@ Cloudflare 与 Docker 使用同一套变量名：Cloudflare 上普通变量用�
 | `AUDIT_SIGNING_KEY` | 操作动态的 Ed25519 签名私钥，32 字节 base64url（密钥）；不填则只有哈希链。设置后不要更换，否则成员的浏览器会提示公钥变化 | — |
 | `CUSTOM_DOMAIN` | 仅 Cloudflare 构建时：绑定的自定义域名 | — |
 | `PORT` / `DATA_DIR` | 仅 Node / Docker：端口与数据目录 | `8787` / `./data` |
+| `TRUST_PROXY` | 仅 Node / Docker：`enabled` 时按 `X-Forwarded-For` 最后一项识别客户端 IP（用于登录与加入限流）；只在服务前面有反向代理、且外部无法直连时开启 | `disabled` |
 
 管理员认证方式：
 

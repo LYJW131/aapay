@@ -10,6 +10,7 @@ export interface Config {
   adminEmails: string[];
   mcp: boolean;
   publicUrl: string | null;
+  trustProxy: boolean;
   timezone: string;
   auditKey: Uint8Array | null;
   assistant: AssistantConfig | null;
@@ -64,6 +65,7 @@ export function loadConfig(env: object): Config {
       .filter(Boolean),
     mcp: pick('MCP', SWITCH, 'enabled') === 'enabled',
     publicUrl: str('PUBLIC_URL').replace(/\/+$/, '') || null,
+    trustProxy: pick('TRUST_PROXY', SWITCH, 'disabled') === 'enabled',
     timezone: str('TIMEZONE') || 'Asia/Shanghai',
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
     assistant:

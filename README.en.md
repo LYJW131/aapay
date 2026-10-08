@@ -118,7 +118,7 @@ Open <http://localhost:8787/admin> to sign in. Data lives in `./data` (`registry
 
 - Image: `ghcr.io/lyjw131/aapay` for `linux/amd64` and `linux/arm64`; `latest` tracks `main`, release tags publish `1.2.3` / `1.2` / `1`
 - Based on `node:24-alpine` with Node's built-in `node:sqlite`, no native dependencies
-- Behind a reverse proxy, set `PUBLIC_URL` and disable response buffering for `/api/ledger/assistant` (the server already sends `X-Accel-Buffering: no`)
+- Behind a reverse proxy, set `PUBLIC_URL`, enable `TRUST_PROXY`, and disable response buffering for `/api/ledger/assistant` (the server already sends `X-Accel-Buffering: no`)
 
 Without Docker (Node.js ≥ 22.13):
 
@@ -150,6 +150,7 @@ Cloudflare and Docker share the same variable names: on Cloudflare, plain variab
 | `AUDIT_SIGNING_KEY` | Ed25519 private key for the activity log, 32 bytes base64url (secret). Without it there's only the hash chain. Don't rotate it, or members' browsers will warn about a changed key | — |
 | `CUSTOM_DOMAIN` | Cloudflare builds only: the custom domain to bind | — |
 | `PORT` / `DATA_DIR` | Node / Docker only: port and data directory | `8787` / `./data` |
+| `TRUST_PROXY` | Node / Docker only: when `enabled`, the client IP (used by the login and join rate limits) is the last `X-Forwarded-For` entry; enable only when a reverse proxy sits in front and the server is not directly reachable | `disabled` |
 
 Admin sign-in modes:
 

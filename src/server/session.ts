@@ -25,11 +25,7 @@ export async function findSession(c: Context<AppEnv>): Promise<SessionInfo | nul
   return session?.role === 'admin' && !stillAdmin(config, session.subject) ? null : session;
 }
 
-export const clientIp = (c: Context) =>
-  c.req.header('cf-connecting-ip') ??
-  c.req.header('x-real-ip') ??
-  c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ??
-  'local';
+export const clientIp = (c: Context<AppEnv>) => c.var.platform.clientIp(c, c.var.config.trustProxy);
 
 export function actorOf(session: SessionInfo): AuditActor {
   if (session.role === 'shared') return { kind: 'shared' };

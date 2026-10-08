@@ -127,6 +127,7 @@ function cloudflarePlatform(env: Env): Platform {
       const limiter = { join: env.JOIN_LIMITER, login: env.LOGIN_LIMITER, assistant: env.ASSISTANT_LIMITER }[bucket];
       return limiter ? (await limiter.limit({ key })).success : true;
     },
+    clientIp: (c) => c.req.header('cf-connecting-ip') ?? 'local',
   };
 }
 
