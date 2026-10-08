@@ -97,7 +97,7 @@ Durable Objects 与限流会自动创建，不需要手动建数据库。部署�
 <details>
 <summary><b>Preview 部署</b></summary>
 
-在 Workers Builds 开启 Previews 后，推送其他分支会用 `npx wrangler preview` 部署到 `<分支>-<Worker>.<子域>.workers.dev`，每个 Preview 的 Durable Objects 存储独立，与生产数据隔离。Preview 的构建变量单独设置（Settings → Builds → Previews），规则与生产相同。`wrangler preview` 不会沿用之前设置的密钥，需要的话在 Preview 的部署命令里用 `--secrets-file` 从构建密钥生成。
+在 Workers Builds 开启 Previews 后，推送其他分支会用 `npx wrangler preview` 部署到 `<分支>-<Worker>.<子域>.workers.dev`，每个 Preview 的 Durable Objects 存储独立，与生产数据隔离。Preview 有自己的一组构建变量（在 Builds 设置的 Previews 部分），规则与生产相同。`wrangler preview` 不会沿用之前设置的密钥，需要的话在 Preview 的部署命令里用 `--secrets-file` 从构建密钥生成。
 
 </details>
 

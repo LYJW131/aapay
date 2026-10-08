@@ -51,7 +51,7 @@ npm run build:node          # 前端 + esbuild 打成单文件 dist/node/server.
 node scripts/seed.mjs http://127.0.0.1:5173                     # 写入演示账本（口令 demo2026）
 ```
 
-本地开发把 `.dev.vars.example` 复制为 `.dev.vars` 并取消注释 `ADMIN_AUTH=none`，`/admin` 打开即以管理员登录。`.dev.vars.example` 同时是一键部署按钮读取密钥的来源，只能放密钥，不能有未注释的 `ADMIN_AUTH=none` 或默认密码；`.env.example`（Docker）同理全部保持注释。`npm run dev` 不做构建变量注入。
+本地开发把 `.dev.vars.example` 复制为 `.dev.vars` 并取消注释 `ADMIN_AUTH=none`，`/admin` 打开即以管理员登录。`.dev.vars.example` 同时是一键部署按钮读取密钥的来源，只能放密钥，不能有未注释的 `ADMIN_AUTH=none` 或默认密码；`.env.example`（Docker）同理，只保留空的 `ADMIN_PASSWORD=`，其余全部注释。`npm run dev` 不做构建变量注入。
 
 ## 架构
 
