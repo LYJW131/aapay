@@ -9,6 +9,7 @@ import { loadConfig } from '../src/server/config.ts';
 import { createNodePlatform } from '../src/server/node/platform.ts';
 import type { AssistantEvent } from '../src/shared/assistant.ts';
 import { newId } from '../src/shared/ids.ts';
+import { dsCall, dsFinish, dsText, dsThink, dsUsage, stubDeepSeek } from './helpers/deepseek.ts';
 import { call, parts, stubGemini, text, type Chunk } from './helpers/gemini.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'aapay-assistant-'));
@@ -561,50 +562,65 @@ describe('assistant endpoint', () => {
     const disabled = await off.ask({});
     expect(disabled.res.status).toBe(404);
     expect(JSON.parse(disabled.raw)).toEqual({ error: '未启用 AI 助手' });
-    expect(await (await setup()).json('GET', '/config')).toMatchObject({ assistant: { builtin: true, model: 'gemini-flash-lite-latest' } });
+    expect(await (await setup()).json('GET', '/config')).toMatchObject({
+      assistant: { provider: 'gemini', builtin: true, models: { gemini: 'gemini-flash-lite-latest', deepseek: 'deepseek-flash' } },
+    });
   });
 });
 
-describe('bring your own Gemini key', () => {
+describe('bring your own key', () => {
   const OWN = 'AQ.own-key-0123456789abcdef';
+  const own = (provider: string, extra: Record<string, string> = {}) => ({ 'x-ai-provider': provider, 'x-ai-key': OWN, ...extra });
 
   it('uses the key and model from the request headers over the built-in ones', async () => {
     const requests = stubGemini([[text('好')]]);
     const { ask } = await setup();
-    const { events } = await ask({}, 'zh-CN', { 'x-gemini-key': OWN, 'x-gemini-model': 'gemini-9-pro' });
+    const { events } = await ask({}, 'zh-CN', own('gemini', { 'x-ai-model': 'gemini-9-pro' }));
     expect(events.at(-1)).toEqual({ type: 'done' });
     expect(requests[0]!.headers['x-goog-api-key']).toBe(OWN);
     expect(requests[0]!.url).toContain('/models/gemini-9-pro:streamGenerateContent');
   });
 
-  it('ignores the model header without an own key', async () => {
+  it('switches provider with the user key, defaulting to that provider model', async () => {
+    const requests = stubDeepSeek([[dsText('好'), dsFinish('stop')]]);
+    const { ask } = await setup();
+    const { events } = await ask({}, 'zh-CN', own('deepseek'));
+    expect(events.at(-1)).toEqual({ type: 'done' });
+    expect(requests[0]!.url).toBe('https://api.deepseek.com/chat/completions');
+    expect(requests[0]!.headers.authorization).toBe(`Bearer ${OWN}`);
+    expect(requests[0]!.body.model).toBe('deepseek-flash');
+  });
+
+  it('ignores provider and model headers without an own key', async () => {
     const requests = stubGemini([[text('好')]]);
     const { ask } = await setup();
-    await ask({}, 'zh-CN', { 'x-gemini-model': 'gemini-9-pro' });
+    await ask({}, 'zh-CN', { 'x-ai-provider': 'deepseek', 'x-ai-model': 'gemini-9-pro' });
     expect(requests[0]!.headers['x-goog-api-key']).toBe('test-key');
     expect(requests[0]!.url).toContain('/models/gemini-flash-lite-latest:');
   });
 
-  it('asks for a key when the server has none', async () => {
+  it('asks for a key when the server has none for its provider', async () => {
     stubGemini([]);
-    const { ask, json } = await setup({});
-    expect((await json('GET', '/config')).assistant).toEqual({ builtin: false, model: 'gemini-flash-lite-latest' });
+    const { ask, json } = await setup({ ASSISTANT_PROVIDER: 'deepseek', GEMINI_API_KEY: 'test-key' });
+    expect((await json('GET', '/config')).assistant).toEqual({ provider: 'deepseek', builtin: false, models: { gemini: 'gemini-flash-lite-latest', deepseek: 'deepseek-flash' } });
     const { res, raw } = await ask({});
     expect(res.status).toBe(400);
-    expect(JSON.parse(raw)).toEqual({ error: '请先填写你的 Gemini API Key' });
+    expect(JSON.parse(raw)).toEqual({ error: '请先填写你的 API Key' });
   });
 
   it('turns the assistant off entirely with ASSISTANT=disabled', async () => {
     const { ask, json } = await setup({ ASSISTANT: 'disabled', GEMINI_API_KEY: 'test-key' });
     expect((await json('GET', '/config')).assistant).toBeNull();
-    expect((await ask({}, 'zh-CN', { 'x-gemini-key': OWN })).res.status).toBe(404);
+    expect((await ask({}, 'zh-CN', own('gemini'))).res.status).toBe(404);
   });
 
-  it('rejects malformed keys and models before calling Gemini', async () => {
+  it('rejects malformed providers, keys and models before calling upstream', async () => {
     const requests = stubGemini([]);
     const { ask } = await setup({});
-    expect((await ask({}, 'zh-CN', { 'x-gemini-key': 'short' })).res.status).toBe(400);
-    expect((await ask({}, 'zh-CN', { 'x-gemini-key': OWN, 'x-gemini-model': '../files' })).res.status).toBe(400);
+    expect((await ask({}, 'zh-CN', { 'x-ai-key': OWN })).res.status).toBe(400);
+    expect((await ask({}, 'zh-CN', own('openai'))).res.status).toBe(400);
+    expect((await ask({}, 'zh-CN', { 'x-ai-provider': 'gemini', 'x-ai-key': 'short' })).res.status).toBe(400);
+    expect((await ask({}, 'zh-CN', own('gemini', { 'x-ai-model': '../files' }))).res.status).toBe(400);
     expect(requests).toHaveLength(0);
   });
 
@@ -614,21 +630,43 @@ describe('bring your own Gemini key', () => {
       new Response('{}', { status: 429 }),
     ]);
     const { ask } = await setup({});
-    expect((await ask({}, 'zh-CN', { 'x-gemini-key': OWN })).events.at(-1)).toEqual({ type: 'error', message: 'Gemini API Key 无效' });
-    expect((await ask({}, 'zh-CN', { 'x-gemini-key': OWN })).events.at(-1)).toEqual({ type: 'error', message: '你的 Gemini API Key 额度已用完或请求太频繁' });
+    expect((await ask({}, 'zh-CN', own('gemini'))).events.at(-1)).toEqual({ type: 'error', message: 'API Key 无效' });
+    expect((await ask({}, 'zh-CN', own('gemini'))).events.at(-1)).toEqual({ type: 'error', message: '你的 API Key 余额不足或请求太频繁' });
+
+    stubDeepSeek([
+      Response.json({ error: { message: 'Authentication Fails' } }, { status: 401 }),
+      Response.json({ error: { message: 'Insufficient Balance' } }, { status: 402 }),
+      Response.json({ error: { message: 'Model Not Exist' } }, { status: 400 }),
+    ]);
+    expect((await ask({}, 'zh-CN', own('deepseek'))).events.at(-1)).toEqual({ type: 'error', message: 'API Key 无效' });
+    expect((await ask({}, 'zh-CN', own('deepseek'))).events.at(-1)).toEqual({ type: 'error', message: '你的 API Key 余额不足或请求太频繁' });
+    expect((await ask({}, 'zh-CN', own('deepseek'))).events.at(-1)).toEqual({ type: 'error', message: '找不到这个模型' });
   });
 
   it('checks a key against the chosen model without generating anything', async () => {
     const requests = stubGemini([new Response('{}'), new Response('{}', { status: 404 })]);
     const { request } = await setup({});
-    const ok = await request('POST', '/ledger/assistant/key', undefined, { 'x-gemini-key': OWN });
-    expect(await ok.json()).toEqual({ model: 'gemini-flash-lite-latest' });
+    const ok = await request('POST', '/ledger/assistant/key', undefined, own('gemini'));
+    expect(await ok.json()).toEqual({ provider: 'gemini', model: 'gemini-flash-lite-latest' });
     expect(requests[0]!.url).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest');
     expect(requests[0]!.headers['x-goog-api-key']).toBe(OWN);
-    const missing = await request('POST', '/ledger/assistant/key', undefined, { 'x-gemini-key': OWN, 'x-gemini-model': 'gemini-nope' });
+    const missing = await request('POST', '/ledger/assistant/key', undefined, own('gemini', { 'x-ai-model': 'gemini-nope' }));
     expect(missing.status).toBe(400);
-    expect(await missing.json()).toEqual({ error: '找不到这个 Gemini 模型' });
+    expect(await missing.json()).toEqual({ error: '找不到这个模型' });
     expect((await request('POST', '/ledger/assistant/key')).status).toBe(400);
+  });
+
+  it('checks a DeepSeek key with a one-token request', async () => {
+    const error = (status: number, message: string) => Response.json({ error: { message } }, { status });
+    const requests = stubDeepSeek([Response.json({ choices: [] }), error(400, 'The supported API model names are deepseek-flash, deepseek-v4-pro, but you passed deepseek-nope.'), error(401, 'Authentication Fails'), error(402, 'Insufficient Balance')]);
+    const { request } = await setup({});
+    expect(await (await request('POST', '/ledger/assistant/key', undefined, own('deepseek'))).json()).toEqual({ provider: 'deepseek', model: 'deepseek-flash' });
+    expect(requests[0]).toMatchObject({ url: 'https://api.deepseek.com/chat/completions', method: 'POST', body: { model: 'deepseek-flash', max_tokens: 1 } });
+    expect(requests[0]!.headers.authorization).toBe(`Bearer ${OWN}`);
+    const errorOf = async () => ((await (await request('POST', '/ledger/assistant/key', undefined, own('deepseek'))).json()) as { error: string }).error;
+    expect(await errorOf()).toBe('找不到这个模型');
+    expect(await errorOf()).toBe('API Key 无效');
+    expect(await errorOf()).toBe('你的 API Key 余额不足或请求太频繁');
   });
 
   it('reports a key check that times out as 504', async () => {
@@ -636,8 +674,69 @@ describe('bring your own Gemini key', () => {
       throw new DOMException('timed out', 'TimeoutError');
     });
     const { request } = await setup({});
-    const res = await request('POST', '/ledger/assistant/key', undefined, { 'x-gemini-key': OWN });
+    const res = await request('POST', '/ledger/assistant/key', undefined, own('gemini'));
     expect(res.status).toBe(504);
     expect(await res.json()).toEqual({ error: 'AI 助手响应超时，请重试' });
+  });
+});
+
+describe('assistant on DeepSeek', () => {
+  const env = { ASSISTANT_PROVIDER: 'deepseek', DEEPSEEK_API_KEY: 'sk-site-key-0123456789' };
+
+  it('runs the tool loop, proposes cards one by one and echoes reasoning within the turn', async () => {
+    const requests = stubDeepSeek([
+      [
+        dsThink('两笔'),
+        dsCall(0, { id: 'call_a', name: 'add_expense', args: '{"title":"早' }),
+        dsCall(0, { args: '餐","amount":18,"payer":"阿杰"}' }),
+        dsCall(1, { id: 'call_b', name: 'add_expense', args: '{"title":"咖啡","amount":25,"payer":"阿杰"}' }),
+        dsFinish('tool_calls'),
+        dsUsage,
+      ],
+      [dsText('两笔都拟好了，'), dsText('确认后记入。'), dsFinish('stop')],
+    ]);
+    const { ask, ids } = await setup(env);
+    const { events } = await ask({ messages: [{ role: 'user', text: '早餐 18 咖啡 25' }] });
+    const pendings = ofType(events, 'pending');
+    expect(pendings.map((p) => p.changes.length)).toEqual([0, 1, 2]);
+    expect(pendings[2]!.changes.map((c: any) => [c.expense.title, c.expense.amount, c.expense.payerId])).toEqual([
+      ['早餐', 1800, ids.me],
+      ['咖啡', 2500, ids.me],
+    ]);
+    expect(ofType(events, 'text').map((e) => e.delta).join('')).toBe('两笔都拟好了，确认后记入。');
+    expect(ofType(events, 'step').map((e) => `${e.id}:${e.status}`)).toEqual(['call_a:start', 'call_a:done', 'call_b:start', 'call_b:done']);
+
+    const second = requests[1]!.body.messages;
+    expect(second.at(-3)).toMatchObject({ role: 'assistant', reasoning_content: '两笔', tool_calls: [{ id: 'call_a' }, { id: 'call_b' }] });
+    expect(second.at(-2)).toMatchObject({ role: 'tool', tool_call_id: 'call_a' });
+    expect(JSON.parse(second.at(-1).content)).toMatchObject({ status: 'proposed' });
+    expect(requests[0]!.headers.authorization).toBe('Bearer sk-site-key-0123456789');
+  });
+
+  it('sends unparseable tool arguments back as a tool error', async () => {
+    const requests = stubDeepSeek([
+      [dsCall(0, { id: 'c', name: 'add_member', args: '{"name": "Mia"' }), dsFinish('length')],
+      [dsText('参数有误'), dsFinish('stop')],
+    ]);
+    const { ask } = await setup(env);
+    const { events } = await ask({ messages: [{ role: 'user', text: '加 Mia' }] });
+    expect(ofType(events, 'step').map((e) => e.status)).toEqual(['start', 'error']);
+    expect(JSON.parse(requests[1]!.body.messages.at(-1).content)).toEqual({ error: 'The arguments were not valid JSON' });
+  });
+
+  it('streams image drafts from json mode', async () => {
+    const json = JSON.stringify({ items: [{ title: '盒马', amount: 166.5, date: '2026-10-06', category: 'groceries' }, { title: '滴滴', amount: 48, date: null, category: 'transport' }] }, null, 2);
+    const requests = stubDeepSeek([
+      [dsThink('读图'), ...Array.from({ length: Math.ceil(json.length / 7) }, (_, i) => dsText(json.slice(i * 7, i * 7 + 7))), dsFinish('stop')],
+      [dsText('两笔已列好。'), dsFinish('stop')],
+    ]);
+    const { ask } = await setup(env);
+    const { events } = await ask({ images: [IMAGE], messages: [{ role: 'user', text: '' }] });
+    expect(requests[0]!.body.response_format).toEqual({ type: 'json_object' });
+    expect(requests[0]!.body.messages[1].content[0]).toEqual({ type: 'image_url', image_url: { url: IMAGE } });
+    const drafts = ofType(events, 'draft');
+    expect(drafts.length).toBeGreaterThan(2);
+    expect(drafts.find((d) => d.key === 'd0' && d.fields.amount !== undefined)!.fields.amount).toBe(166.5);
+    expect(ofType(events, 'pending').at(-1)!.changes.map((c: any) => c.expense.amount)).toEqual([16650, 4800]);
   });
 });

@@ -74,7 +74,7 @@ export function systemPrompt({ info, real, draft, pending, me, participants, tod
     `Today is ${today} (${weekday(today)}); weeks start on Monday. The currency is CNY; amounts in tools are in yuan.`,
     `Members:\n${members}`,
     me
-      ? `The user is ${quote(me.name)}: "I" and "me" mean this member.`
+      ? `The user is ${quote(me.name)}: "I" and "me" mean this member. Address the user as "you" (你), not by this name.`
       : 'The user has not said which member they are. When they say "I" or "me" (e.g. "I paid"), ask which member they are instead of guessing.',
     participants
       ? `When the user does not say who shares an expense, split it among ${participants.map((m) => quote(m.name)).join(', ')} (pass them as participants).`
@@ -85,6 +85,7 @@ export function systemPrompt({ info, real, draft, pending, me, participants, tod
     'Rules:',
     '- add_expense, update_expense, delete_expense, add_member, update_member, record_settlement and delete_settlement only propose a change. Nothing is saved until the user confirms it in the app. Never say something was recorded, saved or done; say it will be recorded once they confirm (e.g. "确认后记入", "Confirm to add them").',
     '- When the user asks for several changes, issue all of the proposal calls together in the same turn.',
+    '- Call tools without writing anything before them; write your reply only after the tools have run.',
     `- If the amount is missing, or who paid is missing${me ? ' and it was not the user' : ''}, ask one short question instead of guessing.${me ? ' If the payer is not mentioned, the user paid.' : ''}`,
     '- get_ledger, list_transactions and list_activity return only what is already in the ledger (confirmed). Pending proposals are listed separately in pendingChanges and are not part of the ledger yet. When the user asks how things stand now (how many members, balances, totals), answer from the confirmed data and mention pending proposals separately as not yet added. Use the ids from the results and from pendingChanges to update or delete records.',
     '- Answer questions directly: look the data up first, then state the answer itself (who, how much) in one sentence.',

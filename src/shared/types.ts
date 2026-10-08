@@ -1,3 +1,4 @@
+import type { AiProvider } from './assistant.ts';
 import type { AuditRecord } from './audit.ts';
 import type { Category } from './categories.ts';
 import type { Via } from './changes.ts';
@@ -111,7 +112,7 @@ export interface PublicConfig {
   mode: Mode;
   adminAuth: AdminAuthMode;
   mcp: boolean;
-  assistant: { builtin: boolean; model: string } | null;
+  assistant: { provider: AiProvider; builtin: boolean; models: Record<AiProvider, string> } | null;
 }
 
 export interface AdminIdentity {

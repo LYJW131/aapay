@@ -1,3 +1,4 @@
+import { AI_PROVIDERS, type AiProvider } from '../shared/assistant.ts';
 import type { AdminAuthMode, Mode } from '../shared/types.ts';
 
 export interface Config {
@@ -16,8 +17,9 @@ export interface Config {
 }
 
 export interface AssistantConfig {
-  apiKey: string | null;
-  model: string;
+  provider: AiProvider;
+  keys: Record<AiProvider, string | null>;
+  models: Record<AiProvider, string>;
   idleTimeout: number;
 }
 
@@ -68,7 +70,12 @@ export function loadConfig(env: object): Config {
     auditKey: decodeKey(str('AUDIT_SIGNING_KEY')),
     assistant:
       pick('ASSISTANT', SWITCH, 'enabled') === 'enabled'
-        ? { apiKey: str('GEMINI_API_KEY') || null, model: str('GEMINI_MODEL') || 'gemini-flash-lite-latest', idleTimeout: 45_000 }
+        ? {
+            provider: pick('ASSISTANT_PROVIDER', AI_PROVIDERS, 'gemini'),
+            keys: { gemini: str('GEMINI_API_KEY') || null, deepseek: str('DEEPSEEK_API_KEY') || null },
+            models: { gemini: str('GEMINI_MODEL') || 'gemini-flash-lite-latest', deepseek: str('DEEPSEEK_MODEL') || 'deepseek-flash' },
+            idleTimeout: 45_000,
+          }
         : null,
   };
 

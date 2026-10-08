@@ -48,7 +48,8 @@ if (existsSync(clientDir)) {
 const server = serve({ fetch: app.fetch, port, hostname: '0.0.0.0' }, (info) => {
   console.log(`AAPay 已启动 → http://localhost:${info.port}`);
   console.log(`  模式 ${config.mode} · 管理员认证 ${config.adminAuth} · 数据目录 ${dataDir}`);
-  console.log(`  AI 助手 ${!config.assistant ? '未启用' : config.assistant.apiKey ? `已启用（${config.assistant.model}）` : '仅自带 Key'}`);
+  const ai = config.assistant;
+  console.log(`  AI 助手 ${!ai ? '未启用' : ai.keys[ai.provider] ? `已启用（${ai.provider} · ${ai.models[ai.provider]}）` : `仅自带 Key（默认 ${ai.provider}）`}`);
 });
 injectWebSocket(server);
 
