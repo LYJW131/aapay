@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { inCategory } from '../../src/web/features/ledger/filters.ts';
 import { toCsv } from '../../src/web/lib/csv.ts';
+import { parseSse } from '../../src/shared/sse.ts';
 import type { Expense, Settlement } from '../../src/shared/types.ts';
 
 let sse: typeof import('../../src/web/lib/sse.ts');
@@ -37,7 +38,7 @@ describe('inCategory', () => {
 describe('parseSse', () => {
   const collect = (chunks: string[], end = true) => {
     const out: { event: string; data: string }[] = [];
-    const parser = sse.parseSse((m) => out.push(m));
+    const parser = parseSse((m) => out.push(m));
     for (const c of chunks) parser.push(c);
     if (end) parser.end();
     return out;

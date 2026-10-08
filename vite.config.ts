@@ -44,7 +44,9 @@ const RUNTIME_VARS = [
   'PUBLIC_URL',
   'TIMEZONE',
   'ASSISTANT',
+  'ASSISTANT_PROVIDER',
   'GEMINI_MODEL',
+  'DEEPSEEK_MODEL',
 ];
 
 function injectedVars() {

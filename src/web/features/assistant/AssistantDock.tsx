@@ -15,7 +15,7 @@ import { Composer } from './Composer.tsx';
 import { AssistantContext, type AssistantApi, type AssistantOpenOptions } from './context.ts';
 import { AiAvatar, Conversation } from './Conversation.tsx';
 import { KeySheet } from './KeySheet.tsx';
-import { useOwnKey } from './own-key.ts';
+import { PROVIDER_NAMES, useOwnKey } from './own-key.ts';
 import { StoreContext, useChatState, useChatStore } from './state.ts';
 import { AssistantStore, findPending } from './store.ts';
 
@@ -268,7 +268,7 @@ function Dock({ config, onCompose, children }: { config: NonNullable<PublicConfi
                     className="overflow-hidden"
                   >
                     <div className="flex flex-col" style={{ height: panelHeight }}>
-                      <PanelHeader onClose={hide} keyStatus={own ? t.key.own : config.builtin ? t.key.site : t.key.none} onKey={() => setKeyOpen(true)} />
+                      <PanelHeader onClose={hide} keyStatus={own ? t.key.own(PROVIDER_NAMES[own.provider]) : config.builtin ? t.key.site : t.key.none} onKey={() => setKeyOpen(true)} />
                       {needsKey && (
                         <div className="flex shrink-0 items-center gap-3 border-b border-zinc-900/6 bg-brand-500/6 py-2 pr-2 pl-4 text-[13px] text-zinc-600 dark:border-white/8 dark:bg-brand-400/8 dark:text-zinc-300">
                           <KeyRound className="size-4 shrink-0 text-brand-500" />
@@ -318,7 +318,7 @@ function Dock({ config, onCompose, children }: { config: NonNullable<PublicConfi
             )}
           </AnimatePresence>
         </div>
-        <KeySheet open={keyOpen} onClose={() => setKeyOpen(false)} builtin={config.builtin} model={config.model} />
+        <KeySheet open={keyOpen} onClose={() => setKeyOpen(false)} config={config} />
       </StoreContext>
     </AssistantContext>
   );

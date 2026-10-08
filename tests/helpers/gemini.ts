@@ -1,5 +1,5 @@
 import { vi } from 'vitest';
-import type { GeminiPart } from '../../src/server/ai/gemini.ts';
+type GeminiPart = { text?: string; thought?: boolean; thoughtSignature?: string; functionCall?: { id?: string; name: string; args?: Record<string, unknown> } };
 
 export type Chunk = { candidates?: { content?: { role?: string; parts?: GeminiPart[] }; finishReason?: string }[]; [key: string]: unknown };
 

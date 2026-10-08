@@ -1,34 +1,48 @@
 import { KeyRound, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { toast } from 'sonner';
+import { AI_PROVIDERS, type AiProvider } from '../../../shared/assistant.ts';
+import type { PublicConfig } from '../../../shared/types.ts';
 import { Button } from '../../components/Button.tsx';
 import { Label } from '../../components/Card.tsx';
 import { Hint } from '../../components/Hint.tsx';
+import { Segmented } from '../../components/Segmented.tsx';
 import { Sheet } from '../../components/Sheet.tsx';
 import { assistant } from '../../i18n/assistant.ts';
 import { errorMessage } from '../../lib/api.ts';
-import { setOwnKey, useOwnKey, verifyOwnKey } from './own-key.ts';
+import { KEY_PAGES, PROVIDER_NAMES, setOwnKey, useOwnKey, verifyOwnKey } from './own-key.ts';
 
 const t = assistant.key;
+const PROVIDER_OPTIONS = AI_PROVIDERS.map((value) => ({ value, label: PROVIDER_NAMES[value] }));
 
-export function KeySheet({ open, onClose, builtin, model }: { open: boolean; onClose: () => void; builtin: boolean; model: string }) {
+type AssistantConfig = NonNullable<PublicConfig['assistant']>;
+
+export function KeySheet({ open, onClose, config }: { open: boolean; onClose: () => void; config: AssistantConfig }) {
   return (
-    <Sheet open={open} onClose={onClose} title={t.title} description={builtin ? t.descriptionSite : t.descriptionNone}>
-      {open && <KeyForm defaultModel={model} onDone={onClose} />}
+    <Sheet open={open} onClose={onClose} title={t.title} description={config.builtin ? t.descriptionSite : t.descriptionNone}>
+      {open && <KeyForm config={config} onDone={onClose} />}
     </Sheet>
   );
 }
 
-function KeyForm({ defaultModel, onDone }: { defaultModel: string; onDone: () => void }) {
+function KeyForm({ config, onDone }: { config: AssistantConfig; onDone: () => void }) {
   const own = useOwnKey();
+  const [provider, setProvider] = useState<AiProvider>(own?.provider ?? config.provider);
   const [key, setKey] = useState(own?.key ?? '');
   const [model, setModel] = useState(own?.model ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  function switchProvider(next: AiProvider) {
+    setProvider(next);
+    setKey(own?.provider === next ? own.key : '');
+    setModel(own?.provider === next ? (own.model ?? '') : '');
+    setError(null);
+  }
+
   async function save(e: FormEvent) {
     e.preventDefault();
-    const next = { key: key.trim(), model: model.trim().toLowerCase() || null };
+    const next = { provider, key: key.trim(), model: model.trim().toLowerCase() || null };
     if (!next.key) return;
     setBusy(true);
     setError(null);
@@ -52,9 +66,13 @@ function KeyForm({ defaultModel, onDone }: { defaultModel: string; onDone: () =>
   return (
     <form onSubmit={save} className="space-y-5 pt-1 pb-1">
       <div>
+        <Label>{t.provider}</Label>
+        <Segmented value={provider} options={PROVIDER_OPTIONS} onChange={switchProvider} label={t.provider} />
+      </div>
+      <div>
         <Label
           aside={
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-brand-600 hover:underline dark:text-brand-300">
+            <a href={KEY_PAGES[provider]} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline dark:text-brand-300">
               {t.get}
             </a>
           }
@@ -87,7 +105,7 @@ function KeyForm({ defaultModel, onDone }: { defaultModel: string; onDone: () =>
             setModel(e.target.value);
             setError(null);
           }}
-          placeholder={defaultModel}
+          placeholder={config.models[provider]}
           autoComplete="off"
           autoCapitalize="off"
           spellCheck={false}

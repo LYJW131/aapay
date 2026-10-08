@@ -22,16 +22,17 @@ import {
   ToolError,
   type WriteTool,
 } from '../tools/ledger.ts';
-import { GeminiError, streamGemini, type FunctionDeclaration, type GeminiKey, type GeminiContent, type GeminiFunctionCall, type GeminiPart } from './gemini.ts';
+import { ModelError, type Message, type ModelKey, type Part, type ToolCall, type ToolSpec } from './model.ts';
 import { ItemStream, type ItemEvent } from './item-stream.ts';
 import { fold } from './pending.ts';
+import { streamModel } from './providers.ts';
 import { changeLine, EXTRACTION_SCHEMA, extractionPrompt, imagesNote, MAX_EXTRACTED, SHOW_DESCRIPTION, systemPrompt } from './prompts.ts';
 
 export const MAX_ROUNDS = 6;
 const EXTRACT_STEP = 'read_images';
 
 export interface AssistantDeps {
-  gemini: GeminiKey;
+  model: ModelKey;
   byok: boolean;
   api: Remote<LedgerService>;
   info: LedgerInfo;
@@ -54,9 +55,9 @@ const showInput = z.object({
   query: z.string().trim().max(40).optional().describe('Keyword in the description or note (transactions)'),
 });
 
-const DECLARATIONS: FunctionDeclaration[] = [
-  ...LEDGER_TOOLS.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: inputSchema(t.input) })),
-  { name: 'show', description: SHOW_DESCRIPTION, parametersJsonSchema: inputSchema(showInput) },
+const TOOLS: ToolSpec[] = [
+  ...LEDGER_TOOLS.map((t) => ({ name: t.name, description: t.description, parameters: inputSchema(t.input) })),
+  { name: 'show', description: SHOW_DESCRIPTION, parameters: inputSchema(showInput) },
 ];
 
 const extractedItem = z.object({
@@ -156,11 +157,11 @@ class Draft {
   }
 }
 
-function history(request: AssistantRequest, extra: GeminiPart[]): GeminiContent[] {
-  const contents: GeminiContent[] = [];
+function history(request: AssistantRequest, extra: Part[]): Message[] {
+  const contents: Message[] = [];
   request.messages.forEach((turn, i) => {
     const last = i === request.messages.length - 1;
-    const parts: GeminiPart[] = turn.text.trim() ? [{ text: turn.text }] : [];
+    const parts: Part[] = turn.text.trim() ? [{ text: turn.text }] : [];
     if (last) parts.push(...extra);
     if (last && !parts.length) parts.push({ text: '…' });
     if (!parts.length) return;
@@ -172,9 +173,9 @@ function history(request: AssistantRequest, extra: GeminiPart[]): GeminiContent[
   return contents;
 }
 
-function inlineImage(dataUrl: string): GeminiPart {
+function inlineImage(dataUrl: string): Part {
   const [, mimeType, data] = dataUrl.match(/^data:(image\/\w+);base64,(.*)$/)!;
-  return { inlineData: { mimeType: mimeType!, data: data! } };
+  return { image: { mimeType: mimeType!, data: data! } };
 }
 
 async function extract(run: Run, request: AssistantRequest, draft: Draft, me: Member, participants: Member[] | null) {
@@ -214,13 +215,14 @@ async function extract(run: Run, request: AssistantRequest, draft: Draft, me: Me
   };
 
   try {
-    const stream = streamGemini(
+    const stream = streamModel(
       {
-        systemInstruction: { parts: [{ text: extractionPrompt(request.today, run.locale) }] },
-        contents: [{ role: 'user', parts: [...request.images.map(inlineImage), { text: 'Extract the expenses in these images.' }] }],
-        generationConfig: { responseMimeType: 'application/json', responseJsonSchema: EXTRACTION_SCHEMA, temperature: 0 },
+        system: extractionPrompt(request.today, run.locale),
+        messages: [{ role: 'user', parts: [...request.images.map(inlineImage), { text: 'Extract the expenses in these images.' }] }],
+        json: EXTRACTION_SCHEMA,
+        temperature: 0,
       },
-      { ...run.gemini, signal: run.signal },
+      { ...run.model, signal: run.signal },
     );
     for await (const parts of stream) {
       const text = parts
@@ -237,8 +239,9 @@ async function extract(run: Run, request: AssistantRequest, draft: Draft, me: Me
   return accepted;
 }
 
-async function execute(run: Run, request: AssistantRequest, draft: Draft, call: GeminiFunctionCall): Promise<object> {
-  const args = call.args ?? {};
+async function execute(run: Run, request: AssistantRequest, draft: Draft, call: ToolCall): Promise<object> {
+  const { args } = call;
+  if (!args) throw new ToolError('The arguments were not valid JSON');
   if (call.name === 'show') {
     const view = resolveView(parseArgs(showInput, args), draft.data);
     await run.emit({ type: 'view', view });
@@ -268,7 +271,7 @@ async function execute(run: Run, request: AssistantRequest, draft: Draft, call: 
   };
 }
 
-async function converse(run: Run, request: AssistantRequest, draft: Draft, me: Member | null, participants: Member[] | null, extra: GeminiPart[]) {
+async function converse(run: Run, request: AssistantRequest, draft: Draft, me: Member | null, participants: Member[] | null, extra: Part[]) {
   const contents = history(request, extra);
   const system = systemPrompt({
     info: run.info,
@@ -282,22 +285,17 @@ async function converse(run: Run, request: AssistantRequest, draft: Draft, me: M
   });
   let calls = 0;
   for (let round = 0; round < MAX_ROUNDS; round++) {
-    const modelParts: GeminiPart[] = [];
-    const responses: GeminiPart[] = [];
-    const stream = streamGemini(
-      {
-        systemInstruction: { parts: [{ text: system }] },
-        contents,
-        tools: [{ functionDeclarations: DECLARATIONS }],
-        ...(round === MAX_ROUNDS - 1 && { toolConfig: { functionCallingConfig: { mode: 'NONE' as const } } }),
-      },
-      { ...run.gemini, signal: run.signal },
+    const modelParts: Part[] = [];
+    const responses: Part[] = [];
+    const stream = streamModel(
+      { system, messages: contents, tools: TOOLS, ...(round === MAX_ROUNDS - 1 && { toolChoice: 'none' as const }) },
+      { ...run.model, signal: run.signal },
     );
     for await (const parts of stream) {
       for (const part of parts) {
         modelParts.push(part);
-        if (part.functionCall) {
-          const call = part.functionCall;
+        if (part.call) {
+          const call = part.call;
           const id = call.id ?? `call_${++calls}`;
           await run.emit({ type: 'step', id, tool: call.name, status: 'start' });
           let response: object;
@@ -308,7 +306,7 @@ async function converse(run: Run, request: AssistantRequest, draft: Draft, me: M
             response = { error: modelError(err) };
             await run.emit({ type: 'step', id, tool: call.name, status: 'error' });
           }
-          responses.push({ functionResponse: { ...(call.id && { id: call.id }), name: call.name, response } });
+          responses.push({ result: { ...(call.id && { id: call.id }), name: call.name, response } });
         } else if (part.text && !part.thought) {
           await run.emit({ type: 'text', delta: part.text });
         }
@@ -328,7 +326,7 @@ export async function runAssistant(run: Run, request: AssistantRequest) {
   const chosen = request.participants?.flatMap((id) => byId.get(id) ?? []) ?? [];
   const participants = chosen.length ? chosen : null;
 
-  let extra: GeminiPart[] = request.images.map(inlineImage);
+  let extra: Part[] = request.images.map(inlineImage);
   if (request.images.length && me) {
     const extracted = await extract(run, request, draft, me, participants);
     extra = [{ text: imagesNote(request.images.length, extracted) }];
@@ -346,17 +344,17 @@ export const UPSTREAM_STATUS = {
   assistantUnavailable: 502,
 } as const satisfies Record<string, ErrorStatus>;
 
-export function upstreamError({ status, message }: GeminiError, byok: boolean): keyof typeof UPSTREAM_STATUS {
+export function upstreamError({ status, message }: ModelError, byok: boolean): keyof typeof UPSTREAM_STATUS {
   if (byok) {
     if (status === 401 || status === 403 || (status === 400 && /API.?key/i.test(message))) return 'assistantKeyInvalid';
-    if (status === 404) return 'assistantModelNotFound';
-    if (status === 429) return 'assistantKeyQuota';
+    if (status === 404 || (status === 400 && /model not exist|supported API model names/i.test(message))) return 'assistantModelNotFound';
+    if (status === 402 || status === 429) return 'assistantKeyQuota';
   }
   return status === 429 ? 'assistantRateLimited' : status === 504 ? 'assistantTimeout' : 'assistantUnavailable';
 }
 
 function failure(err: unknown, { locale, byok }: AssistantDeps) {
-  if (err instanceof GeminiError) {
+  if (err instanceof ModelError) {
     console.error('assistant upstream failed', err.status, err.message);
     return translateError(locale, upstreamError(err, byok));
   }
