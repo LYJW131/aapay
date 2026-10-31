@@ -33,6 +33,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b",
     "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build && npm run build:node && npm run build:demo",
     "seed": "node --experimental-strip-types --no-warnings scripts/seed.mjs",
     "screenshots": "node scripts/screenshots.mjs"
   },
