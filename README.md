@@ -219,7 +219,7 @@ AAPay 自带远程 MCP 服务器，地址是 `https://你的域名/mcp`（账本
 npm install
 cp .dev.vars.example .dev.vars   # 取消注释 ADMIN_AUTH=none，打开 /admin 即以管理员登录
 npm run dev                      # Vite + Cloudflare 插件，在本地 workerd 里运行 Worker 与 Durable Objects
-npm run seed                     # 可选：写入演示账本（口令 demo2026）
+npm run seed                     # 可选：写入中英两套演示账本（口令 demo2026 / demoen26）
 ```
 
 打开 <http://localhost:5173>。也可以用 Node 运行时开发：`npm run dev:node`（Node 服务监听 8787，Vite 代理 API）。

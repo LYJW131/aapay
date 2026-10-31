@@ -1,8 +1,8 @@
+import type { Locale } from '../shared/i18n.ts';
 import { newId } from '../shared/ids.ts';
 
 export type Call = (method: 'GET' | 'POST', path: string, body?: unknown) => Promise<{ id?: string }>;
-
-export const DEMO_CODE = 'demo2026';
+export type DemoLedgers = Record<Locale, string>;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -12,8 +12,10 @@ function day(offset: number, now: number) {
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
 }
 
-const TEXT = {
+const TEXT: Record<Locale, { code: string; trip: string; flat: string; flatCode: string; people: string[]; titles: string[]; note: string }> = {
   'zh-CN': {
+    code: 'demo2026',
+    flatCode: 'room302',
     trip: '国庆出游',
     flat: '合租 302',
     people: ['阿杰', '小雨', '老王', 'Mia'],
@@ -21,6 +23,8 @@ const TEXT = {
     note: '微信转账',
   },
   en: {
+    code: 'demoen26',
+    flatCode: 'flat302',
     trip: 'Golden Week trip',
     flat: 'Flat 302',
     people: ['Jay', 'Yuki', 'Wang', 'Mia'],
@@ -29,13 +33,20 @@ const TEXT = {
   },
 };
 
-export async function seedDemo(call: Call, locale: keyof typeof TEXT = 'zh-CN', now = Date.now()) {
-  const text = TEXT[locale];
-  const [jay, yuki, wang, mia] = text.people as [string, string, string, string];
+export const DEMO_CODES = Object.fromEntries(Object.entries(TEXT).map(([locale, text]) => [locale, text.code])) as Record<Locale, string>;
+
+export async function seedDemo(call: Call, now = Date.now()): Promise<DemoLedgers> {
   await call('GET', '/admin/login');
+  const ledgers = {} as DemoLedgers;
+  for (const locale of Object.keys(TEXT) as Locale[]) ledgers[locale] = await seedLedgers(call, TEXT[locale], now);
+  return ledgers;
+}
+
+async function seedLedgers(call: Call, text: (typeof TEXT)[Locale], now: number) {
+  const [jay, yuki, wang, mia] = text.people as [string, string, string, string];
   const ledger = await call('POST', '/admin/ledgers', { name: text.trip });
-  await call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: DEMO_CODE, validUntil: null });
-  await call('POST', '/join', { code: DEMO_CODE });
+  await call('POST', `/admin/ledgers/${ledger.id}/passphrases`, { code: text.code, validUntil: null });
+  await call('POST', '/join', { code: text.code });
 
   const apply = (changes: unknown[]) => call('POST', '/ledger/changes', { changes });
 
@@ -88,6 +99,7 @@ export async function seedDemo(call: Call, locale: keyof typeof TEXT = 'zh-CN', 
     },
   ]);
 
-  const second = await call('POST', '/admin/ledgers', { name: text.flat });
-  await call('POST', `/admin/ledgers/${second.id}/passphrases`, { code: 'room302', validUntil: now + 30 * 86400_000 });
+  const flat = await call('POST', '/admin/ledgers', { name: text.flat });
+  await call('POST', `/admin/ledgers/${flat.id}/passphrases`, { code: text.flatCode, validUntil: now + 30 * 86400_000 });
+  return ledger.id!;
 }

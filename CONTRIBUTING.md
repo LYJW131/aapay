@@ -10,7 +10,7 @@
 npm install
 cp .dev.vars.example .dev.vars   # 取消注释 ADMIN_AUTH=none
 npm run dev                      # http://localhost:5173
-npm run seed                     # 可选：演示账本，口令 demo2026
+npm run seed                     # 可选：中英两套演示账本，口令 demo2026 / demoen26
 ```
 
 `npm run dev:node` 用 Node 运行时（node:sqlite）开发，`npm run dev:demo` 起浏览器里的演示站（sql.js），几个平台共用同一套业务代码。

@@ -21,20 +21,27 @@ async function setup() {
     if (!res.ok && res.status !== 302) throw new Error(`${method} ${path} → ${res.status} ${await res.text()}`);
     return (await res.json().catch(() => ({}))) as { id?: string };
   };
-  await seedDemo(call);
-  return { serve, demo };
+  const ledgers = await seedDemo(call);
+  return { serve, demo, call, ledgers };
 }
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('浏览器内的演示服务端', () => {
-  it('Cookie 在请求之间保持，演示账本可读', async () => {
-    const { serve } = await setup();
-    const res = await serve(`${ORIGIN}/api/ledger`);
-    expect(res.status).toBe(200);
-    const snapshot = (await res.json()) as { expenses: unknown[]; members: unknown[] };
-    expect(snapshot.members).toHaveLength(4);
-    expect(snapshot.expenses).toHaveLength(12);
+  it('中英两套演示数据都在，管理员按语言进入对应账本', async () => {
+    const { serve, call, ledgers } = await setup();
+    for (const [locale, name] of [
+      ['zh-CN', '国庆出游'],
+      ['en', 'Golden Week trip'],
+    ] as const) {
+      await call('POST', `/admin/ledgers/${ledgers[locale]}/enter`);
+      const res = await serve(`${ORIGIN}/api/ledger`);
+      expect(res.status).toBe(200);
+      const snapshot = (await res.json()) as { ledger: { name: string }; expenses: unknown[]; members: unknown[] };
+      expect(snapshot.ledger.name).toBe(name);
+      expect(snapshot.members).toHaveLength(4);
+      expect(snapshot.expenses).toHaveLength(12);
+    }
   });
 
   it('导出后重新载入数据不丢', async () => {
@@ -43,7 +50,7 @@ describe('浏览器内的演示服务端', () => {
     const again = createDemoPlatform(SQL, demo.snapshot());
     expect(again.fresh).toBe(false);
     const ledgers = await again.platform.registry.listLedgers();
-    expect(ledgers).toHaveLength(2);
+    expect(ledgers).toHaveLength(4);
   });
 
   it('中止请求会让读流报错并取消上游模型请求', async () => {

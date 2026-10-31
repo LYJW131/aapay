@@ -1,7 +1,6 @@
-import { DEMO_CODE, seedDemo } from '../src/demo/seed.ts';
+import { DEMO_CODES, seedDemo } from '../src/demo/seed.ts';
 
 const base = (process.argv[2] ?? 'http://127.0.0.1:5173').replace(/\/$/, '');
-const locale = process.argv[3] === 'en' ? 'en' : 'zh-CN';
 const cookies = new Map();
 const accessHeaders = process.env.CF_ACCESS_CLIENT_ID
   ? { 'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID, 'CF-Access-Client-Secret': process.env.CF_ACCESS_CLIENT_SECRET }
@@ -28,5 +27,5 @@ async function call(method, path, body) {
   return data;
 }
 
-await seedDemo(call, locale);
-console.log(`✓ 演示账本已创建：${base}/join#${DEMO_CODE}`);
+await seedDemo(call);
+for (const code of Object.values(DEMO_CODES)) console.log(`✓ 演示账本已创建：${base}/join#${code}`);

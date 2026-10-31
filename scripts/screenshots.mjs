@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright';
 
@@ -59,7 +59,25 @@ async function ask(page, prompt, until) {
   await input.fill(prompt);
   await input.press('Enter');
   await page.getByText(until, { exact: false }).last().waitFor({ timeout: 20_000 });
-  await page.waitForTimeout(1200);
+}
+
+// 等有限时长的动画播完、连续两帧一样再拍；光晕这类无限循环的动画不等
+async function settled(page) {
+  await page
+    .waitForFunction(
+      () => document.getAnimations().every((a) => a.effect?.getComputedTiming().iterations === Infinity || a.playState !== 'running'),
+      null,
+      { timeout: 5_000 },
+    )
+    .catch(() => {});
+  let previous = null;
+  for (let i = 0; i < 12; i++) {
+    const shot = await page.screenshot();
+    if (previous?.equals(shot)) return shot;
+    previous = shot;
+    await page.waitForTimeout(250);
+  }
+  return previous;
 }
 
 const SCENES = [
@@ -120,9 +138,13 @@ for (const [locale, text] of Object.entries(TEXT)) {
         page.on('pageerror', (err) => errors.push(err.message));
         await page.goto(base);
         await ready(page);
+        // 首次打开会清掉本机偏好，所以等演示数据写好后再折叠管理员卡片，刷新一次生效
+        await page.evaluate(() => localStorage.setItem('aapay:admin:collapsed', 'true'));
+        await page.reload();
+        await ready(page);
         await scene.run?.(page, text);
         const file = join(out, locale, `${scene.name}-${theme}.png`);
-        await page.screenshot({ path: file });
+        writeFileSync(file, await settled(page));
         if (errors.length) throw new Error(`${file}: ${errors.join('; ')}`);
         console.log(`✓ ${file}`);
         await context.close();
