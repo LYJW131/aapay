@@ -8,6 +8,7 @@ const OWN_KEY = { provider: 'gemini', key: 'screenshot-placeholder-key', model: 
 
 const TEXT = {
   'zh-CN': {
+    posixLocale: 'zh_CN',
     expenses: '昨天晚饭火锅 328 我付的，四人平分。再记一笔今天打车 45 老王付的，他和我两个人分',
     expensesReply: '这两笔已经准备好了，确认后记入。',
     me: '阿杰',
@@ -19,6 +20,7 @@ const TEXT = {
     pending: '确认执行',
   },
   en: {
+    posixLocale: 'en_US',
     expenses: 'Hot pot last night, 328, I paid, split four ways. Also a taxi today, 45, Wang paid, split between him and me',
     expensesReply: 'Both are ready. Confirm to record them.',
     me: 'Jay',
@@ -84,7 +86,7 @@ for (const [locale, text] of Object.entries(TEXT)) {
   const browser = await chromium.launch({
     channel: 'chromium',
     args: [`--lang=${locale}`],
-    env: { ...process.env, LANG: `${locale.replace('-', '_')}.UTF-8`, LANGUAGE: locale.replace('-', '_') },
+    env: { ...process.env, LANG: `${text.posixLocale}.UTF-8`, LANGUAGE: text.posixLocale },
   });
   try {
     for (const scene of SCENES) {
