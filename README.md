@@ -10,6 +10,8 @@
   <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/LYJW131/aapay"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" /></a>
 </p>
 
+<p align="center"><a href="https://aapay.lyjw.me"><b>在线演示</b></a> · 整套服务端跑在你的浏览器里，数据不出本机</p>
+
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/LYJW131/aapay" alt="MIT License" /></a>
   <a href="https://github.com/LYJW131/aapay/pkgs/container/aapay"><img src="https://img.shields.io/badge/docker-ghcr.io%2Flyjw131%2Faapay-2496ED?logo=docker&logoColor=white" alt="Docker image" /></a>
@@ -19,7 +21,10 @@
 <p align="center">简体中文 · <a href="README.en.md">English</a></p>
 
 <p align="center">
-  <img src="docs/screenshots/desktop-assistant.png" width="720" alt="AI 助手生成待确认的变更卡片" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://aapay.lyjw.me/shots/zh-CN/assistant-desktop-dark.png" />
+    <img src="https://aapay.lyjw.me/shots/zh-CN/assistant-desktop-light.png" width="720" alt="AI 助手生成待确认的变更卡片" />
+  </picture>
 </p>
 
 旅行、合租、聚餐时，大家各自付钱，最后算谁该给谁多少。AAPay 让每个人用一个口令加入同一个账本，随手记账、实时同步，结算时给出最少的转账方案。可以对 AI 助手说一句话、拍一张小票来记账，也可以把账本接进 Claude、ChatGPT 等 AI 应用。
@@ -41,11 +46,14 @@
 - **其他**：移动端优先、深色模式、可添加到主屏幕、简体中文与英文界面
 
 <p align="center">
-  <img src="docs/screenshots/desktop-ledger.png" width="720" alt="桌面端账本" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://aapay.lyjw.me/shots/zh-CN/ledger-desktop-dark.png" />
+    <img src="https://aapay.lyjw.me/shots/zh-CN/ledger-desktop-light.png" width="720" alt="桌面端账本" />
+  </picture>
 </p>
 <p align="center">
-  <img src="docs/screenshots/mobile-assistant.png" width="240" alt="AI 助手生成的分类图表" />
-  <img src="docs/screenshots/mobile-dark.png" width="240" alt="深色模式" />
+  <img src="https://aapay.lyjw.me/shots/zh-CN/assistant-mobile-light.png" width="240" alt="AI 助手生成的分类图表" />
+  <img src="https://aapay.lyjw.me/shots/zh-CN/ledger-mobile-dark.png" width="240" alt="深色模式" />
 </p>
 
 ## 部署到 Cloudflare
@@ -211,10 +219,12 @@ AAPay 自带远程 MCP 服务器，地址是 `https://你的域名/mcp`（账本
 npm install
 cp .dev.vars.example .dev.vars   # 取消注释 ADMIN_AUTH=none，打开 /admin 即以管理员登录
 npm run dev                      # Vite + Cloudflare 插件，在本地 workerd 里运行 Worker 与 Durable Objects
-node scripts/seed.mjs            # 可选：写入演示账本（口令 demo2026）
+npm run seed                     # 可选：写入演示账本（口令 demo2026）
 ```
 
 打开 <http://localhost:5173>。也可以用 Node 运行时开发：`npm run dev:node`（Node 服务监听 8787，Vite 代理 API）。
+
+`npm run dev:demo` 起演示站：服务端代码连同 SQLite（sql.js）一起跑在浏览器里，`npm run build:demo` 产出纯静态的 `dist/demo`。README 里的截图由 `npm run screenshots` 对演示站生成，每次发布演示站时重新生成。
 
 ```bash
 npm run typecheck   # TypeScript（web / worker / node 三个工程）

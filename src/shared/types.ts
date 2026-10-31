@@ -102,7 +102,7 @@ export type Mode = 'isolated' | 'shared';
 export type AdminAuthMode = 'access' | 'password' | 'proxy' | 'none' | 'disabled';
 
 export interface BuildInfo {
-  runtime: 'cloudflare' | 'node';
+  runtime: 'cloudflare' | 'node' | 'demo';
   repo: string;
   commit: string;
   message: string;

@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "cloudflare",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    },
+    {
+      "name": "demo",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:demo", "--", "--port", "5175", "--strictPort"],
+      "port": 5175
+    },
+    {
+      "name": "demo-dist",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["vite", "preview", "--outDir", "dist/demo", "--port", "5176", "--strictPort"],
+      "env": { "AAPAY_TARGET": "demo" },
+      "port": 5176
+    }
+  ]
+}
