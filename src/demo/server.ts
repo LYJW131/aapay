@@ -24,11 +24,6 @@ function saveJar() {
   }
 }
 
-export function dropCookie(name: string) {
-  jar.delete(name);
-  saveJar();
-}
-
 export function clearCookies() {
   jar.clear();
   try {

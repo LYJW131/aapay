@@ -4,9 +4,8 @@ import { OWN_KEY_STORAGE } from '../web/features/assistant/own-key.ts';
 import { locale, LOCALE_KEY } from '../web/i18n/locale.ts';
 import { clearAll } from '../web/lib/storage.ts';
 import { createDemoPlatform } from './platform.ts';
-import { seedDemo, type Call } from './seed.ts';
-import { CONSOLE_COOKIE } from '../server/auth/cookies.ts';
-import { clearCookies, createServer, dropCookie, isServerPath, type Serve } from './server.ts';
+import { seedDemo, type Call, type DemoLedgers } from './seed.ts';
+import { clearCookies, createServer, isServerPath, type Serve } from './server.ts';
 import { installShims } from './shims.ts';
 import { clearSaved, loadSaved, writeSaved } from './store.ts';
 
@@ -66,20 +65,43 @@ const call: Call = async (method, path, body) => {
   return data;
 };
 
+const LEDGERS_KEY = 'aapay-demo:ledgers';
+const ENTERED_KEY = 'aapay-demo:entered';
+
+function recall<T>(key: string): T | null {
+  try {
+    return JSON.parse(localStorage.getItem(key) ?? 'null') as T | null;
+  } catch {
+    return null;
+  }
+}
+
+function remember(key: string, value: unknown) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+  }
+}
+
+function forget() {
+  clearCookies();
+  clearAll([LOCALE_KEY, OWN_KEY_STORAGE]);
+  remember(LEDGERS_KEY, null);
+  remember(ENTERED_KEY, null);
+}
+
 export async function resetDemo() {
   frozen = true;
   clearTimeout(timer);
   await clearSaved();
-  clearCookies();
-  clearAll([LOCALE_KEY, OWN_KEY_STORAGE]);
+  forget();
   window.location.assign('/');
 }
 
 if (demo.fresh) {
-  clearCookies();
-  clearAll([LOCALE_KEY, OWN_KEY_STORAGE]);
-  await seedDemo(call, locale);
-  dropCookie(CONSOLE_COOKIE);
+  forget();
+  remember(LEDGERS_KEY, await seedDemo(call));
   flush();
 }
 
@@ -90,6 +112,12 @@ if (isServerPath(window.location.pathname)) {
   flush();
   window.location.replace(next ?? '/');
 } else {
+  await call('GET', '/admin/login');
+  const ledgers = recall<DemoLedgers>(LEDGERS_KEY);
+  if (ledgers && recall<string>(ENTERED_KEY) !== locale) {
+    await call('POST', `/admin/ledgers/${ledgers[locale]}/enter`).catch(() => null);
+    remember(ENTERED_KEY, locale);
+  }
   await import('../web/main.tsx');
   const { mountBanner } = await import('./Banner.tsx');
   mountBanner(resetDemo);

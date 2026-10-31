@@ -60,7 +60,7 @@ npx vitest run tests/mcp.test.ts -t "rotates refresh tokens"   # 单个文件 / 
 npm run build               # Cloudflare 构建（dist/client + dist/aapay）
 npm run build:node          # 前端 + esbuild 打成单文件 dist/node/server.mjs
 npm run build:demo          # 纯静态演示站 dist/demo
-npm run seed                # 往运行中的开发服务器写演示账本（口令 demo2026），默认 http://127.0.0.1:5173
+npm run seed                # 往运行中的开发服务器写中英两套演示账本（口令见 src/demo/seed.ts），默认 http://127.0.0.1:5173
 npm run screenshots         # 对 vite preview 起的 dist/demo 截 README 用图，步骤见 src/demo/AGENTS.md
 ```
 

@@ -206,7 +206,7 @@ Requires Node.js ≥ 22.13.
 npm install
 cp .dev.vars.example .dev.vars   # uncomment ADMIN_AUTH=none to be signed in as admin at /admin
 npm run dev                      # Vite + Cloudflare plugin, runs the Worker and Durable Objects in local workerd
-npm run seed                     # optional: create a demo ledger (passcode demo2026)
+npm run seed                     # optional: Chinese and English demo ledgers (passcodes demo2026 / demoen26)
 ```
 
 Open <http://localhost:5173>. For the Node runtime, use `npm run dev:node` (server on 8787, proxied by Vite).

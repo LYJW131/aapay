@@ -28,6 +28,18 @@ describe('categories', () => {
     expect(guessCategory('杂项')).toBeNull();
     expect(guessCategory('  ')).toBeNull();
   });
+
+  it('matches English keywords as whole words, plurals included', () => {
+    expect(guessCategory('Hot pot')).toBe('food');
+    expect(guessCategory('Barbecue')).toBe('food');
+    expect(guessCategory('Bubble tea')).toBe('food');
+    expect(guessCategory('Guesthouse')).toBe('lodging');
+    expect(guessCategory('Park tickets')).toBe('fun');
+    expect(guessCategory('Train tickets')).toBe('transport');
+    expect(guessCategory('Bar tab')).toBe('fun');
+    expect(guessCategory('Las Vegas')).toBeNull();
+    expect(guessCategory('Steak')).toBeNull();
+  });
 });
 
 describe('splits', () => {
