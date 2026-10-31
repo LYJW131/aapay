@@ -80,8 +80,12 @@ const SCENES = [
 
 for (const [locale, text] of Object.entries(TEXT)) {
   mkdirSync(join(out, locale), { recursive: true });
-  // 日期输入框等原生控件按浏览器界面语言显示；默认的 headless shell 不认 --lang，要用完整版 Chromium
-  const browser = await chromium.launch({ channel: 'chromium', args: [`--lang=${locale}`] });
+  // 日期输入框等原生控件按浏览器界面语言显示：默认的 headless shell 不认 --lang，要用完整版 Chromium；Linux 上还要看 LANG
+  const browser = await chromium.launch({
+    channel: 'chromium',
+    args: [`--lang=${locale}`],
+    env: { ...process.env, LANG: `${locale.replace('-', '_')}.UTF-8`, LANGUAGE: locale.replace('-', '_') },
+  });
   try {
     for (const scene of SCENES) {
       for (const theme of ['light', 'dark']) {
