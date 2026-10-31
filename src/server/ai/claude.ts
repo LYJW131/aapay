@@ -34,7 +34,8 @@ function toModelError(err: unknown) {
   return new ModelError(502, `Claude connection failed: ${String(err)}`);
 }
 
-const client = (apiKey: string) => new Anthropic({ apiKey, maxRetries: 1 });
+// 只有演示站会在浏览器里跑服务端代码，由访客自带的 Key 直连 Anthropic
+const client = (apiKey: string) => new Anthropic({ apiKey, maxRetries: 1, dangerouslyAllowBrowser: 'window' in globalThis });
 
 interface OpenBlock {
   type: string;

@@ -20,11 +20,11 @@ export const KEY_PAGES: Record<AiProvider, string | null> = {
   openai: null,
 };
 
-const STORAGE = 'aapay:ai-key';
+export const OWN_KEY_STORAGE = 'aapay:ai-key';
 const listeners = new Set<() => void>();
 
 function read(): OwnKey | null {
-  const value = load<Partial<OwnKey> | null>(STORAGE, null);
+  const value = load<Partial<OwnKey> | null>(OWN_KEY_STORAGE, null);
   if (!isAiProvider(value?.provider) || typeof value.key !== 'string') return null;
   const text = (v: unknown) => (typeof v === 'string' ? v : null);
   return { provider: value.provider, key: value.key, model: text(value.model), baseUrl: text(value.baseUrl) };
@@ -33,7 +33,7 @@ function read(): OwnKey | null {
 let current = read();
 
 window.addEventListener('storage', (e) => {
-  if (e.key !== STORAGE) return;
+  if (e.key !== OWN_KEY_STORAGE) return;
   current = read();
   listeners.forEach((l) => l());
 });
@@ -45,7 +45,7 @@ const subscribe = (listener: () => void) => {
 
 export function setOwnKey(next: OwnKey | null) {
   current = next;
-  save(STORAGE, next);
+  save(OWN_KEY_STORAGE, next);
   listeners.forEach((l) => l());
 }
 

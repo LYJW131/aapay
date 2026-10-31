@@ -24,13 +24,18 @@
   "scripts": {
     "dev": "vite",
     "dev:node": "AAPAY_TARGET=node node --watch-path=src/server --watch-path=src/shared --experimental-strip-types --no-warnings src/server/node/main.ts & AAPAY_TARGET=node vite",
+    "dev:demo": "AAPAY_TARGET=demo vite",
     "build": "vite build",
     "build:node": "AAPAY_TARGET=node vite build && node scripts/build-node.mjs",
+    "build:demo": "AAPAY_TARGET=demo vite build",
     "start": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning dist/node/server.mjs",
     "deploy": "vite build && wrangler deploy",
     "preview": "vite preview",
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test && npm run build && npm run build:node && npm run build:demo",
+    "seed": "node --experimental-strip-types --no-warnings scripts/seed.mjs",
+    "screenshots": "node scripts/screenshots.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.132.1",
@@ -51,6 +56,7 @@
     "@types/node": "^26.6.4",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@types/sql.js": "^1.4.11",
     "@types/ws": "^8.18.2",
     "@vitejs/plugin-react": "^6.1.1",
     "esbuild": "^0.28.2",
@@ -60,6 +66,7 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "sonner": "^2.0.8",
+    "sql.js": "^1.15.2",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "uqr": "^0.1.3",

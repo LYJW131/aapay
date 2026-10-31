@@ -7,7 +7,8 @@ import { defineConfig, type Plugin } from 'vite';
 import { loadConfig } from './src/server/config.ts';
 import type { BuildInfo } from './src/shared/types.ts';
 
-const target = process.env.AAPAY_TARGET === 'node' ? 'node' : 'cloudflare';
+const TARGETS = ['cloudflare', 'node', 'demo'] as const;
+const target = TARGETS.find((t) => t === process.env.AAPAY_TARGET) ?? 'cloudflare';
 const nodeServer = `http://localhost:${process.env.PORT || 8787}`;
 
 function git(...args: string[]) {
@@ -70,6 +71,19 @@ function deployConfig(worker: WorkerConfig): Partial<WorkerConfig> {
   };
 }
 
+// 演示站是纯静态的 GitHub Pages：入口换成在浏览器里跑整套服务端的 src/demo，前端路由靠 404.html 回退
+function demoSite(): Plugin {
+  return {
+    name: 'aapay:demo',
+    enforce: 'post',
+    transformIndexHtml: { order: 'pre', handler: (html) => html.replace('/src/web/main.tsx', '/src/demo/main.ts') },
+    generateBundle(_, bundle) {
+      const index = bundle['index.html'];
+      if (index?.type === 'asset') this.emitFile({ type: 'asset', fileName: '404.html', source: index.source });
+    },
+  };
+}
+
 function versionFile(): Plugin {
   return {
     name: 'aapay:version',
@@ -87,12 +101,13 @@ export default defineConfig(({ command }) => ({
     tailwindcss(),
     versionFile(),
     ...(target === 'cloudflare' ? [cloudflare(command === 'build' ? { config: deployConfig } : {})] : []),
+    ...(target === 'demo' ? [demoSite()] : []),
   ],
   resolve: {
     alias: { '@': fileURLToPath(new URL('./src/web', import.meta.url)) },
   },
   build: {
-    outDir: target === 'node' ? 'dist/client' : undefined,
+    outDir: { cloudflare: undefined, node: 'dist/client', demo: 'dist/demo' }[target],
   },
   environments: {
     client: {
@@ -109,7 +124,7 @@ export default defineConfig(({ command }) => ({
     },
   },
   server: {
-    port: 5173,
+    port: target === 'demo' ? 5175 : 5173,
     proxy:
       target === 'node'
         ? {

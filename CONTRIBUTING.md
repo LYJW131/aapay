@@ -10,16 +10,15 @@
 npm install
 cp .dev.vars.example .dev.vars   # 取消注释 ADMIN_AUTH=none
 npm run dev                      # http://localhost:5173
-node scripts/seed.mjs            # 可选：演示账本，口令 demo2026
+npm run seed                     # 可选：演示账本，口令 demo2026
 ```
 
-`npm run dev:node` 用 Node 运行时（node:sqlite）开发，两个平台共用同一套业务代码。
+`npm run dev:node` 用 Node 运行时（node:sqlite）开发，`npm run dev:demo` 起浏览器里的演示站（sql.js），几个平台共用同一套业务代码。
 
 ## 提交 PR 之前
 
 ```bash
-npm run typecheck
-npm test
+npm run check   # 类型检查、测试（含文档检查）、三种构建，与 CI 相同
 ```
 
 - 一个 PR 只做一件事；改了行为就补上或更新测试（`tests/` 下用 `createNodePlatform` + `app.request()` 驱动整个应用）
@@ -29,4 +28,4 @@ npm test
 - 新增配置变量时，同步 `src/server/config.ts`、README 的配置表与 `.env.example`；需要在 Cloudflare 构建时注入的普通变量加进 `vite.config.ts` 的 `RUNTIME_VARS`
 - 提交信息用 `feat:` / `fix:` / `refactor:` / `docs:` 前缀
 
-更详细的架构说明与约定见 [CLAUDE.md](CLAUDE.md)。
+更详细的架构说明与约定见 [AGENTS.md](AGENTS.md) 和各目录下的 `AGENTS.md`。

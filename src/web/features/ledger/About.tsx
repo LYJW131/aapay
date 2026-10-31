@@ -11,7 +11,7 @@ import { BUILD, REPO_URL, useDeployedUpdate } from '../../lib/version.ts';
 
 const t = ledger.about;
 
-const RUNTIME = { cloudflare: 'Cloudflare Workers', node: 'Docker / Node' } as const;
+const RUNTIME = { cloudflare: 'Cloudflare Workers', node: 'Docker / Node', demo: 'Browser / sql.js' } as const;
 
 const link = 'inline-flex items-center gap-1 text-brand-600 hover:underline dark:text-brand-300';
 

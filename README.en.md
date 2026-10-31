@@ -10,6 +10,8 @@
   <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/LYJW131/aapay"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" /></a>
 </p>
 
+<p align="center"><a href="https://aapay.lyjw.me"><b>Live demo</b></a> · the whole server runs in your browser, nothing leaves your device</p>
+
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/github/license/LYJW131/aapay" alt="MIT License" /></a>
   <a href="https://github.com/LYJW131/aapay/pkgs/container/aapay"><img src="https://img.shields.io/badge/docker-ghcr.io%2Flyjw131%2Faapay-2496ED?logo=docker&logoColor=white" alt="Docker image" /></a>
@@ -19,7 +21,10 @@
 <p align="center"><a href="README.md">简体中文</a> · English</p>
 
 <p align="center">
-  <img src="docs/screenshots/desktop-assistant.png" width="720" alt="The AI assistant proposing changes for confirmation" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://aapay.lyjw.me/shots/en/assistant-desktop-dark.png" />
+    <img src="https://aapay.lyjw.me/shots/en/assistant-desktop-light.png" width="720" alt="The AI assistant proposing changes for confirmation" />
+  </picture>
 </p>
 
 On trips, in shared flats or at group dinners, everyone pays for something and someone has to work out who owes whom. With AAPay, friends join a ledger with a passcode, log expenses as they go, see each other's changes live, and settle up with the fewest possible transfers. You can log expenses by talking to the AI assistant or snapping a receipt, and connect the ledger to AI apps such as Claude and ChatGPT.
@@ -39,6 +44,17 @@ One TypeScript codebase deploys to Cloudflare Workers in one click (the free pla
 - **Filters and export**: date ranges, members, categories, keywords, category totals, daily charts and CSV export
 - **Admin card**: create / switch / delete ledgers, issue passcodes with expiry and QR codes, revoke access instantly
 - **Also**: mobile-first, dark mode, installable as a home screen app
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://aapay.lyjw.me/shots/en/ledger-desktop-dark.png" />
+    <img src="https://aapay.lyjw.me/shots/en/ledger-desktop-light.png" width="720" alt="Ledger on desktop" />
+  </picture>
+</p>
+<p align="center">
+  <img src="https://aapay.lyjw.me/shots/en/assistant-mobile-light.png" width="240" alt="A category chart drawn by the AI assistant" />
+  <img src="https://aapay.lyjw.me/shots/en/ledger-mobile-dark.png" width="240" alt="Dark mode" />
+</p>
 
 ## Deploy to Cloudflare
 
@@ -190,13 +206,15 @@ Requires Node.js ≥ 22.13.
 npm install
 cp .dev.vars.example .dev.vars   # uncomment ADMIN_AUTH=none to be signed in as admin at /admin
 npm run dev                      # Vite + Cloudflare plugin, runs the Worker and Durable Objects in local workerd
-node scripts/seed.mjs            # optional: create a demo ledger (passcode demo2026)
+npm run seed                     # optional: create a demo ledger (passcode demo2026)
 ```
 
 Open <http://localhost:5173>. For the Node runtime, use `npm run dev:node` (server on 8787, proxied by Vite).
 
+`npm run dev:demo` runs the demo site: the server code and SQLite (sql.js) run inside the browser, and `npm run build:demo` emits a fully static `dist/demo`. The README screenshots are taken from the demo by `npm run screenshots` and regenerated on every demo deployment.
+
 ```bash
-npm run typecheck   # TypeScript (web / worker / node projects)
+npm run typecheck   # TypeScript (web / worker / node / demo projects)
 npm test            # vitest
 npm run build       # Cloudflare build
 npm run build:node  # Node / Docker build
