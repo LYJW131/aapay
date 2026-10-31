@@ -28,7 +28,7 @@ class DemoWebSocket extends EventTarget implements ServerSocket {
     const http = url.replace(/^ws/, 'http');
     setTimeout(async () => {
       const res = await serve(http, { headers: { upgrade: 'websocket' } }, this).catch(() => null);
-      if (this.readyState !== 0) return;
+      if (this.readyState !== 0) return this.detach?.();
       if (!res?.ok) {
         this.emit(new Event('error'), this.onerror);
         return this.shut(1006, '');

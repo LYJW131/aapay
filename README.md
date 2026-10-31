@@ -227,7 +227,7 @@ npm run seed                     # 可选：写入演示账本（口令 demo2026
 `npm run dev:demo` 起演示站：服务端代码连同 SQLite（sql.js）一起跑在浏览器里，`npm run build:demo` 产出纯静态的 `dist/demo`。README 里的截图由 `npm run screenshots` 对演示站生成，每次发布演示站时重新生成。
 
 ```bash
-npm run typecheck   # TypeScript（web / worker / node 三个工程）
+npm run typecheck   # TypeScript（web / worker / node / demo 四个工程）
 npm test            # vitest
 npm run build       # Cloudflare 构建
 npm run build:node  # Node / Docker 构建

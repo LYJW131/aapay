@@ -6,25 +6,54 @@ import { clearAll } from '../web/lib/storage.ts';
 import { createDemoPlatform } from './platform.ts';
 import { seedDemo, type Call } from './seed.ts';
 import { CONSOLE_COOKIE } from '../server/auth/cookies.ts';
-import { clearCookies, createServer, dropCookie, isServerPath } from './server.ts';
+import { clearCookies, createServer, dropCookie, isServerPath, type Serve } from './server.ts';
 import { installShims } from './shims.ts';
 import { clearSaved, loadSaved, writeSaved } from './store.ts';
+
+// 每个标签页各有一份内存里的数据库，同时写会互相覆盖：新打开的标签页接管，旧的先把数据写回再让出
+const tabs = 'locks' in navigator ? new BroadcastChannel('aapay-demo') : null;
+let release = () => {};
+if (tabs) {
+  const ask = () => tabs.postMessage('takeover');
+  ask();
+  const retry = setInterval(ask, 1000);
+  await new Promise<void>((acquired) => {
+    void navigator.locks.request('aapay-demo', () => {
+      acquired();
+      return new Promise<void>((done) => (release = done));
+    });
+  });
+  clearInterval(retry);
+}
 
 const [SQL, saved] = await Promise.all([initSqlJs({ locateFile: () => wasmUrl }), loadSaved()]);
 const demo = createDemoPlatform(SQL, saved);
 
 let timer: ReturnType<typeof setTimeout> | undefined;
-let resetting = false;
+let frozen = false;
 const flush = () => {
   clearTimeout(timer);
-  if (!resetting) void writeSaved(demo.snapshot());
+  if (!frozen) void writeSaved(demo.snapshot());
 };
-const serve = createServer(demo.platform, () => {
+const live = createServer(demo.platform, () => {
   clearTimeout(timer);
   timer = setTimeout(flush, 300);
 });
+const serve: Serve = (input, init, socket) => (frozen ? Promise.resolve(new Response(null, { status: 503 })) : live(input, init, socket));
 installShims(serve);
 window.addEventListener('pagehide', flush);
+
+if (tabs) {
+  tabs.onmessage = async () => {
+    if (frozen) return;
+    clearTimeout(timer);
+    await writeSaved(demo.snapshot());
+    frozen = true;
+    release();
+    const { mountTakenOver } = await import('./Banner.tsx');
+    mountTakenOver();
+  };
+}
 
 const call: Call = async (method, path, body) => {
   const res = await serve(`/api${path}`, {
@@ -38,7 +67,7 @@ const call: Call = async (method, path, body) => {
 };
 
 export async function resetDemo() {
-  resetting = true;
+  frozen = true;
   clearTimeout(timer);
   await clearSaved();
   clearCookies();

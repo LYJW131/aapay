@@ -5,8 +5,8 @@
 ## 一眼看完
 
 - 推 `main` 就是发布生产（Workers Builds 自动部署，Docker 镜像同时重建）。agent 默认在分支上做、开 PR，你说「推 main」「合入 main」才进 `main`。
-- 每个分支自动有两样东西可看：Worker Preview（`<分支名>-aapay.<子域>.workers.dev`）和 CI 里跑通的演示站截图。
-- 演示站 <https://aapay.lyjw.me> 由 `DEMO_BRANCH` 指定的分支（默认 `main`）发布；README 的截图就是它每次发布时现拍的。
+- 每个分支自动有 Worker Preview（`<分支名>-aapay.<子域>.workers.dev`），CI 也会把演示站构建一遍、截图跑一遍。
+- 演示站 <https://aapay.lyjw.me> 只由 `DEMO_BRANCH` 指定的分支（默认 `main`）发布；README 的截图就是它每次发布时现拍的。
 - 「已部署」看 `/version.json` 的 `commit`：生产看站点自己的，演示站看 <https://aapay.lyjw.me/version.json>。
 
 ## 本项目特有的说法
@@ -16,7 +16,7 @@
 | 「推预览」「开 preview」 | 推分支，给出 Worker Preview 地址 |
 | 「推 main」「合入 main」 | 本地 `npm run check` 通过后推 `main`，再核对生产 `/version.json` |
 | 「起个本地的给我玩」 | 起开发服务器并给出地址；只看界面时用演示站（`npm run dev:demo`），不用配密钥 |
-| 「更新截图」 | 不用手动做：改了界面推分支，CI 会重拍；要先看就本地跑 `npm run screenshots` |
+| 「更新截图」 | 不用手动做：界面改动合进 `main` 后演示站发布时重拍；要先看就按 `src/demo/AGENTS.md`「截图」在本地跑 |
 
 ## 什么来问你
 

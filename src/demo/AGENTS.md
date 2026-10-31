@@ -15,6 +15,8 @@ GitHub Pages 上的演示站：真实的 `createApp()`、`RegistryService` / `Le
 - 演示站的配置固定在 `server.ts` 的 `createServer`：`isolated` 模式、`ADMIN_AUTH=none`、关闭 MCP（外部 AI 应用连不到浏览器里的服务端）、AI 助手只能自带 Key。
 - 访客默认以成员身份进入；打开 `/admin` 时 GitHub Pages 把 `/api/admin/login` 的整页跳转交给 `404.html`，`main.ts` 把它转给浏览器内的服务端后按 `Location` 跳回。
 - sql.js 的 `export()` 会关闭再重开数据库，连接级 PRAGMA 失效，导出一律走 `sqlite.ts` 的 `exportDb`。
+- 同一时间只有一个标签页持有数据：`main.ts` 用 Web Lock（`aapay-demo`）加 BroadcastChannel 串行化，新标签页接管时旧标签页先把数据写回 IndexedDB 再让出，之后只显示「已在另一个标签页打开」。
+- 内存里造的 `Response` 不会随请求中止而报错，`server.ts` 的 `abortable` 把 `request.signal` 接到响应流上，AI 助手的「停止」才能取消上游请求。
 - 只用纯静态托管能提供的东西：没有自定义响应头（COOP/COEP），所以不用 OPFS 或 SharedArrayBuffer。
 
 ## 截图

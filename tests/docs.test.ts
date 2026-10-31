@@ -70,6 +70,14 @@ describe('文档', () => {
     expect(docs.flatMap(problems)).toEqual([]);
   });
 
+  it('文档里提到的 npm run 脚本都存在', () => {
+    const scripts = Object.keys((JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { scripts: Record<string, string> }).scripts);
+    const missing = docs.flatMap((doc) =>
+      [...readFileSync(join(root, doc), 'utf8').matchAll(/npm run ([\w:-]+)/g)].flatMap(([, name]) => (scripts.includes(name!) ? [] : [`${doc}: npm run ${name}`])),
+    );
+    expect(missing).toEqual([]);
+  });
+
   it('CLAUDE.md 只引用同目录的 AGENTS.md', () => {
     for (const file of files.filter((f) => basename(f) === 'CLAUDE.md')) {
       expect(readFileSync(join(root, file), 'utf8'), file).toBe('@AGENTS.md\n');

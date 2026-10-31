@@ -13,6 +13,17 @@ describe('guard-commands', () => {
     'git add src/a.ts && git add -A',
     'git add .dev.vars',
     'git add apps/x/.env.local',
+    'git -C . add -A',
+    'git -c core.quotepath=off add .',
+    'git add ".dev.vars"',
+    'npm exec wrangler deploy',
+    'pnpm dlx wrangler deploy',
+    'bunx wrangler deploy',
+    'yarn deploy',
+    'npm run --silent deploy',
+    'echo $((1<<2))\nwrangler deploy',
+    'echo a & wrangler deploy',
+    'if true; then wrangler deploy; fi',
   ])('拦下 %s', (command) => {
     expect(violation(command)).not.toBeNull();
   });
@@ -26,6 +37,9 @@ describe('guard-commands', () => {
     'npm run build:demo',
     'cf dns records list',
     'rg wrangler src',
+    'command -v wrangler',
+    'git -C . add src/demo/main.ts',
+    'git commit -m "chore: git add -A 不再用"',
   ])('放行 %s', (command) => {
     expect(violation(command)).toBeNull();
   });

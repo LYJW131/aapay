@@ -64,6 +64,35 @@ function cookieHeader() {
 export const isServerPath = (pathname: string) =>
   SERVER_PATHS.some((path) => (path.endsWith('/*') ? pathname.startsWith(path.slice(0, -1)) : pathname === path || pathname === `${path}/`));
 
+// 原生 fetch 中止时读流会报错、服务端会收到断开；这里的 Response 是内存里造的，要自己把中止接到流上，
+// 否则 AI 助手点了停止还会继续收到事件，上游模型请求也不会取消
+function abortable(response: Response, signal: AbortSignal) {
+  const body = response.body;
+  if (!body) return response;
+  const reader = body.getReader();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const abort = () => {
+        void reader.cancel(signal.reason).catch(() => undefined);
+        controller.error(signal.reason ?? new DOMException('Aborted', 'AbortError'));
+      };
+      if (signal.aborted) abort();
+      else signal.addEventListener('abort', abort, { once: true });
+    },
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (done) controller.close();
+        else controller.enqueue(value);
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel: (reason) => reader.cancel(reason),
+  });
+  return new Response(stream, response);
+}
+
 export function createServer(platform: Platform, onWrite: () => void) {
   const config = loadConfig({ MODE: 'isolated', ADMIN_AUTH: 'none', MCP: 'disabled' });
   const app = createApp(async (c, next) => {
@@ -86,7 +115,7 @@ export function createServer(platform: Platform, onWrite: () => void) {
     if (cookies) headers.set('cookie', cookies);
     Object.defineProperty(request, 'headers', { value: headers });
     const env: DemoEnv = { socket };
-    const response = await app.fetch(request, env);
+    const response = abortable(await app.fetch(request, env), request.signal);
     Object.defineProperty(response, 'url', { value: request.url });
     onWrite();
     return response;

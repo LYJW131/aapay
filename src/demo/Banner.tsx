@@ -5,8 +5,8 @@ import { messages } from '../web/i18n/locale.ts';
 import { REPO_URL } from '../web/lib/version.ts';
 
 const t = messages({
-  'zh-CN': { notice: '演示站：数据只存在这个浏览器里', reset: '重置', deploy: '部署自己的' },
-  en: { notice: 'Demo: data stays in this browser', reset: 'Reset', deploy: 'Deploy your own' },
+  'zh-CN': { notice: '演示站：数据只存在这个浏览器里', reset: '重置', deploy: '部署自己的', elsewhere: '演示站已在另一个标签页打开', resume: '在这里继续' },
+  en: { notice: 'Demo: data stays in this browser', reset: 'Reset', deploy: 'Deploy your own', elsewhere: 'The demo is open in another tab', resume: 'Use it here' },
 });
 
 function Banner({ onReset }: { onReset: () => Promise<void> }) {
@@ -38,4 +38,18 @@ export function mountBanner(onReset: () => Promise<void>) {
   host.id = 'demo-banner';
   document.body.prepend(host);
   createRoot(host).render(<Banner onReset={onReset} />);
+}
+
+export function mountTakenOver() {
+  const host = document.createElement('div');
+  host.className = 'fixed inset-0 z-[100] flex flex-col items-center justify-center gap-4 bg-canvas/90 px-6 text-center backdrop-blur-sm';
+  document.body.append(host);
+  createRoot(host).render(
+    <>
+      <p className="text-sm text-zinc-600 dark:text-zinc-300">{t.elsewhere}</p>
+      <button type="button" onClick={() => window.location.reload()} className="rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-500">
+        {t.resume}
+      </button>
+    </>,
+  );
 }

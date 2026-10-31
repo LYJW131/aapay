@@ -6,5 +6,5 @@
     "types": ["vite/client"],
     "paths": { "@/*": ["./src/web/*"] }
   },
-  "include": ["src/demo", "src/web/env.d.ts"]
+  "include": ["src/demo", "src/web/env.d.ts", "tests/demo.test.ts"]
 }

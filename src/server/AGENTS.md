@@ -24,7 +24,7 @@
 ## 错误与语言
 
 - `AppError` 只携带 `src/shared/errors.ts` 里的错误键和参数，zod 的 message 也写错误键（`src/shared/schema.ts` 的 `msg()`），在 HTTP 出口（`app.ts` 的 `onError`、`validate.ts`）按请求的 `Accept-Language` 翻译。`describeAudit` / `actorLabel` 需要传语言。
-- MCP 面向模型，工具描述、instructions、工具错误与 `list_activity` 的文本固定英文（`mcp/tools.ts` 的 `LOCALE`）。
+- MCP 面向模型，工具描述、instructions、工具错误与 `list_activity` 的文本固定英文（`tools/ledger.ts` 的 `TOOL_LOCALE`）。
 
 ## AI 助手
 
@@ -39,7 +39,7 @@
 - `ai/prompts.ts` 放系统提示词，提示词与工具描述面向模型，固定英文，不走 i18n。
 - `sseStream` 只在等上游时计时，只有数据事件才续期（`: keep-alive` 不算），超时报 504 并与客户端断开区分。
 - 每个账本每分钟最多 30 次（Cloudflare 用 `ASSISTANT_LIMITER`，Node 用内置限流）。
-- `ASSISTANT=disabled` 时 `/api/config` 的 `assistant` 为 null，前端隐藏入口；站点用 `ASSISTANT_PROVIDER` 那家的 Key（`GEMINI_API_KEY` / `DEEPSEEK_API_KEY` / `CLAUDE_API_KEY` / `OPENAI_API_KEY`，都可选；`openai` 还需 `OPENAI_BASE_URL` 与 `OPENAI_MODEL`）。默认模型 ID 用服务商的 latest 别名，不写死具体型号。
+- `ASSISTANT=disabled` 时 `/api/config` 的 `assistant` 为 null，前端隐藏入口；站点用 `ASSISTANT_PROVIDER` 那家的 Key（`GEMINI_API_KEY` / `DEEPSEEK_API_KEY` / `CLAUDE_API_KEY` / `OPENAI_API_KEY`，都可选；`openai` 还需 `OPENAI_BASE_URL` 与 `OPENAI_MODEL`）。
 - 用户自带 Key（BYOK）以 `X-AI-Provider` / `X-AI-Key` / `X-AI-Model`（OpenAI 兼容另加 `X-AI-Base-URL`）头透传，服务端 `modelKey()`（`app.ts`）优先用它、只在本次请求里使用，不落库、不进日志与审计；只有自带 Key 时才允许换服务商和模型。站点没有 Key 且请求不带 Key 时返回 `assistantNeedsKey`。上游错误经 `upstreamError` 按是否自带 Key 区分（Key 无效、余额或额度不足、模型不存在）。
 
 ## MCP 与 OAuth

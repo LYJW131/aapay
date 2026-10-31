@@ -61,7 +61,7 @@ npm run build               # Cloudflare 构建（dist/client + dist/aapay）
 npm run build:node          # 前端 + esbuild 打成单文件 dist/node/server.mjs
 npm run build:demo          # 纯静态演示站 dist/demo
 npm run seed                # 往运行中的开发服务器写演示账本（口令 demo2026），默认 http://127.0.0.1:5173
-npm run screenshots         # 对 vite preview 起的 dist/demo 截 README 用图
+npm run screenshots         # 对 vite preview 起的 dist/demo 截 README 用图，步骤见 src/demo/AGENTS.md
 ```
 
 - 本地开发把 `.dev.vars.example` 复制为 `.dev.vars` 并取消注释 `ADMIN_AUTH=none`，`/admin` 打开即以管理员登录。`npm run dev` 不做构建变量注入。
@@ -72,7 +72,7 @@ npm run screenshots         # 对 vite preview 起的 dist/demo 截 README 用�
 
 ## 架构总览
 
-- `src/server/app.ts` 是平台无关的 Hono 应用，`createApp(inject)` 由平台入口注入 `platform` 与 `config`：`src/server/cloudflare/worker.ts`（Durable Objects）、`src/server/node/main.ts`（node:sqlite + ws）和 `src/demo/main.ts`（浏览器里的 sql.js）。三边实现同一个 `Platform` 接口（`src/server/platform.ts`）。
+- `src/server/app.ts` 是平台无关的 Hono 应用，`createApp(inject)` 由平台入口注入 `platform` 与 `config`：`src/server/cloudflare/worker.ts`（Durable Objects）、`src/server/node/main.ts`（node:sqlite + ws）和 `src/demo/server.ts`（浏览器里的 sql.js）。三边实现同一个 `Platform` 接口（`src/server/platform.ts`）。
 - 业务逻辑在 `src/server/core/` 的同步服务里，只依赖同步的 `SqlDriver`，所以 DO 的 SQLite、node:sqlite 和 sql.js 共用同一份代码。
 - `src/shared/` 前后端共用：zod 校验（`schema.ts`）、金额（以「分」为整数，`money.ts`）、结算算法、事件 reducer、支出分类（`categories.ts`）。`limits.ts` 不依赖 zod，前端只从这里取限制，避免把 zod 打进前端包。
 - 前端在 `src/web/`，用 `hono/client` 拿到 `ApiType` 的端到端类型。
@@ -90,7 +90,7 @@ npm run screenshots         # 对 vite preview 起的 dist/demo 截 README 用�
 - 部署者的值来自 Workers Builds 的构建变量：`vite.config.ts` 的 `deployConfig` 在 `vite build` 时把 `RUNTIME_VARS` 里的同名环境变量并入产物 `dist/aapay/wrangler.json` 的 `vars` 与 `previews.vars`，`CUSTOM_DOMAIN` 生成自定义域名路由并关闭 `workers.dev`，再用 `loadConfig` 校验（配错时构建失败）。生产与 Preview 的构建变量在 Workers Builds 里分开设置。GitHub Actions 用仓库变量：`PRODUCTION_URL` / `PREVIEW_HOST`（`deployments.yml`）、`ALIYUN_ACR_IMAGE`（`image.yml`）、`DEMO_URL` / `DEMO_BRANCH`（`demo.yml`），没设置时对应工作流跳过。
 - 推送其他分支会构建 Worker Preview（`npx wrangler preview`），地址 `<分支名>-<Worker>.<子域>.workers.dev`。Preview 的绑定写在 `wrangler.jsonc` 的 `previews` 块（不继承顶层），变量由 Preview 自己的构建变量注入。`wrangler preview` 每次部署只带配置里的变量，不会沿用之前设置的密钥，所以 Preview 的部署命令用 `--secrets-file` 从构建密钥注入（如 `PREVIEW_AUDIT_SIGNING_KEY` → `AUDIT_SIGNING_KEY`、`PREVIEW_GEMINI_API_KEY` → `GEMINI_API_KEY`）。每个 Preview 的 DO 存储独立、与生产数据隔离。
 - 推送 `main` 或 `v*` 标签还会触发 `.github/workflows/image.yml`：类型检查与测试通过后构建 `linux/amd64` + `linux/arm64` 镜像，推到 `ghcr.io/<仓库>`，设置了 `ALIYUN_ACR_IMAGE` 时同时推到阿里云 ACR（`main` 为 `latest`，标签为语义化版本）。ACR 登录用仓库密钥 `ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD`，密码是控制台「访问凭证」里的 Registry 密码。构建关掉 provenance：ACR 个人版拒绝 attestation 的 `application/vnd.oci.empty.v1+json`。构建阶段用 `--platform=$BUILDPLATFORM` 在原生架构上跑，产物是纯 JS，只有运行阶段按目标架构打包。
-- 推送任意分支会触发 `.github/workflows/demo.yml`：构建演示站、在 Chromium 里生成截图，`DEMO_BRANCH`（默认 `main`）上的提交发布到 GitHub Pages。
+- 设置了 `DEMO_URL` 时，推送任意分支（只改 `*.md` 的除外）会触发 `.github/workflows/demo.yml`：构建演示站、在 Chromium 里生成截图；只有 `DEMO_BRANCH`（默认 `main`）上的提交会发布到 GitHub Pages，README 的截图也随之更新。
 - 分支流转：功能在分支上开发，用该分支的 Worker Preview 和演示站自查，经 PR 以合并提交进 `main`；lyjw 明确说「推 main」「合入 main」时可以直接推。
 - 「已部署」的判据：生产看站点 `/version.json` 的 `commit`，演示站看 `https://aapay.lyjw.me/version.json`，都要等于期望的提交。
 
@@ -106,5 +106,5 @@ npm run screenshots         # 对 vite preview 起的 dist/demo 截 README 用�
 | --- | --- |
 | 类型检查、测试、三种构建全绿 | CI（`.github/workflows/ci.yml` 跑 `npm run check`） |
 | 文档里的相对链接、反引号路径、`路径#符号` 都存在；`CLAUDE.md` 只引用 `AGENTS.md`；根 `AGENTS.md` 不超过字节上限 | `tests/docs.test.ts`（`npm test`） |
-| 不手跑 wrangler、`npm run deploy`，不 `git add -A`，不暂存 `.dev.vars` / `.env` | PreToolUse 钩子 `scripts/guard-commands.ts`（`.claude/settings.json`） |
+| 不手跑 wrangler、`npm run deploy`，不 `git add -A`，不暂存 `.dev.vars` / `.env` | PreToolUse 钩子 `scripts/guard-commands.ts`（`.claude/settings.json`）；防手滑，不是安全边界，`bash -c` 之类绕得过 |
 | 演示站能构建、能跑通截图场景 | `.github/workflows/demo.yml` |

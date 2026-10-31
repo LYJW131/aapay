@@ -214,7 +214,7 @@ Open <http://localhost:5173>. For the Node runtime, use `npm run dev:node` (serv
 `npm run dev:demo` runs the demo site: the server code and SQLite (sql.js) run inside the browser, and `npm run build:demo` emits a fully static `dist/demo`. The README screenshots are taken from the demo by `npm run screenshots` and regenerated on every demo deployment.
 
 ```bash
-npm run typecheck   # TypeScript (web / worker / node projects)
+npm run typecheck   # TypeScript (web / worker / node / demo projects)
 npm test            # vitest
 npm run build       # Cloudflare build
 npm run build:node  # Node / Docker build
